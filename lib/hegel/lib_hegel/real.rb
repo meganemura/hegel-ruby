@@ -129,6 +129,12 @@ module Hegel
           [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT64_T, Fiddle::TYPE_INT64_T, Fiddle::TYPE_VOIDP],
           Fiddle::TYPE_INT
         )
+        @generate_integer_big_fn = bind(
+          "hegel_generate_integer_big",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP,
+            Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
 
         @start_span_fn = bind(
           "hegel_start_span",
@@ -220,6 +226,11 @@ module Hegel
         )
         @generate_ipv6_fn = bind(
           "hegel_generate_ipv6", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+        @generate_uuid_fn = bind(
+          "hegel_generate_uuid",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT8_T, Fiddle::TYPE_BOOL, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
         )
 
         LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
@@ -491,6 +502,36 @@ module Hegel
         out.to_str(Fiddle::SIZEOF_INT64_T).unpack1("q")
       end
 
+      # hegel_generate_integer_big, for bounds that do not fit int64_t (see
+      # Hegel::Generators::IntegerGenerator#do_draw, which dispatches here
+      # instead of #generate_integer only when a bound is outside that
+      # range). +min_value+/+max_value+ are encoded and the result decoded
+      # via LibHegel.encode_integer_le/.decode_integer_le, which own the
+      # two's-complement little-endian convention itself; this method only
+      # owns the buffer marshalling around it. out_value's capacity is the
+      # larger of the two encoded bounds, per the header's "out_value_cap >=
+      # max(min_value_len, max_value_len) always succeeds"; the result is
+      # read back at its own reported out_value_len, not the buffer's full
+      # capacity, since decode_integer_le needs only that many bytes.
+      def generate_integer_big(ctx, tc, min_value, max_value)
+        min_bytes = LibHegel.encode_integer_le(min_value)
+        max_bytes = LibHegel.encode_integer_le(max_value)
+        min_value_ptr = bytes_to_pointer(min_bytes)
+        max_value_ptr = bytes_to_pointer(max_bytes)
+
+        cap = [min_bytes.bytesize, max_bytes.bytesize].max
+        out_value = Fiddle::Pointer.malloc(cap, Fiddle::RUBY_FREE)
+        out_value_len = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T, Fiddle::RUBY_FREE)
+
+        code = @generate_integer_big_fn.call(
+          ctx, tc, min_value_ptr, min_bytes.bytesize, max_value_ptr, max_bytes.bytesize, out_value, cap,
+          out_value_len
+        )
+        LibHegel.check!(self, ctx, code)
+        len = out_value_len.to_str(Fiddle::SIZEOF_SIZE_T).unpack1("J")
+        LibHegel.decode_integer_le(out_value.to_str(len))
+      end
+
       # Opens a span labelled +label+ (one of the HEGEL_LABEL_* constants,
       # or a caller-defined value that avoids them). Must be paired with
       # exactly one #stop_span call, per the header.
@@ -732,7 +773,36 @@ module Hegel
         out.to_str(16)
       end
 
+      # hegel_generate_uuid, returning the drawn UUID's 16 raw bytes.
+      # +has_version+ true forces the RFC 4122 version nibble to +version+
+      # (0..15) and the variant nibble to the RFC 4122 variant, per the
+      # header; +version+ is ignored (but still marshalled; pass 0) when
+      # +has_version+ is false. Converting the raw bytes to the standard
+      # 8-4-4-4-12 hex String is left to Hegel::Generators::UuidsGenerator,
+      # the same division of labor #generate_ipv4/#generate_ipv6 already
+      # follow for their own byte-to-address conversion. An out-of-range
+      # +version+ is not checked here: measured against libhegel 0.32.5, the
+      # engine itself returns HEGEL_E_INVALID_ARG for one, which
+      # LibHegel.check! already translates.
+      def generate_uuid(ctx, tc, version, has_version)
+        out = Fiddle::Pointer.malloc(16, Fiddle::RUBY_FREE)
+        code = @generate_uuid_fn.call(ctx, tc, version, has_version, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(16)
+      end
+
       private
+
+      # Copies +bytes+ into a freshly malloc'd buffer, for
+      # #generate_integer_big's min_value/max_value: a const uint8_t*
+      # argument libhegel reads from, the opposite direction of an
+      # out-parameter buffer (which libhegel writes into, and the caller
+      # then reads).
+      def bytes_to_pointer(bytes)
+        ptr = Fiddle::Pointer.malloc(bytes.bytesize, Fiddle::RUBY_FREE)
+        ptr[0, bytes.bytesize] = bytes
+        ptr
+      end
 
       def bind(symbol, arg_types, ret_type)
         Fiddle::Function.new(@handle[symbol], arg_types, ret_type)

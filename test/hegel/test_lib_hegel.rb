@@ -235,6 +235,104 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # min_value == max_value pins hegel_generate_integer_big's own byte
+  # convention against the engine's own interpretation, not just this
+  # binding's encode/decode as each other's inverse (see
+  # test_encode_integer_le_and_decode_integer_le_round_trip's own comment on
+  # why round-tripping alone cannot catch that). Covers a bound past
+  # int64_t's positive and negative edges, and past 2**64, both signs. The
+  # database is disabled ("") so the run leaves nothing on disk.
+  def test_real_generate_integer_big_at_degenerate_bounds_pins_the_byte_convention
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      assert_equal 2**100, real.generate_integer_big(ctx, tc, 2**100, 2**100)
+      assert_equal(-(2**63) - 1, real.generate_integer_big(ctx, tc, -(2**63) - 1, -(2**63) - 1))
+      assert_equal 2**64, real.generate_integer_big(ctx, tc, 2**64, 2**64)
+      assert_equal(-(2**100), real.generate_integer_big(ctx, tc, -(2**100), -(2**100)))
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # An asymmetric range -- min_value's own minimal encoding (1 byte) is
+  # shorter than max_value's (13 bytes) -- drives out_value_cap above
+  # min_value_len, and a range that spans zero exercises both a negative
+  # and a non-negative draw landing correctly in range. The database is
+  # disabled ("") so the run leaves nothing on disk.
+  def test_real_generate_integer_big_stays_within_an_asymmetric_range
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      20.times do
+        value = real.generate_integer_big(ctx, tc, -1, 2**100)
+        assert_includes(-1..(2**100), value)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  def test_fake_generate_integer_big_stop_test_translates_to_hegel_stop_test
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_integer_big_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    assert_raises(Hegel::StopTest) { fake.generate_integer_big(ctx, Object.new, -(2**100), 2**100) }
+  end
+
+  def test_fake_generate_integer_big_returns_the_configured_value
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_integer_big_value = 2**100
+
+    assert_equal 2**100, fake.generate_integer_big(ctx, Object.new, -(2**100), 2**100)
+  end
+
   def test_fake_generate_boolean_stop_test_translates_to_hegel_stop_test
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
@@ -249,6 +347,35 @@ class TestLibHegel < Minitest::Test
     fake.generate_integer_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
 
     assert_raises(Hegel::StopTest) { fake.generate_integer(ctx, Object.new, 0, 10) }
+  end
+
+  # LibHegel.encode_integer_le / .decode_integer_le's own documented
+  # two's-complement little-endian convention, round-tripped over zero,
+  # both signs, and the byte-length boundaries a naive "bits then round up"
+  # formula could get wrong: single-byte edges (127/128, -128/-129), the
+  # int64_t edges IntegerGenerator dispatches on, and a value past both.
+  # Round-tripping alone cannot catch a convention that is self-consistent
+  # but wrong (encoding big-endian in both directions would still pass this
+  # loop); see test_real_generate_integer_big_at_degenerate_bounds_pins_the_
+  # byte_convention below for the check against the engine's own
+  # interpretation.
+  def test_encode_integer_le_and_decode_integer_le_round_trip
+    [
+      0, 1, -1, 127, 128, -128, -129, 255, 256, -255, -256,
+      (2**63) - 1, 2**63, -(2**63), -(2**63) - 1,
+      2**64, -(2**64), 2**100, -(2**100)
+    ].each do |n|
+      bytes = Hegel::LibHegel.encode_integer_le(n)
+      assert_equal n, Hegel::LibHegel.decode_integer_le(bytes), "round-trip failed for #{n}"
+    end
+  end
+
+  # .decode_integer_le accepts a buffer longer than the value's own minimal
+  # encoding, sign-filled the way hegel_generate_integer_big's out_value is
+  # documented to be, and must still decode to the same value either way.
+  def test_decode_integer_le_accepts_a_sign_filled_longer_buffer
+    assert_equal 5, Hegel::LibHegel.decode_integer_le(Hegel::LibHegel.encode_integer_le(5) + "\x00".b * 3)
+    assert_equal(-5, Hegel::LibHegel.decode_integer_le(Hegel::LibHegel.encode_integer_le(-5) + "\xFF".b * 3))
   end
 
   def test_fake_mark_complete_records_origin_only_when_passed
@@ -1031,24 +1158,128 @@ class TestLibHegel < Minitest::Test
     assert_equal ("\x00" * 15 + "\x01").b, fake.generate_ipv6(ctx, Object.new)
   end
 
-  # Hegel::TestCase's own wrappers for the eight native calls this file
-  # adds bindings for above: real.rb only makes them callable, not
-  # reachable from a Hegel::Generator#do_draw (see
+  # hegel_generate_uuid writes into a caller-supplied 16-byte buffer, the
+  # same fixed-buffer shape as #generate_ipv4/#generate_ipv6. has_version:
+  # false draws unconstrained bytes; has_version: true forces the version
+  # nibble (the top nibble of byte 6, per the header's "version nibble")
+  # to the requested value. The database is disabled ("") so the run
+  # leaves nothing on disk.
+  def test_real_generate_uuid_returns_16_raw_bytes_and_a_forced_version_sets_its_nibble
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      unversioned = real.generate_uuid(ctx, tc, 0, false)
+      assert_equal 16, unversioned.bytesize
+      assert_equal Encoding::BINARY, unversioned.encoding
+
+      versioned = real.generate_uuid(ctx, tc, 4, true)
+      assert_equal 4, versioned.getbyte(6) >> 4
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # This layer does not validate version itself (see the task's own
+  # decision record); hegel_generate_uuid rejects a value outside its
+  # documented 0..15 range, and LibHegel.check! translates that
+  # HEGEL_E_INVALID_ARG into this Hegel::Error, the same division of labor
+  # #string_generator_domain follows for its own out-of-range max_length.
+  # Unlike #string_generator_domain, this call draws (needs a live test
+  # case, not just a context), so this opens a run the same way every
+  # other draw test in this file does. The database is disabled ("") so
+  # the run leaves nothing on disk.
+  def test_real_generate_uuid_out_of_range_version_raises
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      assert_raises(Hegel::Error) { real.generate_uuid(ctx, tc, 16, true) }
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INVALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  def test_fake_generate_uuid_stop_test_translates_to_hegel_stop_test
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_uuid_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    assert_raises(Hegel::StopTest) { fake.generate_uuid(ctx, Object.new, 4, true) }
+  end
+
+  def test_fake_generate_uuid_returns_the_configured_value
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_uuid_value = "\x01" * 16
+
+    assert_equal "\x01" * 16, fake.generate_uuid(ctx, Object.new, 0, false)
+  end
+
+  # Hegel::TestCase's own wrappers for the native calls this file adds
+  # bindings for above: real.rb only makes them callable, not reachable
+  # from a Hegel::Generator#do_draw (see
   # .claude/skills/new-generator/SKILL.md, "bound is not the same as
   # callable"). Driven against the Fake since these are thin, unconditional
   # delegations to the same-named Hegel::LibHegel method -- nothing here
   # depends on the native engine.
-  def test_test_case_generate_bytes_generate_ipv4_and_generate_ipv6_delegate_to_impl
+  def test_test_case_generate_bytes_generate_ipv4_generate_ipv6_generate_uuid_and_generate_integer_big_delegate_to_impl
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
     fake.generate_bytes_value = "\xAB\xCD".b
     fake.generate_ipv4_value = "\x01\x02\x03\x04".b
     fake.generate_ipv6_value = ("\x00" * 16).b
+    fake.generate_uuid_value = "\x01" * 16
+    fake.generate_integer_big_value = 2**100
     tc = Hegel::TestCase.new(fake, ctx, Object.new)
 
     assert_equal "\xAB\xCD".b, tc.generate_bytes(1, 5)
     assert_equal "\x01\x02\x03\x04".b, tc.generate_ipv4
     assert_equal ("\x00" * 16).b, tc.generate_ipv6
+    assert_equal "\x01" * 16, tc.generate_uuid(0, false)
+    assert_equal 2**100, tc.generate_integer_big(-(2**100), 2**100)
   end
 
   # Exercises both branches of #string_generator_regex's optional

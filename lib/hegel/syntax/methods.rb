@@ -124,6 +124,14 @@ module Hegel
       def ip_addresses(v4: true, v6: true)
         Generators::IpAddressesGenerator.new(v4: v4, v6: v6)
       end
+
+      # A UUID String in the standard 8-4-4-4-12 hex form. version: nil (the
+      # default) draws uniform random bits except the nil UUID; an explicit
+      # version forces the RFC 4122 version and variant nibbles (see
+      # Generators::UuidsGenerator).
+      def uuids(version: nil)
+        Generators::UuidsGenerator.new(version: version)
+      end
     end
   end
 

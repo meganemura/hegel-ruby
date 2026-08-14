@@ -24,6 +24,7 @@ module Hegel
     def draw_boolean: (?Float p, ?label: String?) -> bool
     def draw: (Generator generator, ?label: String?) -> untyped
     def generate_integer: (Integer min_value, Integer max_value) -> Integer
+    def generate_integer_big: (Integer min_value, Integer max_value) -> Integer
     def generate_boolean: (?Float p) -> bool
     def generate_float: (Integer width, Float min_value, Float max_value, allow_nan: bool, allow_infinity: bool, exclude_min: bool, exclude_max: bool, smallest_nonzero_magnitude: Float) -> Float
     def start_span: (Integer label) -> untyped
@@ -41,6 +42,7 @@ module Hegel
     def generate_bytes: (Integer min_size, Integer max_size) -> String
     def generate_ipv4: () -> String
     def generate_ipv6: () -> String
+    def generate_uuid: (Integer version, bool has_version) -> String
     def string_generator_regex: (String pattern, bool fullmatch, ?untyped alphabet) -> untyped
     def string_generator_email: () -> untyped
     def string_generator_url: () -> untyped
@@ -184,6 +186,11 @@ module Hegel
       def draw_address: (untyped tc) -> untyped
     end
 
+    class UuidsGenerator < Generator
+      def initialize: (version: Integer?) -> void
+      def do_draw: (untyped tc) -> String
+    end
+
     extend Syntax::Methods
   end
 
@@ -208,6 +215,7 @@ module Hegel
       def urls: () -> Generators::UrlsGenerator
       def domains: (?max_length: Integer) -> Generators::DomainsGenerator
       def ip_addresses: (?v4: bool, ?v6: bool) -> Generators::IpAddressesGenerator
+      def uuids: (?version: Integer?) -> Generators::UuidsGenerator
     end
   end
 
@@ -350,6 +358,8 @@ module Hegel
     def self.with_context: [R] (untyped impl) { (untyped) -> R } -> R
     def self.check!: (untyped impl, untyped ctx, Integer code) -> void
     def self.warn_on_version_mismatch: (untyped impl, untyped ctx, ?io: untyped) -> void
+    def self.encode_integer_le: (Integer n) -> String
+    def self.decode_integer_le: (String bytes) -> Integer
 
     class Real
       def initialize: (?String path, ?io: untyped) -> void
@@ -371,6 +381,7 @@ module Hegel
       def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin) -> nil
       def generate_boolean: (untyped ctx, untyped tc, Float p, bool forced, bool has_forced) -> bool
       def generate_integer: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
+      def generate_integer_big: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
       def run_result: (untyped ctx, untyped run) -> untyped
       def run_result_free: (untyped ctx, untyped r) -> nil
       def run_result_status: (untyped ctx, untyped r) -> Integer
@@ -400,6 +411,7 @@ module Hegel
       def string_generator_domain: (untyped ctx, Integer max_length) -> untyped
       def generate_ipv4: (untyped ctx, untyped tc) -> String
       def generate_ipv6: (untyped ctx, untyped tc) -> String
+      def generate_uuid: (untyped ctx, untyped tc, Integer version, bool has_version) -> String
     end
   end
 end

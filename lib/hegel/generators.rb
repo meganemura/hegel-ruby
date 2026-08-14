@@ -36,8 +36,10 @@ module Hegel
     # defaulting to the full 64-bit range when either bound is omitted.
     class IntegerGenerator < Generator
       # hegel_generate_integer takes int64_t bounds; a bound outside this
-      # range needs hegel_generate_integer_big instead, out of scope for
-      # this milestone (see the task's own decision record).
+      # range dispatches to hegel_generate_integer_big instead (see
+      # #do_draw), so integers()'s own caller-facing surface does not
+      # change depending on which native call ends up making the draw --
+      # only the dispatch threshold these two constants mark.
       INT64_MIN = -(2**63)
       INT64_MAX = (2**63) - 1
 
@@ -51,11 +53,12 @@ module Hegel
         min_value = @min_value || INT64_MIN
         max_value = @max_value || INT64_MAX
         raise Hegel::Error, "integers: max_value < min_value" if max_value < min_value
-        unless min_value.between?(INT64_MIN, INT64_MAX) && max_value.between?(INT64_MIN, INT64_MAX)
-          raise Hegel::Error, "integers: bounds outside the 64-bit range are not supported yet"
-        end
 
-        tc.generate_integer(min_value, max_value)
+        if min_value.between?(INT64_MIN, INT64_MAX) && max_value.between?(INT64_MIN, INT64_MAX)
+          tc.generate_integer(min_value, max_value)
+        else
+          tc.generate_integer_big(min_value, max_value)
+        end
       end
     end
 
@@ -556,6 +559,38 @@ module Hegel
       def draw_address(tc)
         use_v4 = (@v4 && @v6) ? tc.generate_boolean : @v4
         IPAddr.new_ntoh(use_v4 ? tc.generate_ipv4 : tc.generate_ipv6)
+      end
+    end
+
+    # Hegel::Syntax::Methods#uuids. A UUID String in the standard 8-4-4-4-12
+    # hex form (matching SecureRandom.uuid's own format; Ruby's stdlib has
+    # no dedicated UUID type, and SecureRandom itself returns a String --
+    # see the task's own decision record for why this returns a String
+    # rather than adding a dependency for one). version: nil (the default)
+    # draws uniform random bits except the nil UUID, per the header; an
+    # explicit version forces the RFC 4122 version and variant nibbles.
+    #
+    # Opens no span: HEGEL_LABEL_UUID is a per-draw label the engine itself
+    # emits inside hegel_generate_uuid, not something this binding opens --
+    # the header's own comment on HEGEL_LABEL_INTEGER says the same of
+    # hegel_generate_integer/_big ("Emitted internally, like every per-draw
+    # label"). BooleanGenerator, IntegerGenerator, and FloatGenerator each
+    # make exactly one native call to produce their own value the same way
+    # uuids() does here, and each opens no span of its own for the same
+    # reason. A span belongs only around a generator that composes more
+    # than one native call into one draw (see IpAddressesGenerator, whose
+    # family choice and address draw are two calls under one span).
+    class UuidsGenerator < Generator
+      def initialize(version:)
+        super()
+        @version = version
+      end
+
+      def do_draw(tc)
+        has_version = !@version.nil?
+        raw = tc.generate_uuid(@version || 0, has_version)
+        hex = raw.unpack1("H*")
+        "#{hex[0, 8]}-#{hex[8, 4]}-#{hex[12, 4]}-#{hex[16, 4]}-#{hex[20, 12]}"
       end
     end
   end

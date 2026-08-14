@@ -130,7 +130,7 @@ module Hegel
       settings_new settings_free settings_set_test_cases settings_set_verbosity
       settings_set_seed settings_set_derandomize settings_set_database
       run_start next_test_case run_free test_case_free mark_complete
-      generate_boolean generate_integer
+      generate_boolean generate_integer generate_integer_big
       run_result run_result_free run_result_status run_result_error
       run_result_failure_count run_result_failure failure_free failure_origin
       failure_reproduction_blob test_case_from_blob
@@ -140,7 +140,7 @@ module Hegel
       string_generator_text string_generator_free generate_string generate_string_result_free
       generate_bytes generate_bytes_result_free
       string_generator_regex string_generator_email string_generator_url string_generator_domain
-      generate_ipv4 generate_ipv6
+      generate_ipv4 generate_ipv6 generate_uuid
     ].freeze
 
     module_function
@@ -196,6 +196,38 @@ module Hegel
       io.puts(<<~MESSAGE.chomp)
         hegel: loaded libhegel #{loaded} but these bindings were built for #{Hegel::LIBHEGEL_VERSION}; behaviour may differ. Unset HEGEL_LIBHEGEL_PATH to use the bundled engine, or point it at a matching build.
       MESSAGE
+    end
+
+    # hegel_generate_integer_big's own documented convention for
+    # min_value/max_value/out_value: two's-complement little-endian signed
+    # byte buffers. Pure Ruby arithmetic, no native marshalling, so this is
+    # unit-testable directly (test/hegel/test_lib_hegel.rb round-trips it)
+    # and shared unchanged between LibHegel::Real's bounds-encode and
+    # result-decode, kept out of real.rb so that direct testing stays
+    # possible.
+    #
+    # +n+'s minimal two's-complement byte length is n.bit_length / 8 + 1.
+    # Integer#bit_length reports one bit fewer at a negative power of two
+    # (-128 is 7 bits, 128 is 8), so this formula needs no separate
+    # sign-bit adjustment there; verified against a brute-force
+    # minimal-length search over both signs and the int32/int64/2**100
+    # boundaries.
+    def encode_integer_le(n)
+      byte_length = (n.bit_length / 8) + 1
+      byte_length.times.map { |i| (n >> (8 * i)) & 0xFF }.pack("C*")
+    end
+
+    # The inverse of .encode_integer_le. +bytes+ may be longer than the
+    # value's own minimal encoding -- the header documents hegel_generate_
+    # integer_big's out_value as sign-filled past that length, so a caller
+    # may decode the whole out_value_cap-sized buffer and still get the
+    # right answer -- so length here is read from +bytes+ itself, not
+    # assumed minimal.
+    def decode_integer_le(bytes)
+      length = bytes.bytesize
+      unsigned = bytes.each_byte.with_index.sum { |byte, i| byte << (8 * i) }
+      negative = (bytes.getbyte(length - 1) & 0x80) != 0
+      negative ? unsigned - (1 << (8 * length)) : unsigned
     end
   end
 end

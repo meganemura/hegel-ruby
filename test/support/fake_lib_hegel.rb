@@ -36,7 +36,7 @@ module Hegel
       attr_writer :settings_new_code, :settings_set_test_cases_code, :settings_set_verbosity_code,
         :settings_set_seed_code, :settings_set_derandomize_code, :settings_set_database_code,
         :run_start_code, :next_test_case_code, :mark_complete_code,
-        :generate_boolean_code, :generate_integer_code,
+        :generate_boolean_code, :generate_integer_code, :generate_integer_big_code,
         :run_result_code, :run_result_status_code, :run_result_error_code,
         :run_result_failure_count_code, :run_result_failure_code,
         :failure_origin_code, :failure_reproduction_blob_code, :test_case_from_blob_code,
@@ -44,10 +44,12 @@ module Hegel
         :new_collection_code, :collection_more_code, :collection_reject_code,
         :generate_float_code, :string_generator_text_code, :generate_string_code,
         :generate_bytes_code, :string_generator_regex_code, :string_generator_email_code,
-        :string_generator_url_code, :string_generator_domain_code, :generate_ipv4_code, :generate_ipv6_code
+        :string_generator_url_code, :string_generator_domain_code, :generate_ipv4_code, :generate_ipv6_code,
+        :generate_uuid_code
 
-      # Values #generate_boolean / #generate_integer hand back on success.
-      attr_writer :generate_boolean_value, :generate_integer_value
+      # Values #generate_boolean / #generate_integer / #generate_integer_big
+      # hand back on success.
+      attr_writer :generate_boolean_value, :generate_integer_value, :generate_integer_big_value
 
       # Value #generate_float hands back on success.
       attr_writer :generate_float_value
@@ -55,9 +57,9 @@ module Hegel
       # Value #generate_string hands back on success.
       attr_writer :generate_string_value
 
-      # Values #generate_bytes / #generate_ipv4 / #generate_ipv6 hand back
+      # Values #generate_bytes / #generate_ipv4 / #generate_ipv6 / #generate_uuid hand back
       # on success.
-      attr_writer :generate_bytes_value, :generate_ipv4_value, :generate_ipv6_value
+      attr_writer :generate_bytes_value, :generate_ipv4_value, :generate_ipv6_value, :generate_uuid_value
 
       # Number of times #collection_more answers true before it answers
       # false, mirroring #test_case_count / @cases_served below so a loop
@@ -130,6 +132,8 @@ module Hegel
         @generate_boolean_value = false
         @generate_integer_code = HEGEL_OK
         @generate_integer_value = 0
+        @generate_integer_big_code = HEGEL_OK
+        @generate_integer_big_value = 0
 
         @run_result_code = HEGEL_OK
         @run_result_status_code = HEGEL_OK
@@ -171,6 +175,8 @@ module Hegel
         @generate_ipv4_value = "\x00\x00\x00\x00".b
         @generate_ipv6_code = HEGEL_OK
         @generate_ipv6_value = ("\x00" * 16).b
+        @generate_uuid_code = HEGEL_OK
+        @generate_uuid_value = ("\x00" * 16).b
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -285,6 +291,11 @@ module Hegel
       def generate_integer(ctx, _tc, _min_value, _max_value)
         LibHegel.check!(self, ctx, @generate_integer_code)
         @generate_integer_value
+      end
+
+      def generate_integer_big(ctx, _tc, _min_value, _max_value)
+        LibHegel.check!(self, ctx, @generate_integer_big_code)
+        @generate_integer_big_value
       end
 
       def run_result(ctx, _run)
@@ -437,6 +448,11 @@ module Hegel
       def generate_ipv6(ctx, _tc)
         LibHegel.check!(self, ctx, @generate_ipv6_code)
         @generate_ipv6_value
+      end
+
+      def generate_uuid(ctx, _tc, _version, _has_version)
+        LibHegel.check!(self, ctx, @generate_uuid_code)
+        @generate_uuid_value
       end
     end
   end

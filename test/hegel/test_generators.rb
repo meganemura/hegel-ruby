@@ -61,12 +61,34 @@ class TestGenerators < Minitest::Test
     assert_includes error.message, "max_value < min_value"
   end
 
-  def test_integers_bounds_outside_the_64_bit_range_raise_at_draw_time
+  # A bound outside int64_t's range dispatches to hegel_generate_integer_big
+  # instead of hegel_generate_integer (see IntegerGenerator#do_draw); the
+  # caller-facing integers() surface stays the same either way, so this
+  # asserts the same thing test_integers_draws_against_the_real_engine does,
+  # just with bounds that force the big path on both ends.
+  def test_integers_bounds_outside_the_64_bit_range_draw_via_the_big_path
+    assert_all_examples(integers(min_value: -(2**100), max_value: 2**100)) do |v|
+      v.between?(-(2**100), 2**100)
+    end
+  end
+
+  # Only one bound outside int64_t's range (min_value defaults to a value
+  # that fits, max_value does not): the shape that used to raise "bounds
+  # outside the 64-bit range are not supported yet" (a validation this
+  # milestone removes; see IntegerGenerator#do_draw) must now draw, not
+  # raise.
+  def test_integers_max_value_outside_the_64_bit_range_draws_via_the_big_path
+    assert_all_examples(integers(max_value: 2**70)) { |v| v <= 2**70 }
+  end
+
+  # max_value < min_value is caught before either dispatch branch runs, even
+  # when min_value alone is already outside int64_t's range.
+  def test_integers_min_value_greater_than_max_value_raises_at_draw_time_even_with_a_big_min_value
     error = assert_raises(Hegel::Error) do
-      Hegel.test(verbosity: :quiet) { |tc| tc.draw(integers(max_value: 2**70)) }
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(integers(min_value: 2**100)) }
     end
 
-    assert_includes error.message, "64-bit range"
+    assert_includes error.message, "max_value < min_value"
   end
 
   # Constructing a generator with an invalid combination of options must
@@ -582,6 +604,32 @@ class TestGenerators < Minitest::Test
     assert_kind_of Hegel::Generator, generator
     error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
     assert_includes error.message, "must not both be false"
+  end
+
+  # ---- uuids ----
+
+  def test_uuids_draws_against_the_real_engine
+    assert_all_examples(uuids) { |v| v.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/) }
+  end
+
+  # version: 4 forces the version nibble, the first character of the third
+  # group -- index 14 in the formatted String (0-based; see
+  # UuidsGenerator#do_draw).
+  def test_uuids_version_forces_the_version_nibble
+    assert_all_examples(uuids(version: 4)) { |v| v[14] == "4" }
+  end
+
+  # This layer does not validate version itself (see the task's own
+  # decision record); hegel_generate_uuid rejects a value outside its
+  # documented 0..15 range, and LibHegel.check! translates that
+  # HEGEL_E_INVALID_ARG into this Hegel::Error, the same division of labor
+  # #domains follows for its own out-of-range max_length.
+  def test_uuids_version_out_of_range_raises_at_draw_time
+    generator = uuids(version: 16)
+
+    assert_kind_of Hegel::Generator, generator
+    error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+    assert_includes error.message, "HEGEL_E_INVALID_ARG"
   end
 
   # ---- mixin ----

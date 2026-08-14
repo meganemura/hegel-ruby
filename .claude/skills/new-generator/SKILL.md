@@ -41,11 +41,18 @@ to `lib/hegel/generators.rb`, four pieces:
    misplaced span does not fail a test outright; it shrinks to a
    larger-than-minimal counterexample instead (see Test 3 below).
 
-   **The `HEGEL_LABEL_*` table decides whether you need one span or two**,
-   not `ArrayGenerator`'s shape. A container with elements has a pair
+   **Open a span only around a generator that makes more than one native
+   call for one drawn value.** A container with elements opens a pair
    (`LIST`/`LIST_ELEMENT`, `SET`/`SET_ELEMENT`, `MAP`/`MAP_ENTRY`);
    `SampledFromGenerator`, `OneOfGenerator`, `OptionalGenerator`, and
-   `TupleGenerator` each open exactly one span around the whole draw.
+   `TupleGenerator` each open one span around the whole draw.
+
+   A generator that makes exactly one native call opens none, even when a
+   label with its name sits in the `HEGEL_LABEL_*` table. The header calls
+   those "emitted internally, like every per-draw label": the engine opens
+   them inside its own draw. `UuidsGenerator` is one such — a label exists,
+   and the generator opens no span. Presence in the table is not the test;
+   how many native calls the draw makes is.
 
 **A collection that keeps rejecting is already bounded; do not bound it
 again.** `SetGenerator` and `HashGenerator` call
@@ -126,6 +133,16 @@ test because it reads as coverage:
   `#inspect` varies across the supported Rubies.** `Set[0]` on Ruby 4.0 is
   `#<Set: {0}>` on 3.3 and 3.4, and CI runs all three. Assert on a message
   the test itself built.
+- **A round trip cannot check a byte convention.** Where a draw needs a
+  Ruby-side encode/decode pair — `generate_integer_big` takes and returns
+  two's-complement little-endian — `decode(encode(n)) == n` passes just as
+  happily if both halves are big-endian. Pin the convention with a
+  degenerate draw against the real engine, `min == max` at a value only the
+  right byte order reproduces, and keep the round trip for the arithmetic.
+- **To see an engine's argument-validation error, drive a real run.** A
+  draw call checks its test-case handle before anything else, so a bare
+  context with no live test case answers `HEGEL_E_INVALID_HANDLE` whatever
+  else is wrong with the call.
 
 ## Final checklist
 

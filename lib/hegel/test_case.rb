@@ -87,6 +87,13 @@ module Hegel
       @impl.generate_integer(@ctx, @handle, min_value, max_value)
     end
 
+    # hegel_generate_integer_big, without recording. Hegel::Generators::
+    # IntegerGenerator's own primitive for bounds outside int64_t's range,
+    # used instead of #generate_integer only then; see IntegerGenerator#do_draw.
+    def generate_integer_big(min_value, max_value)
+      @impl.generate_integer_big(@ctx, @handle, min_value, max_value)
+    end
+
     # hegel_generate_boolean, without recording. Hegel::Generators::
     # BooleanGenerator's own primitive; #draw_boolean is this plus
     # recording.
@@ -203,6 +210,14 @@ module Hegel
     # division of labor as #generate_ipv4.
     def generate_ipv6
       @impl.generate_ipv6(@ctx, @handle)
+    end
+
+    # hegel_generate_uuid, returning 16 raw bytes. Hegel::Generators::
+    # UuidsGenerator's own primitive; converting the bytes to the standard
+    # hex String is that generator's job, the same division of labor
+    # #generate_ipv4/#generate_ipv6 already follow.
+    def generate_uuid(version, has_version)
+      @impl.generate_uuid(@ctx, @handle, version, has_version)
     end
 
     # hegel_string_generator_regex. +alphabet+ is an optional string

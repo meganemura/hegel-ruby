@@ -100,6 +100,38 @@ documentation treats a validation message as public API, asserted against
 by tests as a stable substring. `integers(min_value: 5, max_value: 1)`
 will therefore return a generator; the error will arrive from `tc.draw`.
 
+## Passing a struct by value
+
+Fiddle has no struct-by-value argument. `Fiddle::Function` converts each
+entry of its argument-type list with `NUM2INT`
+(`ext/fiddle/function.c`), so an entry must be one of the integer
+`Fiddle::TYPE_*` constants; a `Fiddle::CStruct` subclass and an array of
+types each raise `TypeError`. Measured on fiddle 1.1.8.
+
+Exactly three ABI functions take a struct by value:
+`hegel_generate_date`, `hegel_generate_time`, and
+`hegel_generate_datetime`, each receiving two bound values.
+
+They are reached anyway, because passing the struct is not what the call
+needs — putting its bits where the ABI puts them is. `hegel_date_t` and
+`hegel_time_t` are eight bytes of integers, which arm64, System V, and
+Win64 all pass in one general-purpose register: the same register a
+`uint64` argument uses. Declaring the parameter `TYPE_UINT64_T` and
+passing the packed bits therefore produces the same call. Measured
+against libhegel 0.32.5 on arm64-darwin, drawing dates and times inside
+their requested bounds.
+
+`hegel_datetime_t` is sixteen bytes, and there the ABIs diverge: arm64 and
+System V pass it in two registers, which two `uint64` arguments reproduce,
+while Win64 passes anything over eight bytes by reference. The two-register
+form is verified on arm64-darwin; CI's windows-latest job is what confirms
+or refutes it for Win64, and a failure there is a real finding rather than
+a flake.
+
+Anything a packed struct relies on — a field offset, a size — belongs in a
+test, so that a layout change upstream fails loudly instead of drawing
+plausible nonsense.
+
 ## Open questions
 
 - Whether the vendored `linux` binaries run under musl (Alpine) has not
