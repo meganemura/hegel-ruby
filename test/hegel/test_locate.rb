@@ -62,33 +62,133 @@ class TestLocate < Minitest::Test
     end
   end
 
-  def test_resolve_joins_a_directory_override_with_the_os_native_basename
+  def test_resolve_directory_override_finds_the_release_asset_name
+    # This is the name `rake libhegel:fetch` itself installs, e.g.
+    # tmp/libhegel/<version>/libhegel-darwin-arm64.dylib.
     Dir.mktmpdir do |dir|
+      asset = File.join(dir, "libhegel-darwin-arm64.dylib")
+      File.write(asset, "native bytes")
+
       path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "arm64", host_os: "darwin25")
-      assert_equal File.join(dir, "libhegel.dylib"), path
+      assert_equal asset, path
+    end
+  end
+
+  def test_resolve_directory_override_finds_the_cargo_output_name
+    # hegel-c/Cargo.toml declares `[lib] name = "hegel_c"`; the hegel-cpp
+    # README points HEGEL_LIBHEGEL_LIBRARY at a path ending in this name.
+    Dir.mktmpdir do |dir|
+      asset = File.join(dir, "libhegel_c.dylib")
+      File.write(asset, "native bytes")
+
+      path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "arm64", host_os: "darwin25")
+      assert_equal asset, path
+    end
+  end
+
+  def test_resolve_directory_override_finds_the_renamed_copy
+    # The hegel-go and hegel-ocaml READMEs describe placing a copy under
+    # this basename.
+    Dir.mktmpdir do |dir|
+      asset = File.join(dir, "libhegel.dylib")
+      File.write(asset, "native bytes")
+
+      path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "arm64", host_os: "darwin25")
+      assert_equal asset, path
+    end
+  end
+
+  def test_resolve_directory_override_prefers_the_release_asset_name
+    Dir.mktmpdir do |dir|
+      release_asset = File.join(dir, "libhegel-darwin-arm64.dylib")
+      File.write(release_asset, "native bytes")
+      File.write(File.join(dir, "libhegel_c.dylib"), "native bytes")
+      File.write(File.join(dir, "libhegel.dylib"), "native bytes")
+
+      path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "arm64", host_os: "darwin25")
+      assert_equal release_asset, path
+    end
+  end
+
+  def test_resolve_directory_override_prefers_the_cargo_output_name_over_the_renamed_copy
+    Dir.mktmpdir do |dir|
+      cargo_output = File.join(dir, "libhegel_c.dylib")
+      File.write(cargo_output, "native bytes")
+      File.write(File.join(dir, "libhegel.dylib"), "native bytes")
+
+      path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "arm64", host_os: "darwin25")
+      assert_equal cargo_output, path
+    end
+  end
+
+  def test_resolve_directory_override_skips_the_release_asset_name_when_the_host_is_unsupported
+    # x86_64-darwin has no published release asset, but a directory override
+    # is how such a host points at a self-built library, so the other two
+    # candidates must still work.
+    Dir.mktmpdir do |dir|
+      cargo_output = File.join(dir, "libhegel_c.dylib")
+      File.write(cargo_output, "native bytes")
+
+      path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "x86_64", host_os: "darwin25")
+      assert_equal cargo_output, path
+    end
+  end
+
+  def test_resolve_directory_override_finds_the_renamed_copy_when_the_host_is_unsupported
+    Dir.mktmpdir do |dir|
+      renamed_copy = File.join(dir, "libhegel.dylib")
+      File.write(renamed_copy, "native bytes")
+
+      path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "x86_64", host_os: "darwin25")
+      assert_equal renamed_copy, path
     end
   end
 
   def test_resolve_directory_override_uses_dll_on_windows
     Dir.mktmpdir do |dir|
+      asset = File.join(dir, "libhegel.dll")
+      File.write(asset, "native bytes")
+
       path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "x86_64", host_os: "mingw-ucrt")
-      assert_equal File.join(dir, "libhegel.dll"), path
+      assert_equal asset, path
     end
   end
 
   def test_resolve_directory_override_uses_so_elsewhere
     Dir.mktmpdir do |dir|
+      asset = File.join(dir, "libhegel.so")
+      File.write(asset, "native bytes")
+
       path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "x86_64", host_os: "linux-gnu")
-      assert_equal File.join(dir, "libhegel.so"), path
+      assert_equal asset, path
     end
   end
 
-  def test_resolve_directory_override_works_even_on_an_unsupported_host
-    # x86_64-darwin has no published asset, but an explicit override must
-    # not require host support: it names an OS-native build directly.
+  def test_resolve_directory_override_raises_when_none_of_the_three_names_are_present
     Dir.mktmpdir do |dir|
-      path = Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "x86_64", host_os: "darwin25")
-      assert_equal File.join(dir, "libhegel.dylib"), path
+      error = assert_raises(Hegel::Error) do
+        Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "arm64", host_os: "darwin25")
+      end
+
+      assert_includes error.message, dir
+      assert_includes error.message, "libhegel-darwin-arm64.dylib"
+      assert_includes error.message, "libhegel_c.dylib"
+      assert_includes error.message, "libhegel.dylib"
+    end
+  end
+
+  def test_resolve_directory_override_raises_without_the_release_asset_name_when_the_host_is_unsupported
+    # The candidate list omits the release asset name entirely for an
+    # unsupported host, so the error message must not mention it either.
+    Dir.mktmpdir do |dir|
+      error = assert_raises(Hegel::Error) do
+        Hegel::Locate.resolve(env: {"HEGEL_LIBHEGEL_PATH" => dir}, host_cpu: "x86_64", host_os: "darwin25")
+      end
+
+      assert_includes error.message, dir
+      assert_includes error.message, "libhegel_c.dylib"
+      assert_includes error.message, "libhegel.dylib"
+      refute_includes error.message, "libhegel-darwin-arm64.dylib"
     end
   end
 

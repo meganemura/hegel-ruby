@@ -13,12 +13,16 @@ module Hegel
 
     def self.resolve: (?env: untyped, ?host_cpu: String, ?host_os: String, ?gem_dir: String, ?finder: ^(String, String) -> String?) -> String
     def self.asset_name: (host_cpu: String, host_os: String) -> String
-    def self.from_env: (untyped, String) -> String?
+    def self.from_env: (untyped, String, String) -> String?
+    def self.find_override: (String, String, String) -> String
+    def self.override_candidate_names: (String, String) -> Array[String]
+    def self.release_asset_name: (String, String) -> String?
     def self.host_id: (String, String) -> String
     def self.normalize_os: (String) -> String
     def self.normalize_cpu: (String, String) -> String
     def self.ext_of_os: (String) -> String
     def self.unsupported_host_message: (String, String) -> String
     def self.missing_bundle_message: (String, String) -> String
+    def self.missing_override_message: (String, Array[String]) -> String
   end
 end

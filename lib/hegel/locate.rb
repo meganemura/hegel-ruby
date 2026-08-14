@@ -9,9 +9,11 @@ module Hegel
   # Resolution order:
   #
   # 1. +HEGEL_LIBHEGEL_PATH+ — an explicit override, given as a file path or
-  #    a directory that contains the library. This is checked first because
-  #    hegel-go, hegel-typescript, hegel-java, and hegel-ocaml all give this
-  #    same variable name priority over their own fallback.
+  #    a directory that contains the library under one of the three
+  #    basenames it is known to ship under (see find_override). This is
+  #    checked first because hegel-go, hegel-typescript, hegel-java, and
+  #    hegel-ocaml all give this same variable name priority over their own
+  #    fallback.
   # 2. The copy bundled into the gem under +lib/hegel/libhegel/+.
   #
   # A sibling `../hegel-rust` checkout is deliberately not searched. The env
@@ -62,7 +64,7 @@ module Hegel
     # but no bundled library is found for it.
     def resolve(env: ENV, host_cpu: RbConfig::CONFIG["host_cpu"], host_os: RbConfig::CONFIG["host_os"],
       gem_dir: GEM_LIBHEGEL_DIR, finder: DEFAULT_FINDER)
-      overridden = from_env(env, host_os)
+      overridden = from_env(env, host_cpu, host_os)
       return overridden unless overridden.nil?
 
       # Host support is checked before any filesystem lookup, so an
@@ -76,19 +78,56 @@ module Hegel
     # The release asset name for the given host, or raises Hegel::Error if
     # hegel-rust does not publish a build for it.
     def asset_name(host_cpu:, host_os:)
-      ASSET_NAMES.fetch(host_id(host_cpu, host_os)) do
-        raise Hegel::Error, unsupported_host_message(host_cpu, host_os)
-      end
+      release_asset_name(host_cpu, host_os) || raise(Hegel::Error, unsupported_host_message(host_cpu, host_os))
     end
 
     # Step 1: the explicit override, or nil if unset or empty. An empty
     # value is treated as unset (not as "use the current directory"), so
     # exporting the variable empty in CI does not silently break resolution.
-    def from_env(env, host_os)
+    def from_env(env, host_cpu, host_os)
       value = env[LIBRARY_PATH_ENV]
       return nil if value.nil? || value.empty?
 
-      File.directory?(value) ? File.join(value, "libhegel.#{ext_of_os(host_os)}") : value
+      File.directory?(value) ? find_override(value, host_cpu, host_os) : value
+    end
+
+    # Searches +dir+ for the first of the three basenames a directory
+    # override may hold, in priority order, or raises Hegel::Error naming
+    # both the directory and every basename that was tried.
+    #
+    # 1. This host's release asset name (e.g. libhegel-darwin-arm64.dylib),
+    #    the name `rake libhegel:fetch` itself installs, so it is the most
+    #    likely match. Skipped, not raised, when the host is unsupported: a
+    #    directory override is how an unsupported host (e.g. x86_64-darwin)
+    #    points at a local build in the first place, so treating it as an
+    #    error here would close off that path.
+    # 2. libhegel_c.<ext>, the name cargo gives the library when hegel-c's
+    #    crate (`[lib] name = "hegel_c"`) is built without renaming it.
+    # 3. libhegel.<ext>, a renamed copy, per the hegel-go and hegel-ocaml
+    #    READMEs.
+    def find_override(dir, host_cpu, host_os)
+      names = override_candidate_names(host_cpu, host_os)
+      names.each do |name|
+        path = File.join(dir, name)
+        return path if File.file?(path)
+      end
+      raise Hegel::Error, missing_override_message(dir, names)
+    end
+
+    # The basenames find_override tries, in priority order. release_asset_name
+    # is omitted (not just skipped later) when the host is unsupported, so an
+    # unsupported host never appears in the candidate list or its error message.
+    def override_candidate_names(host_cpu, host_os)
+      ext = ext_of_os(host_os)
+      [release_asset_name(host_cpu, host_os), "libhegel_c.#{ext}", "libhegel.#{ext}"].compact
+    end
+
+    # The release asset name for the given host, or nil if hegel-rust does
+    # not publish a build for it. Split from asset_name (which raises) so a
+    # directory override can treat an unsupported host as "skip this
+    # candidate" instead of an error.
+    def release_asset_name(host_cpu, host_os)
+      ASSET_NAMES[host_id(host_cpu, host_os)]
     end
 
     # "<host_cpu>-<host_os>", normalized to the form ASSET_NAMES keys on.
@@ -140,6 +179,10 @@ module Hegel
     def missing_bundle_message(asset, gem_dir)
       "libhegel not found: expected #{asset} under #{gem_dir}. " \
         "Set #{LIBRARY_PATH_ENV} to a local libhegel build, or run `rake libhegel:fetch`."
+    end
+
+    def missing_override_message(dir, names)
+      "libhegel not found under #{dir} (from #{LIBRARY_PATH_ENV}). Looked for: #{names.join(", ")}."
     end
   end
 end
