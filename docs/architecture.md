@@ -12,8 +12,13 @@ task), the libhegel binding (`Hegel::LibHegel`, with a real implementation
 over Fiddle and a fake for tests), the settings mapping, `Hegel::TestCase`
 with the engine's integer and boolean draws, and the run loop.
 
-What does not exist yet: the failure report that names drawn values, the
-generator library and the `tc.draw(generator)` it goes with, and the
+What exists beyond that: the failure report, which names drawn values by
+reading the caller's own source, and prints a blob that
+`Hegel.test(reproduce_failure:)` replays. The generator layer covers
+`booleans`, `integers`, `floats`, `text`, and `arrays`, composing through
+`map` and `filter`, reachable bare through `Hegel::Syntax::Methods`.
+
+What does not exist yet: the rest of the generator library, and the
 example database, targeted testing, and stateful testing. Each section
 below says so wherever a boundary is planned rather than built.
 

@@ -31,13 +31,13 @@ same process. There is no server and no Python dependency.
 
 ## Status
 
-**Nothing is released and nothing works yet.** This repository holds a gem
-skeleton and the design decisions listed below. The version stays at `0.0.0`
-until the first release.
+**Nothing is released yet, and the version stays at `0.0.0` until it is.** The
+walking skeleton runs: Hegel finds a counterexample, shrinks it, names the
+values it drew, and re-raises your own exception.
 
 Work runs in three stages:
 
-1. **The walking skeleton** — the libhegel binding, the run loop, failure
+1. **The walking skeleton** — done. The libhegel binding, the run loop, failure
    reports, and the `booleans`, `integers`, `floats`, `text`, and `arrays`
    generators.
 2. **The full generator set** — the remaining generators and combinators.
@@ -45,6 +45,9 @@ Work runs in three stages:
    testing, phases, and health checks.
 
 The first release to RubyGems.org comes after stage 3.
+
+Building this repository needs the engine on hand. `rake libhegel:fetch`
+downloads the pinned build and checks it against its published SHA-256.
 
 ## Design
 
@@ -67,9 +70,9 @@ stays free for whoever publishes an official Ruby implementation.
 macOS on Intel has no published `libhegel` artifact, so that platform will need
 `HEGEL_LIBHEGEL_PATH` and a local build.
 
-### The intended API
+## Quickstart
 
-This is the shape the library is being built toward. **None of it runs yet.**
+Everything below runs today.
 
 ```ruby
 # spec/spec_helper.rb
@@ -82,6 +85,8 @@ end
 
 ```ruby
 # spec/my_sort_spec.rb
+def my_sort(ls) = ls.sort.uniq # oops: uniq drops duplicates
+
 RSpec.describe "my_sort" do
   it "matches the builtin sort" do
     Hegel.test do |tc|
@@ -92,9 +97,28 @@ RSpec.describe "my_sort" do
 end
 ```
 
+That test fails, and Hegel shrinks the failure to the smallest input that
+still shows the bug:
+
+```
+Falsified after 11 test cases (0 discarded):
+
+  xs = [0, 0]
+
+To reproduce this failure, pass the blob below to Hegel.test:
+    reproduce_failure: "AXicY2VgYGBkZOBiZEBhMAAAAd8AIQ=="
+```
+
+Two duplicates are all it takes. Hegel names the value `xs` by reading the
+line the draw was written on, then re-raises RSpec's own expectation failure,
+so the framework reports it as its own.
+
 Including `Hegel::Syntax::Methods` makes the generators available without a
 prefix, the way FactoryBot makes `create` available. The same generators stay
 reachable as `Hegel::Generators.arrays(...)` without the include.
+
+Today's generators are `booleans`, `integers`, `floats`, `text`, and `arrays`,
+and each one composes through `map` and `filter`.
 
 ## Development
 
