@@ -55,9 +55,10 @@ class TestRunner < Minitest::Test
     assert_operator falsified_after.to_i, :<=, 100
   end
 
-  # Same shrink target as above, without label:, exercising the "draw"
-  # fallback (see Hegel::TestCase#name_for).
-  def test_report_names_an_unlabelled_draw_generically
+  # Same shrink target as above, without label:, exercising Hegel::DrawName
+  # recovering the local variable a draw was assigned to from the caller's
+  # own source (see docs/adr/0005 and Hegel::TestCase#name_for).
+  def test_report_names_an_unlabelled_draw_from_the_variable_it_was_assigned_to
     output = StringIO.new
 
     assert_raises(RuntimeError) do
@@ -67,7 +68,86 @@ class TestRunner < Minitest::Test
       end
     end
 
-    assert_includes output.string, "draw = 501"
+    assert_includes output.string, "n = 501"
+  end
+
+  # An enclosing assignment covers the draw's line too, and a reader still
+  # has no doubt which name belongs to the draw, so the innermost one wins
+  # (see Hegel::DrawName.for). This shape is not contrived: `error =
+  # assert_raises do ... end` here, and RSpec's `expect { ... }` assigned to
+  # a variable, both put a whole test body inside one assignment.
+  def test_report_names_a_draw_wrapped_in_an_enclosing_assignment
+    output = StringIO.new
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        n = tc.draw_integer(0, 1_000_000)
+        raise "too big: #{n}" if n > 500
+      end
+    end
+
+    assert_includes error.message, "501"
+    assert_includes output.string, "n = 501"
+  end
+
+  # The "draw" fallback itself (see Hegel::TestCase#name_for): a draw whose
+  # result is never assigned to anything has no name Hegel::DrawName could
+  # recover, label: or otherwise.
+  def test_report_falls_back_to_a_generic_name_when_a_draw_is_not_assigned
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        tc.draw_integer(0, 1_000_000)
+        raise "boom"
+      end
+    end
+
+    assert_match(/draw = \d+/, output.string)
+  end
+
+  # label: must win even when Hegel::DrawName could recover a different
+  # name from the same line -- the decided order (see Hegel::TestCase#name_for).
+  def test_label_wins_over_the_recovered_variable_name
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        value = tc.draw_integer(0, 1_000_000, label: "n")
+        raise "too big: #{value}" if value > 500
+      end
+    end
+
+    report = output.string
+    assert_includes report, "n = 501"
+    refute_includes report, "value ="
+  end
+
+  # Two unlabelled draws assigned on the same line: Hegel::DrawName.for
+  # finds two assignment nodes covering that line and refuses to guess
+  # which draw either name belongs to, so both fall back to "draw" the same
+  # way an unassigned draw does (see test_report_suffixes_two_draws_that_
+  # share_the_same_fallback_name below for that other cause of the same
+  # fallback).
+  def test_two_draws_assigned_on_the_same_line_both_fall_back_to_a_generic_name
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        # standard:disable Style/Semicolon -- both draws must share this one
+        # line, not two, for Hegel::DrawName.for to see two assignment nodes
+        # covering the same lineno.
+        a = tc.draw_integer(0, 10); b = tc.draw_integer(0, 10)
+        # standard:enable Style/Semicolon
+        raise "boom" if a >= 0 && b >= 0
+      end
+    end
+
+    report = output.string
+    assert_match(/draw_1 = \d+/, report)
+    assert_match(/draw_2 = \d+/, report)
+    refute_includes report, "a ="
+    refute_includes report, "b ="
   end
 
   # Two unlabelled draws in the one failing case both fall back to "draw";
@@ -88,6 +168,49 @@ class TestRunner < Minitest::Test
     report = output.string
     assert_match(/draw_1 = \d+/, report)
     assert_match(/draw_2 = \d+/, report)
+  end
+
+  # InstanceVariableWriteNode is the other assignment shape Hegel::DrawName
+  # recovers a name from; #name already includes the leading "@".
+  def test_report_names_an_instance_variable_draw
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        @n = tc.draw_integer(0, 1_000_000)
+        raise "too big: #{@n}" if @n > 500
+      end
+    end
+
+    assert_includes output.string, "@n = 501"
+  end
+
+  # A method chain still names the draw after its own assignment target,
+  # not the chain's final result: the recorded value is the drawn integer
+  # itself (see Hegel::TestCase#record_draw), not xs.to_s's String.
+  def test_report_names_a_draw_behind_a_method_chain
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        xs = tc.draw_integer(0, 1_000_000).to_s
+        raise "too big: #{xs}" if xs.to_i > 500
+      end
+    end
+
+    assert_includes output.string, "xs = 501"
+  end
+
+  # #name_for's own caller_locations call returns nil when the stack is
+  # shallower than DRAW_CALLER_DEPTH -- a case no real draw_* call site
+  # produces (see Hegel::TestCase#name_for), reached directly here the same
+  # way test_origin_for_falls_back_to_the_unknown_constant_without_a_
+  # backtrace_location below exercises Runner.origin_for's own defensive
+  # branch directly.
+  def test_name_for_falls_back_to_the_generic_name_when_the_stack_is_too_shallow
+    tc = Hegel::TestCase.new(nil, nil, nil, record: true)
+
+    assert_equal Hegel::TestCase::DEFAULT_DRAW_NAME, tc.send(:name_for, nil, 1_000_000)
   end
 
   # verbosity: :quiet must silence the failure report itself (hegel-rust

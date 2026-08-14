@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "draw_name"
+
 module Hegel
   # Wraps one libhegel test-case handle. This is the A3 slice of the engine's
   # draw surface: hegel_generate_integer and hegel_generate_boolean directly,
@@ -12,6 +14,17 @@ module Hegel
   class TestCase
     # #name_for's fallback when a draw has no better name (see below).
     DEFAULT_DRAW_NAME = "draw"
+
+    # Frames from #name_for's own caller_locations call up to the user's
+    # own source line: #record_draw's call to #name_for (1), the public
+    # draw_* method's call to #record_draw (2), and the user's own call to
+    # that draw_* method (3). Named here, and passed into #name_for as an
+    # argument, rather than folded into the caller_locations call inside
+    # #name_for, because the planned Generator layer (tc.draw(generator))
+    # adds one more frame between a public draw_* method and the user's own
+    # call site, and that change should only have to update this one
+    # number, not re-derive where caller_locations is called from.
+    DRAW_CALLER_DEPTH = 3
 
     # +impl+ and +ctx+ are carried alongside +handle+ so each draw call can
     # reach the same LibHegel implementation and context the run loop opened,
@@ -60,16 +73,22 @@ module Hegel
     def record_draw(label, value)
       return unless @record
 
-      @draws << [name_for(label), value]
+      @draws << [name_for(label, DRAW_CALLER_DEPTH), value]
     end
 
     # The single place a draw's name is decided, tried in this order: the
-    # caller's own label:, then a generic fallback. A later task adds a
-    # step here, between the two: recovering the name from the caller's own
-    # source with Prism (see docs/adr/0005). Keeping the order in one method
-    # means that task only has to add one line, not find every call site.
-    def name_for(label)
-      label || DEFAULT_DRAW_NAME
+    # caller's own label:, the name Hegel::DrawName recovers from the
+    # caller's own source (see docs/adr/0005), then a generic fallback.
+    # +depth+ is how many caller_locations frames separate this call from
+    # the user's own source line (see DRAW_CALLER_DEPTH); +location+ is nil
+    # only when the stack is shallower than +depth+, which no real draw_*
+    # call site produces -- defensive, not a path this binding's own calls
+    # reach.
+    def name_for(label, depth)
+      return label if label
+
+      location = caller_locations(depth, 1)&.first
+      (location && DrawName.for(location.path, location.lineno)) || DEFAULT_DRAW_NAME
     end
   end
 end
