@@ -9,4 +9,10 @@ load File.expand_path("lib/tasks/libhegel.rake", __dir__)
 
 require "standard/rake"
 
-task default: %i[test standard]
+desc "Run the test suite with coverage measurement enforced at 100%"
+task :coverage do
+  ENV["COVERAGE"] = "1"
+  Rake::Task["test"].invoke
+end
+
+task default: %i[coverage standard]

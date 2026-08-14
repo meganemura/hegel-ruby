@@ -17,6 +17,10 @@ check:
 test:
     bundle exec rake test
 
+# run the tests with coverage measurement enforced at 100%
+coverage:
+    bundle exec rake coverage
+
 # run the linter
 lint:
     bundle exec rake standard

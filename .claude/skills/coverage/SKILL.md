@@ -5,8 +5,8 @@ description: "How to approach code coverage in this project. Use when the covera
 
 # Code Coverage
 
-This project requires 100% line coverage. An excluded line needs a written
-reason and explicit human permission.
+This project requires 100% line coverage and 100% branch coverage. An excluded
+line needs a written reason and explicit human permission.
 
 ## Why the bar sits at 100%
 
@@ -70,5 +70,11 @@ Work through these in order.
 
 ## Running the check
 
-Coverage tooling is not wired up yet. Until it is, `bundle exec rake` runs the
-tests and the linter, and new code arrives with tests that cover it.
+`bundle exec rake coverage` runs the test suite with `COVERAGE=1` set, then
+enforces the 100% line and branch minimum. `bundle exec rake` (the default
+task) runs `coverage` and `standard` together, the same as CI.
+
+Coverage stays off by default so a single test file can still run on its own
+(`bundle exec ruby -Itest -Ilib test/hegel/test_locate.rb`, for example)
+without tripping the 100% minimum on a partial run. `bundle exec rake test`
+runs the suite this way, with no coverage measurement, for a fast local loop.
