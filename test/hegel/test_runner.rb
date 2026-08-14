@@ -3,6 +3,7 @@
 require "test_helper"
 require "hegel/runner"
 require "support/fake_lib_hegel"
+require "stringio"
 
 class TestRunner < Minitest::Test
   # A run that leaves ./.hegel behind means the mandatory database-disable
@@ -30,16 +31,189 @@ class TestRunner < Minitest::Test
   # Shrinking is real-engine behaviour; Hegel::LibHegel::Fake has no
   # generator or shrinker behind it. n > 500 out of [0, 1_000_000] must
   # shrink to the minimal counterexample, 501, matching the example in the
-  # class-level documentation this task's public API follows.
-  def test_hegel_test_shrinks_to_the_minimal_counterexample
+  # class-level documentation this task's public API follows. The captured
+  # report must name that same 501 under its label:, and its "Falsified
+  # after" count must be the generation phase's own count (bounded by the
+  # default 100 test_cases), not the ~1000-iteration shrink phase #drive's
+  # own comment measured for a similarly sized run.
+  def test_hegel_test_shrinks_to_the_minimal_counterexample_and_reports_it
+    output = StringIO.new
+
     error = assert_raises(RuntimeError) do
-      Hegel.test(verbosity: :quiet) do |tc|
-        n = tc.draw_integer(0, 1_000_000)
+      Hegel.test(output: output) do |tc|
+        n = tc.draw_integer(0, 1_000_000, label: "n")
         raise "too big: #{n}" if n > 500
       end
     end
 
     assert_includes error.message, "501"
+
+    report = output.string
+    assert_includes report, "n = 501"
+    falsified_after = report[/Falsified after (\d+) test cases/, 1]
+    refute_nil falsified_after
+    assert_operator falsified_after.to_i, :<=, 100
+  end
+
+  # Same shrink target as above, without label:, exercising the "draw"
+  # fallback (see Hegel::TestCase#name_for).
+  def test_report_names_an_unlabelled_draw_generically
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        n = tc.draw_integer(0, 1_000_000)
+        raise "too big: #{n}" if n > 500
+      end
+    end
+
+    assert_includes output.string, "draw = 501"
+  end
+
+  # Two unlabelled draws in the one failing case both fall back to "draw";
+  # Hegel::Report.assign_names must suffix both, not just report "draw"
+  # twice. The body raises unconditionally, so the first generated case is
+  # already the failure and both draws always happen.
+  def test_report_suffixes_two_draws_that_share_the_same_fallback_name
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        tc.draw_integer(0, 10)
+        tc.draw_integer(0, 10)
+        raise "boom"
+      end
+    end
+
+    report = output.string
+    assert_match(/draw_1 = \d+/, report)
+    assert_match(/draw_2 = \d+/, report)
+  end
+
+  # verbosity: :quiet must silence the failure report itself (hegel-rust
+  # does the same), not just libhegel's own progress output.
+  def test_quiet_verbosity_suppresses_the_report
+    fake = failing_fake_replaying_the_same_body
+    output = StringIO.new
+
+    assert_raises(ZeroDivisionError) do
+      Hegel.test(impl: fake, verbosity: :quiet, output: output) { |_tc| raise ZeroDivisionError, "divided by zero" }
+    end
+
+    assert_empty output.string
+  end
+
+  # M ("discarded") must count only the Hegel::AssumeFailed cases seen
+  # before the origin that ends up reported first went INTERESTING, not
+  # every case #drive ever sees.
+  def test_report_discarded_count_matches_the_assume_failed_calls_before_the_failure
+    fake = failing_fake_replaying_the_same_body
+    fake.test_case_count = 3
+    calls = 0
+    body = lambda do |_tc|
+      calls += 1
+      raise Hegel::AssumeFailed if calls <= 2
+      raise "boom"
+    end
+    output = StringIO.new
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output, &body) }
+
+    assert_includes output.string, "Falsified after 3 test cases (2 discarded):"
+  end
+
+  # Two origins, both discovered live by #drive (so Hegel::Runner::
+  # GenerationStats has a snapshot for each before #replay asks), get
+  # hegel-rust's own distinct-failures heading.
+  def test_report_shows_a_heading_when_there_are_multiple_distinct_failures
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 2
+    fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
+    fake.failure_count = 2
+    fake.failure_origins = ["unused-a", "unused-b"]
+    fake.failure_blobs = ["blob-a", "blob-b"]
+    calls = 0
+    body = lambda do |_tc|
+      calls += 1
+      if calls.odd?
+        raise "boom-a"
+      else
+        raise "boom-b"
+      end
+    end
+    output = StringIO.new
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output, &body) }
+
+    text = output.string
+    assert_includes text, "Property-based test failed with 2 distinct failures."
+    assert_includes text, "Falsified after 1 test case (0 discarded):"
+    assert_includes text, "Falsified after 2 test cases (0 discarded):"
+  end
+
+  # The end-to-end proof this report is honest: a blob it printed, fed back
+  # unchanged, must replay the very failure it came from against the real
+  # engine.
+  def test_reproduce_failure_replays_the_printed_blob_against_the_real_engine
+    output = StringIO.new
+    body = lambda do |tc|
+      n = tc.draw_integer(0, 1_000_000, label: "n")
+      raise "too big: #{n}" if n > 500
+    end
+
+    first_error = assert_raises(RuntimeError) { Hegel.test(output: output, &body) }
+
+    blob = output.string[/reproduce_failure: "(.+)"/, 1]
+    refute_nil blob
+
+    reproduce_output = StringIO.new
+    second_error = assert_raises(RuntimeError) do
+      Hegel.test(reproduce_failure: blob, output: reproduce_output, &body)
+    end
+
+    assert_equal first_error.message, second_error.message
+    assert_includes reproduce_output.string, "n = 501"
+  end
+
+  # verbosity: :quiet must silence #reproduce's own report the same way it
+  # silences #replay's (see test_quiet_verbosity_suppresses_the_report).
+  def test_reproduce_failure_respects_quiet_verbosity
+    fake = Hegel::LibHegel::Fake.new
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, reproduce_failure: "blob", verbosity: :quiet, output: output) { |_tc| raise "boom" }
+    end
+
+    assert_empty output.string
+  end
+
+  # hegel_test_case_from_blob itself documents HEGEL_E_STOP_TEST for "a
+  # blob whose choices no longer match the caller's generators" -- staleness
+  # caught at construction, before any draw call runs. Hegel::Runner.reproduce
+  # must not let that leak as Hegel::StopTest.
+  def test_reproduce_failure_with_a_stale_blob_raises_hegel_error_at_construction
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_from_blob_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(impl: fake, reproduce_failure: "stale-blob") { |_tc| }
+    end
+
+    refute_kind_of Hegel::StopTest, error
+  end
+
+  # The other manifestation of the same staleness: construction succeeds,
+  # but a draw call against the mismatched blob raises Hegel::StopTest (the
+  # same code #classify already turns into OVERRUN for the live loop).
+  def test_reproduce_failure_with_a_stale_blob_raises_hegel_error_at_draw_time
+    fake = Hegel::LibHegel::Fake.new
+
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(impl: fake, reproduce_failure: "stale-blob") { |_tc| raise Hegel::StopTest, "stale blob" }
+    end
+
+    refute_kind_of Hegel::StopTest, error
   end
 
   def test_hegel_test_passes_when_assume_failed_cases_are_mixed_in
@@ -55,7 +229,7 @@ class TestRunner < Minitest::Test
     fake = failing_fake_replaying_the_same_body
 
     error = assert_raises(ZeroDivisionError) do
-      Hegel.test(impl: fake) { |_tc| raise ZeroDivisionError, "divided by zero" }
+      Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise ZeroDivisionError, "divided by zero" }
     end
 
     assert_equal "divided by zero", error.message

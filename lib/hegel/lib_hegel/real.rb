@@ -362,9 +362,14 @@ module Hegel
       # #run_start. +blob+ marshals as a pointer to its bytes for the const
       # char* argument, same as #settings_set_database. Raises
       # HEGEL_E_INVALID_ARG (via LibHegel.check!) for a blob that is
-      # corrupt, non-UTF-8, or from an incompatible Hegel version;
-      # HEGEL_E_STOP_TEST if the blob's choices no longer match the
-      # caller's generators.
+      # corrupt, non-UTF-8, or from an incompatible Hegel version.
+      #
+      # A blob whose choices no longer match the caller's generators is a
+      # different case, and the header places it elsewhere: it "returns
+      # HEGEL_E_STOP_TEST from the draw that overruns", so the replay is
+      # built here and fails later, inside the body. Measured against
+      # 0.32.5, replaying a two-draw blob against a five-draw body builds
+      # fine and overruns at a draw.
       def test_case_from_blob(ctx, settings, blob)
         out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
         code = @test_case_from_blob_fn.call(ctx, settings, blob, nil, nil, out)

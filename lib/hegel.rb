@@ -17,24 +17,35 @@ module Hegel
 
   # Runs +block+ as a Hegel property, drawing test cases from the +tc+ it
   # yields (see Hegel::TestCase). Returns nil on a passing run. On a failing
-  # run, re-raises the exception the smallest failing case's body raised,
-  # class and backtrace intact, so a host test framework reports it as its
-  # own assertion failure rather than as a Hegel-specific one. Raises
+  # run, writes a failure report to +output+ (see Hegel::Report) and then
+  # re-raises the exception the smallest failing case's body raised, class
+  # and backtrace intact, so a host test framework reports it as its own
+  # assertion failure rather than as a Hegel-specific one. Raises
   # Hegel::Error for a run-level failure instead of a property failure.
   #
   # +test_cases+, +seed+, +derandomize+, and +verbosity+ all default to nil,
   # which means the same thing for each of them: do not call the matching
   # libhegel setter, and let the engine's own default apply instead. See
   # Hegel::Settings for the keyword-to-setter mapping and the verbosity
-  # Symbols it accepts.
+  # Symbols it accepts. +verbosity: :quiet+ also silences the failure report
+  # itself, not just libhegel's own progress output.
+  #
+  # +output+ (default $stderr) is where a failure report is written; a
+  # caller passes its own IO to capture that report instead (tests do).
+  #
+  # +reproduce_failure+, when given, replays the single case that blob
+  # (printed at the end of an earlier failure report) encodes, instead of
+  # starting a run: +test_cases+ and the other run-shaping keywords above
+  # have nothing to bound in that case. See Hegel::Runner.reproduce.
   #
   # +impl+ exists for tests: it lets Hegel::LibHegel::Fake stand in for the
   # real engine. Ordinary callers never pass it. Its default expression
   # (#default_impl) only runs when +impl+ is not given, so a test that does
   # pass one never opens the native library at all.
-  def test(test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, impl: default_impl, &block)
+  def test(test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, output: $stderr, reproduce_failure: nil,
+    impl: default_impl, &block)
     Runner.run(impl: impl, test_cases: test_cases, seed: seed, derandomize: derandomize, verbosity: verbosity,
-      &block)
+      output: output, reproduce_failure: reproduce_failure, &block)
   end
 
   # The Hegel::LibHegel::Real instance #test uses by default, built once and

@@ -11,13 +11,30 @@ module Hegel
   class AssumeFailed < Exception
   end
 
-  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?impl: untyped) { (TestCase) -> void } -> nil
+  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
   class TestCase
-    def initialize: (untyped impl, untyped ctx, untyped handle) -> void
-    def draw_integer: (Integer min_value, Integer max_value) -> Integer
-    def draw_boolean: (?Float p) -> bool
+    DEFAULT_DRAW_NAME: String
+
+    def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool) -> void
+    def draws: () -> Array[[String, untyped]]?
+    def draw_integer: (Integer min_value, Integer max_value, ?label: String?) -> Integer
+    def draw_boolean: (?Float p, ?label: String?) -> bool
+  end
+
+  module Report
+    class Failure
+      def initialize: (test_cases: Integer, discarded: Integer, draws: Array[[String, untyped]], blob: String) -> void
+      def test_cases: () -> Integer
+      def discarded: () -> Integer
+      def draws: () -> Array[[String, untyped]]
+      def blob: () -> String
+    end
+
+    def self.assign_names: (Array[[String, untyped]] draws) -> Array[[String, untyped]]
+    def self.render_failure: (Failure failure) -> String
+    def self.render: (Array[Failure] failures) -> String
   end
 
   module Settings
@@ -32,13 +49,21 @@ module Hegel
     UNKNOWN_ORIGIN: String
     UNKNOWN_RUN_ERROR_MESSAGE: String
 
-    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?) { (TestCase) -> void } -> nil
-    def self.drive: (untyped impl, untyped ctx, untyped run) { (TestCase) -> void } -> void
-    def self.run_case: (untyped impl, untyped ctx, untyped tc) { (TestCase) -> void } -> void
-    def self.finish: (untyped impl, untyped ctx, untyped settings, untyped result) { (TestCase) -> void } -> nil
-    def self.replay: (untyped impl, untyped ctx, untyped settings, untyped result) { (TestCase) -> void } -> bot
-    def self.replay_failure: (untyped impl, untyped ctx, untyped settings, untyped failure, Integer index) { (TestCase) -> void } -> Exception?
-    def self.classify: (untyped impl, untyped ctx, untyped tc) { (TestCase) -> void } -> [Integer, String?, Exception?]
+    class GenerationStats
+      def initialize: () -> void
+      def record: (Integer status, String? origin) -> void
+      def for: (String? origin) -> [Integer, Integer]
+    end
+
+    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
+    def self.run_and_finish: (untyped impl, untyped ctx, untyped settings, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
+    def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats) { (TestCase) -> void } -> void
+    def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats) { (TestCase) -> void } -> void
+    def self.finish: (untyped impl, untyped ctx, untyped settings, untyped result, GenerationStats stats, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
+    def self.replay: (untyped impl, untyped ctx, untyped settings, untyped result, GenerationStats stats, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
+    def self.replay_failure: (untyped impl, untyped ctx, untyped settings, untyped failure, Integer index, GenerationStats stats) { (TestCase) -> void } -> [Exception, Report::Failure]
+    def self.reproduce: (untyped impl, untyped ctx, untyped settings, String blob, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
+    def self.classify: (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[String, untyped]]?]
     def self.origin_for: (Exception exception) -> String
     def self.flaky_message: () -> String
   end
