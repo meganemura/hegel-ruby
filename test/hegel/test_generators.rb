@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "support/conformance"
 require "stringio"
 
 class TestGenerators < Minitest::Test
   include Hegel::Syntax::Methods
+  include Hegel::Conformance
 
   # A run that leaves ./.hegel behind means the mandatory database-disable
   # step regressed (see TestRunner#teardown); every real-engine test in
@@ -17,23 +19,14 @@ class TestGenerators < Minitest::Test
   # ---- booleans ----
 
   def test_booleans_draws_against_the_real_engine
-    result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
-      v = tc.draw(booleans)
-      raise "not a boolean: #{v.inspect}" unless [true, false].include?(v)
-    end
-
-    assert_nil result
+    assert_all_examples(booleans) { |v| [true, false].include?(v) }
   end
 
   # p = 1.0 always yields true without consuming entropy (hegel.h's own
   # documented contract for hegel_generate_boolean), so this is exact, not
   # probabilistic.
   def test_booleans_p_forces_the_probability_of_true
-    result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
-      raise "drew false" unless tc.draw(booleans(p: 1.0)) == true
-    end
-
-    assert_nil result
+    assert_all_examples(booleans(p: 1.0)) { |v| v == true }
   end
 
   def test_booleans_p_out_of_range_raises_at_draw_time
@@ -47,28 +40,15 @@ class TestGenerators < Minitest::Test
   # ---- integers ----
 
   def test_integers_draws_against_the_real_engine
-    result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
-      v = tc.draw(integers)
-      raise "not an integer: #{v.inspect}" unless v.is_a?(Integer)
-    end
-
-    assert_nil result
+    assert_all_examples(integers) { |v| v.is_a?(Integer) }
   end
 
   def test_integers_min_value_bounds_the_draw
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(integers(min_value: 100)) < 100
-    end
-
-    assert_nil result
+    assert_all_examples(integers(min_value: 100)) { |v| v >= 100 }
   end
 
   def test_integers_max_value_bounds_the_draw
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(integers(max_value: 100)) > 100
-    end
-
-    assert_nil result
+    assert_all_examples(integers(max_value: 100)) { |v| v <= 100 }
   end
 
   def test_integers_min_value_greater_than_max_value_raises_at_draw_time
@@ -100,35 +80,26 @@ class TestGenerators < Minitest::Test
   # ---- floats ----
 
   def test_floats_draws_against_the_real_engine
-    result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
-      v = tc.draw(floats)
-      raise "not a float: #{v.inspect}" unless v.is_a?(Float)
-    end
-
-    assert_nil result
+    assert_all_examples(floats) { |v| v.is_a?(Float) }
   end
 
   def test_floats_min_value_bounds_the_draw
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(floats(min_value: 0.0)) < 0.0
-    end
-
-    assert_nil result
+    assert_all_examples(floats(min_value: 0.0)) { |v| v >= 0.0 }
   end
 
   def test_floats_max_value_bounds_the_draw
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(floats(max_value: 0.0)) > 0.0
-    end
-
-    assert_nil result
+    assert_all_examples(floats(max_value: 0.0)) { |v| v <= 0.0 }
   end
 
   # allow_nan: false (the default) rules NaN out entirely, so this proves
   # the option has an effect rather than merely not raising. No shrink
   # pressure is involved (the property never fails); test_cases: 200 gives
   # the generation phase enough draws to reliably hit NaN even though it is
-  # not forced the way p: 1.0 forces a boolean.
+  # not forced the way p: 1.0 forces a boolean. Neither helper fits: this
+  # is an existence check ("some draw is NaN"), which assert_all_examples
+  # (a universal check) cannot express, and find_any would add a shrink
+  # phase and its own 500-case budget, undermining the "no shrink
+  # pressure" and 200-case reasoning above.
   def test_floats_allow_nan_can_draw_nan
     found_nan = false
     Hegel.test(test_cases: 200, verbosity: :quiet) do |tc|
@@ -149,19 +120,11 @@ class TestGenerators < Minitest::Test
   end
 
   def test_floats_exclude_min_excludes_the_minimum
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(floats(min_value: 0.0, max_value: 1.0, exclude_min: true)) <= 0.0
-    end
-
-    assert_nil result
+    assert_all_examples(floats(min_value: 0.0, max_value: 1.0, exclude_min: true)) { |v| v > 0.0 }
   end
 
   def test_floats_exclude_max_excludes_the_maximum
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(floats(min_value: -1.0, max_value: 0.0, exclude_max: true)) >= 0.0
-    end
-
-    assert_nil result
+    assert_all_examples(floats(min_value: -1.0, max_value: 0.0, exclude_max: true)) { |v| v < 0.0 }
   end
 
   def test_floats_min_value_greater_than_max_value_raises_at_draw_time
@@ -175,52 +138,27 @@ class TestGenerators < Minitest::Test
   # ---- text ----
 
   def test_text_draws_against_the_real_engine
-    result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
-      v = tc.draw(text)
-      raise "not a string: #{v.inspect}" unless v.is_a?(String)
-    end
-
-    assert_nil result
+    assert_all_examples(text) { |v| v.is_a?(String) }
   end
 
   def test_text_min_size_bounds_the_draw
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(text(min_size: 5)).length < 5
-    end
-
-    assert_nil result
+    assert_all_examples(text(min_size: 5)) { |v| v.length >= 5 }
   end
 
   def test_text_max_size_bounds_the_draw
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(text(max_size: 3)).length > 3
-    end
-
-    assert_nil result
+    assert_all_examples(text(max_size: 3)) { |v| v.length <= 3 }
   end
 
   def test_text_codec_restricts_the_alphabet
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" unless tc.draw(text(codec: "ascii")).ascii_only?
-    end
-
-    assert_nil result
+    assert_all_examples(text(codec: "ascii")) { |v| v.ascii_only? }
   end
 
   def test_text_min_codepoint_bounds_the_alphabet
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(text(min_codepoint: 0x41)).codepoints.any? { |cp| cp < 0x41 }
-    end
-
-    assert_nil result
+    assert_all_examples(text(min_codepoint: 0x41)) { |v| v.codepoints.all? { |cp| cp >= 0x41 } }
   end
 
   def test_text_max_codepoint_bounds_the_alphabet
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(text(max_codepoint: 0x7A)).codepoints.any? { |cp| cp > 0x7A }
-    end
-
-    assert_nil result
+    assert_all_examples(text(max_codepoint: 0x7A)) { |v| v.codepoints.all? { |cp| cp <= 0x7A } }
   end
 
   def test_text_max_size_less_than_min_size_raises_at_draw_time
@@ -234,42 +172,24 @@ class TestGenerators < Minitest::Test
   # ---- arrays ----
 
   def test_arrays_draws_against_the_real_engine
-    result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
-      v = tc.draw(arrays(integers))
-      raise "not an array: #{v.inspect}" unless v.is_a?(Array)
-    end
-
-    assert_nil result
+    assert_all_examples(arrays(integers)) { |v| v.is_a?(Array) }
   end
 
   def test_arrays_min_size_bounds_the_length
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(arrays(integers, min_size: 3)).length < 3
-    end
-
-    assert_nil result
+    assert_all_examples(arrays(integers, min_size: 3)) { |v| v.length >= 3 }
   end
 
   def test_arrays_max_size_bounds_the_length
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      raise "boom" if tc.draw(arrays(integers, max_size: 3)).length > 3
-    end
-
-    assert_nil result
+    assert_all_examples(arrays(integers, max_size: 3)) { |v| v.length <= 3 }
   end
 
   # arrays(integers): drawn against the real engine, an array's length
   # stays within its bound and every element is an Integer within its own
   # bound.
   def test_arrays_of_integers_have_bounded_length_and_in_range_elements
-    result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
-      v = tc.draw(arrays(integers(min_value: 0, max_value: 10), max_size: 5))
-      unless v.length <= 5 && v.all? { |x| x.is_a?(Integer) && x.between?(0, 10) }
-        raise "out of range: #{v.inspect}"
-      end
+    assert_all_examples(arrays(integers(min_value: 0, max_value: 10), max_size: 5)) do |v|
+      v.length <= 5 && v.all? { |x| x.is_a?(Integer) && x.between?(0, 10) }
     end
-
-    assert_nil result
   end
 
   # The canonical shrink-quality regression check for a compound generator
@@ -277,7 +197,10 @@ class TestGenerators < Minitest::Test
   # counterexample, two equal elements. This only shrinks to [0, 0] when
   # HEGEL_LABEL_LIST and HEGEL_LABEL_LIST_ELEMENT are placed correctly; a
   # missing or misplaced span still passes this test but shrinks to a
-  # larger, non-minimal counterexample instead.
+  # larger, non-minimal counterexample instead. Kept as a hand-rolled
+  # Hegel.test call, not assert_all_examples: it asserts on the rendered
+  # failure report's own output, which this module's helpers deliberately
+  # discard (see Hegel::Conformance::DISCARD).
   def test_arrays_composed_with_integers_shrinks_to_the_minimal_duplicate_pair
     output = StringIO.new
 
