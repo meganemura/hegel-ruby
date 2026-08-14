@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require_relative "lib/hegeltest/version"
+require_relative "lib/hegel/version"
 
 Gem::Specification.new do |spec|
   spec.name = "hegeltest"
-  spec.version = Hegeltest::VERSION
+  spec.version = Hegel::VERSION
   spec.authors = ["meganemura"]
   spec.email = ["meganemura@users.noreply.github.com"]
 
