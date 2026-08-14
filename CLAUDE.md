@@ -176,12 +176,9 @@ the standing constraints above.
 
 ### Adding a generator
 
-hegel-rust's `new-generator` skill lists the test set every generator needs: a
-sanity test, one test per option, a composition test inside the list generator,
-and one per validation. It also says not to add explicit edge-case tests. This
-repository has no equivalent skill yet, because such a skill earns its value by
-pointing at worked examples and none exist here so far. Write it once two or
-three generators have settled into a pattern.
+See the `new-generator` skill: the validation and span pattern distilled from
+`IntegerGenerator`, `ArrayGenerator`, and `TextGenerator`, plus the required
+test set for each new generator.
 
 ## Where the answers come from
 
