@@ -48,12 +48,19 @@ jobs:
           - os: windows-11-arm
             ruby: "3.3"
 
+    # Actions are pinned to the commit each release points at. A tag can be
+    # moved to another commit, so a tag reference says which version its owner
+    # is offering today rather than which code this workflow ran last time.
+    #
+    # A pinned setup-ruby also fixes the list of Ruby builds it can install,
+    # because that list ships inside the action. Bumping the pin is how this
+    # repository picks up a newly released Ruby patch version.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
