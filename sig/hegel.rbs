@@ -11,6 +11,38 @@ module Hegel
   class AssumeFailed < Exception
   end
 
+  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?impl: untyped) { (TestCase) -> void } -> nil
+  def self.default_impl: () -> untyped
+
+  class TestCase
+    def initialize: (untyped impl, untyped ctx, untyped handle) -> void
+    def draw_integer: (Integer min_value, Integer max_value) -> Integer
+    def draw_boolean: (?Float p) -> bool
+  end
+
+  module Settings
+    VERBOSITY_CODES: Hash[Symbol, Integer]
+
+    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?) -> void
+    def self.apply_verbosity: (untyped impl, untyped ctx, untyped settings, Symbol verbosity) -> void
+  end
+
+  module Runner
+    FATAL_EXCEPTIONS: Array[singleton(Exception)]
+    UNKNOWN_ORIGIN: String
+    UNKNOWN_RUN_ERROR_MESSAGE: String
+
+    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?) { (TestCase) -> void } -> nil
+    def self.drive: (untyped impl, untyped ctx, untyped run) { (TestCase) -> void } -> void
+    def self.run_case: (untyped impl, untyped ctx, untyped tc) { (TestCase) -> void } -> void
+    def self.finish: (untyped impl, untyped ctx, untyped settings, untyped result) { (TestCase) -> void } -> nil
+    def self.replay: (untyped impl, untyped ctx, untyped settings, untyped result) { (TestCase) -> void } -> bot
+    def self.replay_failure: (untyped impl, untyped ctx, untyped settings, untyped failure, Integer index) { (TestCase) -> void } -> Exception?
+    def self.classify: (untyped impl, untyped ctx, untyped tc) { (TestCase) -> void } -> [Integer, String?, Exception?]
+    def self.origin_for: (Exception exception) -> String
+    def self.flaky_message: () -> String
+  end
+
   module Locate
     LIBRARY_PATH_ENV: String
     ASSET_NAMES: Hash[String, String]

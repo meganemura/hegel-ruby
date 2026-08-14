@@ -2,12 +2,20 @@
 
 ## Status
 
-Most of what follows is design intent, not existing code. What exists
-today is the library-resolution layer: `Hegel::Locate`, the pinned
+`Hegel.test` runs. It drives a property to a verdict, shrinks a failure to
+its minimal counterexample, and re-raises that case's own exception with
+its class intact.
+
+What exists: library resolution (`Hegel::Locate`, the pinned
 `Hegel::LIBHEGEL_VERSION`, and the development-only `libhegel:fetch` Rake
-task that downloads the pinned engine and verifies its SHA-256. `lib/hegel.rb`
-itself defines the `Hegel` module and `Hegel::Error`. Each section below
-says so wherever a boundary is planned but not yet built.
+task), the libhegel binding (`Hegel::LibHegel`, with a real implementation
+over Fiddle and a fake for tests), the settings mapping, `Hegel::TestCase`
+with the engine's integer and boolean draws, and the run loop.
+
+What does not exist yet: the failure report that names drawn values, the
+generator library and the `tc.draw(generator)` it goes with, and the
+example database, targeted testing, and stateful testing. Each section
+below says so wherever a boundary is planned rather than built.
 
 ## Where meaning comes from
 

@@ -67,13 +67,22 @@ module Hegel
       # HEGEL_OK result, distinct from an error via #run_start_code=.
       attr_writer :run_start_returns_nil
 
-      attr_reader :freed_contexts, :marked_statuses, :marked_origins
+      attr_reader :freed_contexts, :freed_test_cases, :marked_statuses, :marked_origins
+
+      # The value passed to each settings setter, one array per keyword, so
+      # a test can confirm Hegel::Settings.apply calls the setter its table
+      # names with the value it was given (and that a nil keyword calls no
+      # setter at all). #settings_seed_calls holds [seed, has_seed] pairs,
+      # matching hegel_settings_set_seed's two value arguments.
+      attr_reader :settings_test_cases_calls, :settings_verbosity_calls, :settings_seed_calls,
+        :settings_derandomize_calls, :settings_database_calls
 
       def initialize
         @version = Hegel::LIBHEGEL_VERSION
         @version_code = HEGEL_OK
         @last_error = "fake error"
         @freed_contexts = []
+        @freed_test_cases = []
 
         @settings_new_code = HEGEL_OK
         @settings_set_test_cases_code = HEGEL_OK
@@ -81,6 +90,11 @@ module Hegel
         @settings_set_seed_code = HEGEL_OK
         @settings_set_derandomize_code = HEGEL_OK
         @settings_set_database_code = HEGEL_OK
+        @settings_test_cases_calls = []
+        @settings_verbosity_calls = []
+        @settings_seed_calls = []
+        @settings_derandomize_calls = []
+        @settings_database_calls = []
 
         @run_start_code = HEGEL_OK
         @run_start_returns_nil = false
@@ -144,27 +158,32 @@ module Hegel
         nil
       end
 
-      def settings_set_test_cases(ctx, _s, _n)
+      def settings_set_test_cases(ctx, _s, n)
+        @settings_test_cases_calls << n
         LibHegel.check!(self, ctx, @settings_set_test_cases_code)
         nil
       end
 
-      def settings_set_verbosity(ctx, _s, _v)
+      def settings_set_verbosity(ctx, _s, v)
+        @settings_verbosity_calls << v
         LibHegel.check!(self, ctx, @settings_set_verbosity_code)
         nil
       end
 
-      def settings_set_seed(ctx, _s, _seed, _has_seed)
+      def settings_set_seed(ctx, _s, seed, has_seed)
+        @settings_seed_calls << [seed, has_seed]
         LibHegel.check!(self, ctx, @settings_set_seed_code)
         nil
       end
 
-      def settings_set_derandomize(ctx, _s, _derandomize)
+      def settings_set_derandomize(ctx, _s, derandomize)
+        @settings_derandomize_calls << derandomize
         LibHegel.check!(self, ctx, @settings_set_derandomize_code)
         nil
       end
 
-      def settings_set_database(ctx, _s, _database)
+      def settings_set_database(ctx, _s, database)
+        @settings_database_calls << database
         LibHegel.check!(self, ctx, @settings_set_database_code)
         nil
       end
@@ -192,7 +211,11 @@ module Hegel
         nil
       end
 
-      def test_case_free(_ctx, _tc)
+      # Records +tc+ (readable via #freed_test_cases), so a test can confirm
+      # the caller freed a handle even along a path (a fatal exception) that
+      # skips #mark_complete.
+      def test_case_free(_ctx, tc)
+        @freed_test_cases << tc
         nil
       end
 

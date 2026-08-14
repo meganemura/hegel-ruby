@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "rbconfig"
-require_relative "../hegel"
+require_relative "errors"
 
 module Hegel
   # Resolves the path to the native libhegel shared library.

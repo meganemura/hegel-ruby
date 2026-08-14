@@ -1,6 +1,18 @@
 # frozen_string_literal: true
 
 module Hegel
+  # Raised for errors this library detects: a libhegel call that fails, a
+  # generator built with arguments the engine rejects, a missing native
+  # library. Control flow inside a running test case does not use this class;
+  # the control exceptions below descend from Exception instead, so that a
+  # `rescue => e` in a test body cannot swallow them.
+  #
+  # It lives here rather than in hegel.rb so that a file needing only the
+  # exception vocabulary can require this one file. Reaching it through
+  # hegel.rb would make every such file depend on the whole library, and
+  # hegel.rb requires the library back, which is a load-order cycle.
+  class Error < StandardError; end
+
   # standard:disable Lint/InheritException
 
   # Raised for HEGEL_E_STOP_TEST (-1): libhegel has exhausted its choice
