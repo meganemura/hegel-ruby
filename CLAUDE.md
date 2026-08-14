@@ -94,6 +94,28 @@ directly, so the run loop must catch `Exception` and re-raise the library's
 control exceptions before doing anything else. `Hegel::Error`, which reports
 ordinary failures to the caller, stays a `StandardError`.
 
+**`rescue Exception` must let four classes straight through.** `Interrupt`,
+`SignalException`, `SystemExit`, and `NoMemoryError` say that the process is
+ending, not that a property failed. Catching one turns Ctrl-C into a
+counterexample, and the engine then spends its shrink budget minimising an
+interrupt. Re-raise them first, ahead of the library's own control exceptions.
+No sibling implementation shows this, because Rust's `catch_unwind` sees
+panics alone; it is a Ruby-only hazard.
+
+**A finished test case reports one of four outcomes.** `hegel_mark_complete`
+takes VALID when the body returned, INVALID when a precondition rejected the
+case, OVERRUN when the engine ran out of choices, and INTERESTING when the
+body raised anything else. There is no separate "the test itself broke"
+outcome: every non-control exception is a counterexample. A run-level error —
+a failed health check, a nondeterministic body — is the engine's own verdict,
+read from `hegel_run_result_status` afterwards.
+
+**An origin string groups failures, so it must be stable.** `mark_complete`
+takes one alongside INTERESTING. The ABI documentation is explicit: "Two
+failures with identical origins are the same bug and get shrunk together. Each
+new origin is a new bug." Build it from where the exception was raised, the
+way hegel-rust builds one from a panic's location.
+
 **Free native handles deterministically.** Every `hegel_*_free` function takes
 the context, so the context must outlive every handle allocated from it.
 Finalizer ordering cannot guarantee that. Release handles in an `ensure` block
@@ -115,6 +137,14 @@ the same thing in Ruby as it does everywhere else.
 **Validation messages are public API.** hegel-rust says so directly: "These
 messages are part of the public API: tests assert against them. Pick a stable,
 descriptive substring." Treat a change to one as a change to the interface.
+
+**Every run disables the example database explicitly, until the database is a
+feature this library supports.** `hegel_settings_new` defaults it to
+`./.hegel/examples/` and creates that directory on use. The engine turns it off
+by itself under CI, so a run that leaves the default in place would write into
+a contributor's working copy and nowhere else, which is the hardest version of
+this to notice. Pass an empty string to `hegel_settings_set_database` to
+disable it. Milestone C decides what the supported behaviour is.
 
 **The engine is single-threaded.** A context, a run, and a test case each
 belong to one thread at a time.
