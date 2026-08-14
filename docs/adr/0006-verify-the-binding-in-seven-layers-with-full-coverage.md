@@ -36,9 +36,10 @@ Verify the binding in seven layers:
 6. Failure reports: Prism naming, blob replay, output format.
 7. Integration, running the Minitest and RSpec suites end to end.
 
-Enforce 100% line and branch coverage in CI, the same bar the Java
-implementation's jacoco configuration sets. An excluded file carries a
-comment stating why.
+Enforce 100% line and branch coverage in CI. Ruby's coverage tooling
+counts lines where jacoco counts instructions, so the line counter is
+this project's nearest equivalent to the instruction bar quoted above.
+An excluded file carries a comment stating why.
 
 ## Consequences
 
