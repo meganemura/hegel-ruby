@@ -1,10 +1,16 @@
 # frozen_string_literal: true
 
-require_relative "lib/hegel/version"
-
 Gem::Specification.new do |spec|
   spec.name = "hegeltest"
-  spec.version = Hegel::VERSION
+
+  # Read the version rather than requiring the file that defines it. Bundler
+  # evaluates this gemspec while it sets up the load path, so a
+  # `require_relative` here would run library code before anything a test
+  # process starts -- including coverage measurement, which would then report
+  # an already-loaded file as never executed. A mismatch fails the build
+  # loudly, because a nil version is not a version.
+  spec.version = File.read(File.expand_path("lib/hegel/version.rb", __dir__))
+    .slice(/VERSION\s*=\s*"([^"]+)"/, 1)
   spec.authors = ["meganemura"]
   spec.email = ["meganemura@users.noreply.github.com"]
 
