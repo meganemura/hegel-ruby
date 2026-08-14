@@ -128,6 +128,15 @@ module Hegel
       @impl.collection_more(@ctx, @handle, collection)
     end
 
+    # hegel_collection_reject: tells libhegel the element most recently
+    # drawn under +collection+ is invalid (a duplicate key or value, for
+    # Hegel::Generators::SetGenerator/HashGenerator), so the next
+    # #collection_more call offers another attempt at the same slot instead
+    # of treating the collection as one element closer to done.
+    def collection_reject(collection, why: nil)
+      @impl.collection_reject(@ctx, @handle, collection, why)
+    end
+
     # hegel_collection_free.
     def collection_free(collection)
       @impl.collection_free(@ctx, collection)

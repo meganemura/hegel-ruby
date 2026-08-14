@@ -30,6 +30,7 @@ module Hegel
     def stop_span: (?discard: bool) -> untyped
     def new_collection: (Integer min_size, Integer max_size) -> untyped
     def collection_more: (untyped collection) -> bool
+    def collection_reject: (untyped collection, ?why: String?) -> untyped
     def collection_free: (untyped collection) -> untyped
     def with_string_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
     def generate_string: (untyped generator) -> String
@@ -89,6 +90,51 @@ module Hegel
       def draw_element: (untyped tc) -> untyped
     end
 
+    class JustGenerator < Generator
+      def initialize: (untyped value) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+
+    class SampledFromGenerator < Generator
+      def initialize: (untyped collection) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+
+    class OneOfGenerator < Generator
+      def initialize: (Array[Generator] generators) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+
+    class OptionalGenerator < Generator
+      def initialize: (Generator generator) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+
+    class TupleGenerator < Generator
+      def initialize: (Array[Generator] generators) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+    end
+
+    class SetGenerator < Generator
+      def initialize: (Generator elements, min_size: Integer, max_size: Integer?) -> void
+      def do_draw: (untyped tc) -> Set[untyped]
+
+      private
+
+      def draw_elements: (untyped tc, Integer max_size) -> Set[untyped]
+      def draw_element: (untyped tc) -> untyped
+    end
+
+    class HashGenerator < Generator
+      def initialize: (Generator keys, Generator values, min_size: Integer, max_size: Integer?) -> void
+      def do_draw: (untyped tc) -> Hash[untyped, untyped]
+
+      private
+
+      def draw_entries: (untyped tc, Integer max_size) -> Hash[untyped, untyped]
+      def draw_entry: (untyped tc) -> [untyped, untyped]
+    end
+
     extend Syntax::Methods
   end
 
@@ -99,6 +145,13 @@ module Hegel
       def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool, ?allow_infinity: bool, ?exclude_min: bool, ?exclude_max: bool) -> Generators::FloatGenerator
       def text: (?min_size: Integer, ?max_size: Integer?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::TextGenerator
       def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::ArrayGenerator
+      def just: (untyped value) -> Generators::JustGenerator
+      def sampled_from: (untyped collection) -> Generators::SampledFromGenerator
+      def one_of: (*Generator generators) -> Generators::OneOfGenerator
+      def optional: (Generator generator) -> Generators::OptionalGenerator
+      def tuples: (*Generator generators) -> Generators::TupleGenerator
+      def sets: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::SetGenerator
+      def hashes: (Generator keys, Generator values, ?min_size: Integer, ?max_size: Integer?) -> Generators::HashGenerator
     end
   end
 

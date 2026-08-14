@@ -41,6 +41,22 @@ to `lib/hegel/generators.rb`, four pieces:
    misplaced span does not fail a test outright; it shrinks to a
    larger-than-minimal counterexample instead (see Test 3 below).
 
+   **The `HEGEL_LABEL_*` table decides whether you need one span or two**,
+   not `ArrayGenerator`'s shape. A container with elements has a pair
+   (`LIST`/`LIST_ELEMENT`, `SET`/`SET_ELEMENT`, `MAP`/`MAP_ENTRY`);
+   `SampledFromGenerator`, `OneOfGenerator`, `OptionalGenerator`, and
+   `TupleGenerator` each open exactly one span around the whole draw.
+
+**A collection that keeps rejecting is already bounded; do not bound it
+again.** `SetGenerator` and `HashGenerator` call
+`TestCase#collection_reject` when a drawn element duplicates one they
+already hold. Measured against 0.32.5: a single collection tolerates a few
+consecutive rejects and then raises `HEGEL_E_ASSUME`, which the run loop
+records as a discarded case; a run that keeps discarding trips libhegel's
+own FilterTooMuch health check and surfaces as `Hegel::Error`, usually
+within a handful of cases and inside a few milliseconds. Neither a retry
+loop nor a timeout belongs inside a generator.
+
 **Native handles are freed in `ensure`, never cached on the generator
 instance.** See the comment above `TextGenerator#do_draw`: the handle is
 scoped to one `TestCase`, and the same generator object can be drawn again
@@ -67,6 +83,11 @@ inside `do_draw`, never `tc.draw`.
   `Hegel::LibHegel::METHODS` (`lib/hegel/lib_hegel.rb`), and let
   `test_real_and_fake_respond_to_every_libhegel_method`
   (`test/hegel/test_lib_hegel.rb`) confirm both implement it.
+- **Bound is not the same as callable.** A call an earlier batch bound can
+  still have no `Hegel::TestCase` wrapper, which is what a `do_draw` calls.
+  `collection_reject` was bound for a whole milestone before
+  `SetGenerator` needed it and found no wrapper there. Check `test_case.rb`
+  before assuming.
 
 ## Required tests
 
@@ -92,7 +113,19 @@ suite's shape:
    Model the shape on hegel-rust's
    `tests/test_strings.rs:test_text_codepoint_range`.
 
-Do not add explicit edge-case tests beyond the five above.
+Do not add explicit edge-case tests beyond the five above. Two of them go
+vacuous or fragile in specific shapes, and a vacuous test is worse than no
+test because it reads as coverage:
+
+- **A test that the result holds no duplicates proves nothing when the
+  result is a `Set` or a `Hash`'s keys** — the type forbids them however
+  the generator behaves. Assert reachability instead: draw from a narrow
+  but feasible domain with `min_size == max_size` and assert the result
+  reaches that size. Deleting the reject branch then fails the test.
+- **Do not assert on a report's rendered text when the drawn value's own
+  `#inspect` varies across the supported Rubies.** `Set[0]` on Ruby 4.0 is
+  `#<Set: {0}>` on 3.3 and 3.4, and CI runs all three. Assert on a message
+  the test itself built.
 
 ## Final checklist
 

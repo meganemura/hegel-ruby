@@ -47,6 +47,43 @@ module Hegel
       def arrays(elements, min_size: 0, max_size: nil)
         Generators::ArrayGenerator.new(elements, min_size: min_size, max_size: max_size)
       end
+
+      # Always +value+, drawing nothing.
+      def just(value)
+        Generators::JustGenerator.new(value)
+      end
+
+      # One element of +collection+, picked at random.
+      def sampled_from(collection)
+        Generators::SampledFromGenerator.new(collection)
+      end
+
+      # A value drawn from one of +generators+, picked at random.
+      def one_of(*generators)
+        Generators::OneOfGenerator.new(generators)
+      end
+
+      # A value drawn from +generator+ half the time, nil the other half.
+      def optional(generator)
+        Generators::OptionalGenerator.new(generator)
+      end
+
+      # An Array holding one value drawn from each of +generators+, in
+      # order (Ruby has no tuple type; see docs/adr/0004).
+      def tuples(*generators)
+        Generators::TupleGenerator.new(generators)
+      end
+
+      # A Set of values from +elements+, with [min_size, max_size] entries.
+      def sets(elements, min_size: 0, max_size: nil)
+        Generators::SetGenerator.new(elements, min_size: min_size, max_size: max_size)
+      end
+
+      # A Hash whose keys are drawn from +keys+ and values from +values+,
+      # with [min_size, max_size] entries.
+      def hashes(keys, values, min_size: 0, max_size: nil)
+        Generators::HashGenerator.new(keys, values, min_size: min_size, max_size: max_size)
+      end
     end
   end
 

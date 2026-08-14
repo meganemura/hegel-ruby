@@ -179,5 +179,220 @@ module Hegel
         tc.stop_span(discard: false)
       end
     end
+
+    # Hegel::Syntax::Methods#just. Always returns +value+, drawing nothing:
+    # there is no choice for libhegel to make, so this opens no span (a
+    # span exists to let the shrinker retry or isolate a draw, and there is
+    # nothing here to retry or isolate).
+    class JustGenerator < Generator
+      def initialize(value)
+        super()
+        @value = value
+      end
+
+      def do_draw(_tc)
+        @value
+      end
+    end
+
+    # Hegel::Syntax::Methods#sampled_from. One element of +collection+,
+    # picked by drawing an index in [0, collection.size - 1].
+    class SampledFromGenerator < Generator
+      def initialize(collection)
+        super()
+        @collection = collection
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "sampled_from: collection must not be empty" if @collection.empty?
+
+        tc.start_span(LibHegel::HEGEL_LABEL_SAMPLED_FROM)
+        begin
+          index = tc.generate_integer(0, @collection.size - 1)
+          @collection.to_a[index]
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#one_of. Draws from one of +generators+, picked
+    # by drawing an index in [0, generators.size - 1].
+    class OneOfGenerator < Generator
+      def initialize(generators)
+        super()
+        @generators = generators
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "one_of: at least one generator is required" if @generators.empty?
+
+        tc.start_span(LibHegel::HEGEL_LABEL_ONE_OF)
+        begin
+          index = tc.generate_integer(0, @generators.size - 1)
+          @generators[index].do_draw(tc)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#optional. Draws from +generator+ with
+    # probability 0.5, nil otherwise. Does not expose a p: keyword: this
+    # milestone leaves generate_boolean at its own default probability.
+    class OptionalGenerator < Generator
+      def initialize(generator)
+        super()
+        @generator = generator
+      end
+
+      def do_draw(tc)
+        tc.start_span(LibHegel::HEGEL_LABEL_OPTIONAL)
+        begin
+          tc.generate_boolean ? @generator.do_draw(tc) : nil
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#tuples. Draws each of +generators+ in order
+    # into an Array (Ruby has no tuple type; see docs/adr/0004). The label
+    # table assigns tuples a single span around the whole draw, unlike
+    # arrays/sets/hashes: each position is a distinct generator already,
+    # not repeated draws of one, so there is no per-element span to open.
+    class TupleGenerator < Generator
+      def initialize(generators)
+        super()
+        @generators = generators
+      end
+
+      def do_draw(tc)
+        tc.start_span(LibHegel::HEGEL_LABEL_TUPLE)
+        begin
+          @generators.map { |generator| generator.do_draw(tc) }
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#sets. A Set of values from +elements+, with
+    # [min_size, max_size] entries, unbounded above by default.
+    class SetGenerator < Generator
+      def initialize(elements, min_size:, max_size:)
+        super()
+        @elements = elements
+        @min_size = min_size
+        @max_size = max_size
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "sets: min_size must not be negative" if @min_size.negative?
+
+        max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+        raise Hegel::Error, "sets: max_size < min_size" if max_size < @min_size
+
+        tc.start_span(LibHegel::HEGEL_LABEL_SET)
+        begin
+          draw_elements(tc, max_size)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      private
+
+      # Set, unlike Array, cannot hold a duplicate: every #collection_more
+      # loop iteration that draws a value already in +result+ calls
+      # #collection_reject instead of adding it, so libhegel offers the
+      # same slot another attempt rather than counting a discarded
+      # duplicate toward min_size (see Hegel::TestCase#collection_reject).
+      def draw_elements(tc, max_size)
+        collection = tc.new_collection(@min_size, max_size)
+        begin
+          result = Set.new
+          while tc.collection_more(collection)
+            value = draw_element(tc)
+            if result.include?(value)
+              tc.collection_reject(collection)
+            else
+              result << value
+            end
+          end
+          result
+        ensure
+          tc.collection_free(collection)
+        end
+      end
+
+      def draw_element(tc)
+        tc.start_span(LibHegel::HEGEL_LABEL_SET_ELEMENT)
+        @elements.do_draw(tc)
+      ensure
+        tc.stop_span(discard: false)
+      end
+    end
+
+    # Hegel::Syntax::Methods#hashes. A Hash from +keys+ drawing each key and
+    # +values+ each value, with [min_size, max_size] entries, unbounded
+    # above by default. Uniqueness is judged on the key alone, matching
+    # Ruby's own Hash: a later draw with a key already present replaces
+    # nothing, so it is rejected the same way SetGenerator rejects a
+    # duplicate element.
+    class HashGenerator < Generator
+      def initialize(keys, values, min_size:, max_size:)
+        super()
+        @keys = keys
+        @values = values
+        @min_size = min_size
+        @max_size = max_size
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "hashes: min_size must not be negative" if @min_size.negative?
+
+        max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+        raise Hegel::Error, "hashes: max_size < min_size" if max_size < @min_size
+
+        tc.start_span(LibHegel::HEGEL_LABEL_MAP)
+        begin
+          draw_entries(tc, max_size)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      private
+
+      def draw_entries(tc, max_size)
+        collection = tc.new_collection(@min_size, max_size)
+        begin
+          result = {}
+          while tc.collection_more(collection)
+            key, value = draw_entry(tc)
+            if result.key?(key)
+              tc.collection_reject(collection)
+            else
+              result[key] = value
+            end
+          end
+          result
+        ensure
+          tc.collection_free(collection)
+        end
+      end
+
+      # Draws the key and its value as one unit inside a single
+      # HEGEL_LABEL_MAP_ENTRY span (the label table gives hashes one span
+      # per entry, not one per key and a second per value), so the
+      # shrinker can retry the whole pair together.
+      def draw_entry(tc)
+        tc.start_span(LibHegel::HEGEL_LABEL_MAP_ENTRY)
+        [@keys.do_draw(tc), @values.do_draw(tc)]
+      ensure
+        tc.stop_span(discard: false)
+      end
+    end
   end
 end
