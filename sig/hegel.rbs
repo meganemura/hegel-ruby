@@ -125,11 +125,45 @@ module Hegel
     HEGEL_VERBOSITY_NORMAL: Integer
     HEGEL_VERBOSITY_VERBOSE: Integer
     HEGEL_VERBOSITY_DEBUG: Integer
+    HEGEL_LABEL_LIST: Integer
+    HEGEL_LABEL_LIST_ELEMENT: Integer
+    HEGEL_LABEL_SET: Integer
+    HEGEL_LABEL_SET_ELEMENT: Integer
+    HEGEL_LABEL_MAP: Integer
+    HEGEL_LABEL_MAP_ENTRY: Integer
+    HEGEL_LABEL_TUPLE: Integer
+    HEGEL_LABEL_ONE_OF: Integer
+    HEGEL_LABEL_OPTIONAL: Integer
+    HEGEL_LABEL_FIXED_DICT: Integer
+    HEGEL_LABEL_FLAT_MAP: Integer
+    HEGEL_LABEL_FILTER: Integer
+    HEGEL_LABEL_MAPPED: Integer
+    HEGEL_LABEL_SAMPLED_FROM: Integer
+    HEGEL_LABEL_ENUM_VARIANT: Integer
+    HEGEL_LABEL_FEATURE_FLAG: Integer
+    HEGEL_LABEL_REGEX: Integer
+    HEGEL_LABEL_EMAIL: Integer
+    HEGEL_LABEL_URL: Integer
+    HEGEL_LABEL_DOMAIN: Integer
+    HEGEL_LABEL_DATE: Integer
+    HEGEL_LABEL_TIME: Integer
+    HEGEL_LABEL_DATETIME: Integer
+    HEGEL_LABEL_UUID: Integer
+    HEGEL_LABEL_IP_ADDRESS: Integer
+    HEGEL_LABEL_INTEGER: Integer
+    HEGEL_LABEL_FLOAT: Integer
+    HEGEL_LABEL_BOOLEAN: Integer
+    HEGEL_LABEL_BYTES: Integer
+    HEGEL_LABEL_STRING: Integer
+    HEGEL_LABEL_STATEFUL_RULE: Integer
+    HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED: Integer
+    HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED: Float
     METHODS: Array[Symbol]
 
     def self.with_context: [R] (untyped impl) { (untyped) -> R } -> R
     def self.check!: (untyped impl, untyped ctx, Integer code) -> void
     def self.warn_on_version_mismatch: (untyped impl, untyped ctx, ?io: untyped) -> void
+    def self.with_string_generator: [R] (untyped impl, untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
 
     class Real
       def initialize: (?String path, ?io: untyped) -> void
@@ -161,6 +195,17 @@ module Hegel
       def failure_origin: (untyped ctx, untyped f) -> String
       def failure_reproduction_blob: (untyped ctx, untyped f) -> String?
       def test_case_from_blob: (untyped ctx, untyped settings, String blob) -> untyped
+      def start_span: (untyped ctx, untyped tc, Integer label) -> nil
+      def stop_span: (untyped ctx, untyped tc, bool discard) -> nil
+      def new_collection: (untyped ctx, untyped tc, Integer min_size, Integer max_size) -> untyped
+      def collection_more: (untyped ctx, untyped tc, untyped collection) -> bool
+      def collection_reject: (untyped ctx, untyped tc, untyped collection, ?String? why) -> nil
+      def collection_free: (untyped ctx, untyped collection) -> nil
+      def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
+      def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) -> untyped
+      def string_generator_free: (untyped ctx, untyped generator) -> nil
+      def generate_string: (untyped ctx, untyped tc, untyped generator) -> String
+      def generate_string_result_free: (untyped ctx, untyped result) -> nil
     end
   end
 end

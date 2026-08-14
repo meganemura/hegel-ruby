@@ -130,6 +130,65 @@ module Hegel
           Fiddle::TYPE_INT
         )
 
+        @start_span_fn = bind(
+          "hegel_start_span",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T],
+          Fiddle::TYPE_INT
+        )
+        @stop_span_fn = bind(
+          "hegel_stop_span",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_BOOL],
+          Fiddle::TYPE_INT
+        )
+
+        @new_collection_fn = bind(
+          "hegel_new_collection",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @collection_more_fn = bind(
+          "hegel_collection_more",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @collection_reject_fn = bind(
+          "hegel_collection_reject",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @collection_free_fn = bind("hegel_collection_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+
+        @generate_float_fn = bind(
+          "hegel_generate_float",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT32_T, Fiddle::TYPE_DOUBLE, Fiddle::TYPE_DOUBLE,
+            Fiddle::TYPE_BOOL, Fiddle::TYPE_BOOL, Fiddle::TYPE_BOOL, Fiddle::TYPE_BOOL, Fiddle::TYPE_DOUBLE,
+            Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+
+        # hegel_string_generator_text takes 14 arguments past ctx; the
+        # last 8 (categories_len through exclude_characters_len) are the
+        # category and explicit-character filter parameters this task
+        # does not wire up (see #string_generator_text).
+        @string_generator_text_fn = bind(
+          "hegel_string_generator_text",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT32_T,
+            Fiddle::TYPE_UINT32_T, Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T,
+            Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @string_generator_free_fn = bind(
+          "hegel_string_generator_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+        @generate_string_fn = bind(
+          "hegel_generate_string",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @generate_string_result_free_fn = bind(
+          "hegel_generate_string_result_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+
         LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
       end
 
@@ -397,6 +456,139 @@ module Hegel
         code = @generate_integer_fn.call(ctx, tc, min_value, max_value, out)
         LibHegel.check!(self, ctx, code)
         out.to_str(Fiddle::SIZEOF_INT64_T).unpack1("q")
+      end
+
+      # Opens a span labelled +label+ (one of the HEGEL_LABEL_* constants,
+      # or a caller-defined value that avoids them). Must be paired with
+      # exactly one #stop_span call, per the header.
+      def start_span(ctx, tc, label)
+        code = @start_span_fn.call(ctx, tc, label)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Closes the most recently opened span. +discard+ true marks it
+      # rejected, so libhegel retries from before the span opened.
+      def stop_span(ctx, tc, discard)
+        code = @stop_span_fn.call(ctx, tc, discard)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Returns a caller-owned collection handle, released separately
+      # with #collection_free. Pass HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+      # as +max_size+ for no upper bound, per the header.
+      def new_collection(ctx, tc, min_size, max_size)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @new_collection_fn.call(ctx, tc, min_size, max_size, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # Returns whether libhegel wants another element; call in a loop,
+      # drawing the next element each time this is true, until it is
+      # false.
+      def collection_more(ctx, tc, collection)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_BOOL, Fiddle::RUBY_FREE)
+        code = @collection_more_fn.call(ctx, tc, collection, out)
+        LibHegel.check!(self, ctx, code)
+        out[0] != 0
+      end
+
+      # Tells libhegel the last element +collection+ produced is invalid.
+      # +why+ is an optional human-readable reason (nil marshals to NULL,
+      # which the header allows); the header documents it as validated
+      # but reserved for future rejection diagnostics, unused today.
+      def collection_reject(ctx, tc, collection, why = nil)
+        code = @collection_reject_fn.call(ctx, tc, collection, why)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # No-op when +collection+ is nil, matching hegel_collection_free's
+      # documented no-op-on-NULL contract; not translated, for the same
+      # reason as #context_free. Unlike every other *_free above, this
+      # call takes no test-case handle: the header documents a collection
+      # as independent of the test case and run it was created under.
+      def collection_free(ctx, collection)
+        @collection_free_fn.call(ctx, collection)
+        nil
+      end
+
+      # Returns a drawn double. +smallest_nonzero_magnitude+ must be
+      # positive and finite; pass
+      # HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED for width
+      # 64 with no restriction, per the header.
+      def generate_float(ctx, tc, width, min_value, max_value, allow_nan, allow_infinity, exclude_min, exclude_max,
+        smallest_nonzero_magnitude)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_DOUBLE, Fiddle::RUBY_FREE)
+        code = @generate_float_fn.call(ctx, tc, width, min_value, max_value, allow_nan, allow_infinity, exclude_min,
+          exclude_max, smallest_nonzero_magnitude, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(Fiddle::SIZEOF_DOUBLE).unpack1("D")
+      end
+
+      # Returns a caller-owned string generator handle, released
+      # separately with #string_generator_free (or scoped with
+      # LibHegel.with_string_generator). +categories+,
+      # +exclude_categories+, +include_characters+, and
+      # +exclude_characters+ are always passed as NULL/0 below: this call
+      # only wires up the codepoint-range constraints of the 14-argument
+      # bind; the category and explicit-character filter arguments are a
+      # later generator's scope, layered on top of this same bind.
+      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @string_generator_text_fn.call(
+          ctx, min_size, max_size, codec, min_codepoint, max_codepoint,
+          nil, 0, nil, 0, nil, 0, nil, 0,
+          out
+        )
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # No-op when +generator+ is nil, matching
+      # hegel_string_generator_free's documented no-op-on-NULL contract;
+      # not translated, for the same reason as #context_free.
+      def string_generator_free(ctx, generator)
+        @string_generator_free_fn.call(ctx, generator)
+        nil
+      end
+
+      # Returns a drawn String, force-encoded as UTF-8 (this codec's
+      # alphabet), copying exactly the returned +len+ bytes rather than
+      # treating the buffer as a C string: the header documents it as not
+      # NUL-terminated and possibly containing interior NUL bytes, since
+      # the drawn alphabet can include U+0000.
+      #
+      # The native buffer is released in +ensure+ via
+      # #generate_string_result_free, called directly from here rather
+      # than left to the caller: nothing outside this file may hold or
+      # read the raw struct (Fiddle is confined to this file), so unlike
+      # #new_collection or #string_generator_text, the freeable handle
+      # here never leaves this method. Freeing is safe even when the draw
+      # above raised: +out+ starts zero-filled (Fiddle::Pointer.malloc
+      # calloc's its memory) and libhegel only writes into it on success,
+      # so the struct #generate_string_result_free sees here is always
+      # either a completed draw or the all-zero state the header
+      # documents as already safe to free.
+      def generate_string(ctx, tc, generator)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP + Fiddle::SIZEOF_SIZE_T, Fiddle::RUBY_FREE)
+        code = @generate_string_fn.call(ctx, tc, generator, out)
+        LibHegel.check!(self, ctx, code)
+        len = out[Fiddle::SIZEOF_VOIDP, Fiddle::SIZEOF_SIZE_T].unpack1("J")
+        out.ptr.to_str(len).force_encoding(Encoding::UTF_8)
+      ensure
+        generate_string_result_free(ctx, out)
+      end
+
+      # No-op when +result+ is nil, matching
+      # hegel_generate_string_result_free's documented no-op-on-NULL
+      # contract (also safe on an already-freed, zeroed struct); not
+      # translated, for the same reason as #context_free.
+      def generate_string_result_free(ctx, result)
+        @generate_string_result_free_fn.call(ctx, result)
+        nil
       end
 
       private

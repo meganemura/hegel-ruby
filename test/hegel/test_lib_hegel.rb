@@ -430,6 +430,358 @@ class TestLibHegel < Minitest::Test
     assert_nil fake.failure_reproduction_blob(ctx, failure)
   end
 
+  def test_with_string_generator_yields_the_generator_and_frees_it_on_a_normal_return
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    yielded_generator = nil
+
+    result = Hegel::LibHegel.with_string_generator(fake, ctx, min_size: 0, max_size: 5) do |generator|
+      yielded_generator = generator
+      :block_result
+    end
+
+    assert_equal :block_result, result
+    assert_includes fake.freed_string_generators, yielded_generator
+  end
+
+  def test_with_string_generator_frees_the_generator_even_when_the_block_raises
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    raised_generator = nil
+
+    assert_raises(RuntimeError) do
+      Hegel::LibHegel.with_string_generator(fake, ctx, min_size: 0, max_size: 5) do |generator|
+        raised_generator = generator
+        raise "boom"
+      end
+    end
+
+    assert_includes fake.freed_string_generators, raised_generator
+  end
+
+  def test_real_collection_free_string_generator_free_and_generate_string_result_free_are_no_ops_on_nil
+    real = Hegel::LibHegel::Real.new
+    assert_nil real.collection_free(nil, nil)
+    assert_nil real.string_generator_free(nil, nil)
+    assert_nil real.generate_string_result_free(nil, nil)
+  end
+
+  # hegel_start_span / hegel_stop_span pair around a draw, per the header
+  # ("Pair with exactly one hegel_stop_span call"). Confirms a span can be
+  # opened, drawn inside, and closed without discarding it. The database
+  # is disabled ("") so the run leaves nothing on disk.
+  def test_real_start_span_and_stop_span_around_a_draw
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      assert_nil real.start_span(ctx, tc, Hegel::LibHegel::HEGEL_LABEL_TUPLE)
+      value = real.generate_integer(ctx, tc, 1, 10)
+      assert_includes(1..10, value)
+      assert_nil real.stop_span(ctx, tc, false)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # Drives hegel_collection_more in a loop, drawing one element per true,
+  # until it answers false, matching the header's documented usage. The
+  # drawn element count must land within [min_size, max_size]. The
+  # database is disabled ("") so the run leaves nothing on disk.
+  def test_real_collection_more_loop_stays_within_the_configured_size_bounds
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      collection = real.new_collection(ctx, tc, 2, 4)
+      count = 0
+      while real.collection_more(ctx, tc, collection)
+        real.generate_integer(ctx, tc, 1, 10)
+        count += 1
+      end
+      real.collection_free(ctx, collection)
+
+      assert_includes(2..4, count)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # hegel_collection_reject tells libhegel the last element drawn under a
+  # collection is invalid. Rejecting the only element of a min_size: 1,
+  # max_size: 1 collection means the collection is not yet satisfied, so
+  # #collection_more must answer true again for a second, accepted draw
+  # before it finally answers false. The database is disabled ("") so the
+  # run leaves nothing on disk.
+  def test_real_collection_reject_keeps_the_collection_unsatisfied
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      collection = real.new_collection(ctx, tc, 1, 1)
+
+      assert_equal true, real.collection_more(ctx, tc, collection)
+      real.generate_integer(ctx, tc, 1, 10)
+      assert_nil real.collection_reject(ctx, tc, collection, "rejected by test")
+
+      assert_equal true, real.collection_more(ctx, tc, collection)
+      real.generate_integer(ctx, tc, 1, 10)
+      assert_equal false, real.collection_more(ctx, tc, collection)
+
+      real.collection_free(ctx, collection)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # min_value == max_value always yields that value, the same documented
+  # boundary #test_real_generate_boolean_and_generate_integer_at_their_bounds
+  # exercises for hegel_generate_boolean / hegel_generate_integer. The
+  # database is disabled ("") so the run leaves nothing on disk.
+  def test_real_generate_float_at_a_degenerate_bound
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      value = real.generate_float(
+        ctx, tc, 64, 3.5, 3.5, false, false, false, false,
+        Hegel::LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+      )
+      assert_equal 3.5, value
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # allow_nan: false must never draw NaN, over enough draws to make a
+  # missed exclusion unlikely to go unnoticed. The database is disabled
+  # ("") so the run leaves nothing on disk.
+  def test_real_generate_float_never_draws_nan_when_allow_nan_is_false
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      100.times do
+        value = real.generate_float(
+          ctx, tc, 64, -Float::INFINITY, Float::INFINITY, false, true, false, false,
+          Hegel::LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+        )
+        refute value.nan?
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # Draws a text string within [min_size, max_size] and confirms the
+  # returned String reports UTF-8 encoding, per the header's "data points
+  # to len bytes of UTF-8". The database is disabled ("") so the run
+  # leaves nothing on disk.
+  def test_real_generate_string_returns_a_utf8_string_within_the_configured_size_bounds
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      generator = real.string_generator_text(ctx, min_size: 2, max_size: 5)
+      begin
+        value = real.generate_string(ctx, tc, generator)
+        assert_equal Encoding::UTF_8, value.encoding
+        assert value.valid_encoding?
+        assert_includes(2..5, value.length)
+      ensure
+        real.string_generator_free(ctx, generator)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # hegel_generate_string's result is documented as not NUL-terminated
+  # and possibly containing interior NUL bytes, since the drawn alphabet
+  # can include U+0000. Forcing min_codepoint: 0, max_codepoint: 0 draws
+  # from an alphabet of exactly U+0000, so a correct implementation reads
+  # every byte via len; reading with Fiddle::Pointer#to_s (no length,
+  # stopping at the first NUL) would instead return an empty string. The
+  # database is disabled ("") so the run leaves nothing on disk.
+  def test_real_generate_string_reads_the_full_length_including_interior_nul_bytes
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      generator = real.string_generator_text(ctx, min_size: 3, max_size: 3, min_codepoint: 0, max_codepoint: 0)
+      begin
+        value = real.generate_string(ctx, tc, generator)
+        assert_equal 3, value.bytesize
+        assert_equal "\u0000\u0000\u0000", value
+      ensure
+        real.string_generator_free(ctx, generator)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  def test_fake_collection_more_yields_true_the_configured_count_then_false
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.collection_more_count = 2
+
+    first = fake.collection_more(ctx, nil, nil)
+    second = fake.collection_more(ctx, nil, nil)
+    third = fake.collection_more(ctx, nil, nil)
+
+    assert_equal true, first
+    assert_equal true, second
+    assert_equal false, third
+  end
+
   def test_fake_run_result_status_and_error_return_the_configured_values
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new

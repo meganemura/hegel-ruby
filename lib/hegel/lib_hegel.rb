@@ -67,6 +67,60 @@ module Hegel
     HEGEL_VERBOSITY_VERBOSE = 2
     HEGEL_VERBOSITY_DEBUG = 3
 
+    # hegel_label_t, named from hegel.h's enum of the same name. Passed to
+    # hegel_start_span to identify what kind of structure a span groups.
+    # Copied through HEGEL_LABEL_STATEFUL_RULE (value 31); the header's two
+    # values past it, HEGEL_LABEL_FRESH_ID and HEGEL_LABEL_SET_CHOICE,
+    # label spans opened by hegel_pool_add and hegel_pool_generate, the
+    # pool primitives this binding does not cover.
+    #
+    # The header documents that "Libraries may use any stable u64 to
+    # define their own spans" — so a caller building its own compound
+    # generator on top of this boundary can pick any u64 that does not
+    # collide with the reserved values below.
+    HEGEL_LABEL_LIST = 1
+    HEGEL_LABEL_LIST_ELEMENT = 2
+    HEGEL_LABEL_SET = 3
+    HEGEL_LABEL_SET_ELEMENT = 4
+    HEGEL_LABEL_MAP = 5
+    HEGEL_LABEL_MAP_ENTRY = 6
+    HEGEL_LABEL_TUPLE = 7
+    HEGEL_LABEL_ONE_OF = 8
+    HEGEL_LABEL_OPTIONAL = 9
+    HEGEL_LABEL_FIXED_DICT = 10
+    HEGEL_LABEL_FLAT_MAP = 11
+    HEGEL_LABEL_FILTER = 12
+    HEGEL_LABEL_MAPPED = 13
+    HEGEL_LABEL_SAMPLED_FROM = 14
+    HEGEL_LABEL_ENUM_VARIANT = 15
+    HEGEL_LABEL_FEATURE_FLAG = 16
+    HEGEL_LABEL_REGEX = 17
+    HEGEL_LABEL_EMAIL = 18
+    HEGEL_LABEL_URL = 19
+    HEGEL_LABEL_DOMAIN = 20
+    HEGEL_LABEL_DATE = 21
+    HEGEL_LABEL_TIME = 22
+    HEGEL_LABEL_DATETIME = 23
+    HEGEL_LABEL_UUID = 24
+    HEGEL_LABEL_IP_ADDRESS = 25
+    HEGEL_LABEL_INTEGER = 26
+    HEGEL_LABEL_FLOAT = 27
+    HEGEL_LABEL_BOOLEAN = 28
+    HEGEL_LABEL_BYTES = 29
+    HEGEL_LABEL_STRING = 30
+    HEGEL_LABEL_STATEFUL_RULE = 31
+
+    # hegel_new_collection's max_size accepts UINT64_MAX to mean "no upper
+    # bound", in the header's own words. Ruby has no fixed-width integer
+    # type to read that constant off, so it is spelled out here as the
+    # value a 64-bit unsigned integer maxes out at.
+    HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED = (2**64) - 1
+
+    # hegel_generate_float's smallest_nonzero_magnitude must be positive
+    # and finite. The header names 5e-324 as the width-64 value that
+    # places no restriction on which nonzero magnitudes get drawn.
+    HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED = 5e-324
+
     # The methods every implementation of this boundary (Real, Fake) must
     # answer to. Held as data, not a Ruby interface/protocol, because Ruby
     # has none; test/hegel/test_lib_hegel.rb asserts every implementation
@@ -80,6 +134,10 @@ module Hegel
       run_result run_result_free run_result_status run_result_error
       run_result_failure_count run_result_failure failure_free failure_origin
       failure_reproduction_blob test_case_from_blob
+      start_span stop_span
+      new_collection collection_more collection_reject collection_free
+      generate_float
+      string_generator_text string_generator_free generate_string generate_string_result_free
     ].freeze
 
     module_function
@@ -98,6 +156,22 @@ module Hegel
       yield ctx
     ensure
       impl.context_free(ctx)
+    end
+
+    # Runs the block with a string generator obtained from
+    # +impl.string_generator_text(ctx, **kwargs)+, freeing it via
+    # +impl.string_generator_free+ whether the block returns or raises.
+    #
+    # hegel_string_generator_t is documented as immutable and shareable
+    # once built, which is what lets a caller reuse the same generator
+    # across many draws instead of rebuilding it each time; this helper
+    # covers the simpler case of a single scoped use, mirroring
+    # with_context's block-and-ensure shape for the generator handle.
+    def with_string_generator(impl, ctx, **kwargs)
+      generator = impl.string_generator_text(ctx, **kwargs)
+      yield generator
+    ensure
+      impl.string_generator_free(ctx, generator)
     end
 
     # Raises the exception +code+ translates to, or returns without effect

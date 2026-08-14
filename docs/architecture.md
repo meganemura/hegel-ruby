@@ -101,7 +101,24 @@ will therefore return a generator; the error will arrive from `tc.draw`.
   been checked.
 - Whether `Fiddle::Closure` behaves the same across the fiddle versions
   Ruby 3.3 through 4.0 bundle (1.1.2 through 1.1.8) has not been checked.
-- How far Prism can recover a draw's assignment target across a heredoc,
-  several `draw` calls on one line, or a method chain has not been checked.
+  Nothing depends on it yet: the engine's output callback is passed as NULL,
+  which the ABI documents as leaving output on stderr.
 - How Fiddle's `dlopen`-based loading searches for a DLL on Windows has not
   been checked.
+
+## Answered
+
+A drawn string arrives as a pointer and a length, is not NUL-terminated,
+and can hold interior NUL bytes, because the drawn alphabet can include
+U+0000. Read by length. Measured against 0.32.5: an alphabet pinned to
+U+0000 produces a three-byte draw that reads as `""` through
+`Fiddle::Pointer#to_s` and as three NUL bytes through `#to_str(len)`. Every
+string observed reports `valid_encoding?` after `force_encoding(UTF-8)`.
+
+Prism recovers a draw's assignment target through a method chain, an
+instance-variable assignment, and an assignment spanning several lines.
+Where several assignments cover the draw's line, the innermost one names
+it, so wrapping a body in `assert_raises do ... end` or an RSpec
+`expect { ... }` keeps the name. Two assignments side by side on one line
+name nothing, and so does a draw whose value is never assigned; both fall
+back to a number.

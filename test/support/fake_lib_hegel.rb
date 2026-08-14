@@ -39,10 +39,24 @@ module Hegel
         :generate_boolean_code, :generate_integer_code,
         :run_result_code, :run_result_status_code, :run_result_error_code,
         :run_result_failure_count_code, :run_result_failure_code,
-        :failure_origin_code, :failure_reproduction_blob_code, :test_case_from_blob_code
+        :failure_origin_code, :failure_reproduction_blob_code, :test_case_from_blob_code,
+        :start_span_code, :stop_span_code,
+        :new_collection_code, :collection_more_code, :collection_reject_code,
+        :generate_float_code, :string_generator_text_code, :generate_string_code
 
       # Values #generate_boolean / #generate_integer hand back on success.
       attr_writer :generate_boolean_value, :generate_integer_value
+
+      # Value #generate_float hands back on success.
+      attr_writer :generate_float_value
+
+      # Value #generate_string hands back on success.
+      attr_writer :generate_string_value
+
+      # Number of times #collection_more answers true before it answers
+      # false, mirroring #test_case_count / @cases_served below so a loop
+      # driven against this Fake terminates.
+      attr_writer :collection_more_count
 
       # Number of test cases #next_test_case yields before reporting the
       # run finished (an out-parameter of NULL, not an error).
@@ -67,7 +81,7 @@ module Hegel
       # HEGEL_OK result, distinct from an error via #run_start_code=.
       attr_writer :run_start_returns_nil
 
-      attr_reader :freed_contexts, :freed_test_cases, :marked_statuses, :marked_origins
+      attr_reader :freed_contexts, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators
 
       # The value passed to each settings setter, one array per keyword, so
       # a test can confirm Hegel::Settings.apply calls the setter its table
@@ -83,6 +97,7 @@ module Hegel
         @last_error = "fake error"
         @freed_contexts = []
         @freed_test_cases = []
+        @freed_string_generators = []
 
         @settings_new_code = HEGEL_OK
         @settings_set_test_cases_code = HEGEL_OK
@@ -123,6 +138,22 @@ module Hegel
         @failure_origin_code = HEGEL_OK
         @failure_reproduction_blob_code = HEGEL_OK
         @test_case_from_blob_code = HEGEL_OK
+
+        @start_span_code = HEGEL_OK
+        @stop_span_code = HEGEL_OK
+
+        @new_collection_code = HEGEL_OK
+        @collection_more_code = HEGEL_OK
+        @collection_more_count = 0
+        @collection_more_served = 0
+        @collection_reject_code = HEGEL_OK
+
+        @generate_float_code = HEGEL_OK
+        @generate_float_value = 0.0
+
+        @string_generator_text_code = HEGEL_OK
+        @generate_string_code = HEGEL_OK
+        @generate_string_value = ""
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -287,6 +318,69 @@ module Hegel
       def test_case_from_blob(ctx, _settings, _blob)
         LibHegel.check!(self, ctx, @test_case_from_blob_code)
         Object.new
+      end
+
+      def start_span(ctx, _tc, _label)
+        LibHegel.check!(self, ctx, @start_span_code)
+        nil
+      end
+
+      def stop_span(ctx, _tc, _discard)
+        LibHegel.check!(self, ctx, @stop_span_code)
+        nil
+      end
+
+      def new_collection(ctx, _tc, _min_size, _max_size)
+        LibHegel.check!(self, ctx, @new_collection_code)
+        Object.new
+      end
+
+      # Answers true @collection_more_count times, then false, matching
+      # #next_test_case's count-then-nil shape so a loop against this
+      # Fake terminates.
+      def collection_more(ctx, _tc, _collection)
+        LibHegel.check!(self, ctx, @collection_more_code)
+        return false if @collection_more_served >= @collection_more_count
+
+        @collection_more_served += 1
+        true
+      end
+
+      def collection_reject(ctx, _tc, _collection, _why = nil)
+        LibHegel.check!(self, ctx, @collection_reject_code)
+        nil
+      end
+
+      def collection_free(_ctx, _collection)
+        nil
+      end
+
+      def generate_float(ctx, _tc, _width, _min_value, _max_value, _allow_nan, _allow_infinity, _exclude_min,
+        _exclude_max, _smallest_nonzero_magnitude)
+        LibHegel.check!(self, ctx, @generate_float_code)
+        @generate_float_value
+      end
+
+      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF)
+        LibHegel.check!(self, ctx, @string_generator_text_code)
+        Object.new
+      end
+
+      # Records +generator+, so a test can confirm
+      # LibHegel.with_string_generator freed the handle it yielded,
+      # mirroring #context_free / #freed_contexts for with_context.
+      def string_generator_free(_ctx, generator)
+        @freed_string_generators << generator
+        nil
+      end
+
+      def generate_string(ctx, _tc, _generator)
+        LibHegel.check!(self, ctx, @generate_string_code)
+        @generate_string_value
+      end
+
+      def generate_string_result_free(_ctx, _result)
+        nil
       end
     end
   end
