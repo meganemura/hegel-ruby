@@ -13,6 +13,7 @@ An index of the design records for `hegel-ruby`.
 - [0004 — Expose generators through a mixin, with keyword options](adr/0004-expose-generators-through-a-mixin-with-keyword-options.md)
 - [0005 — Name drawn values from the caller's source with Prism](adr/0005-name-drawn-values-from-the-callers-source-with-prism.md)
 - [0006 — Verify the binding in seven layers, with full coverage](adr/0006-verify-the-binding-in-seven-layers-with-full-coverage.md)
+- [0007 — Ship a thin Ruby skill, shaped for donation](adr/0007-ship-a-thin-ruby-skill-shaped-for-donation.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.
