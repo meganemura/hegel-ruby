@@ -10,11 +10,11 @@ module Hegel
     # future change to how the native call happens has exactly one file to
     # change.
     #
-    # Opens the library and binds all four functions once, in #initialize,
-    # and holds them for the instance's lifetime; each call below reuses
-    # the already-bound function rather than re-resolving the symbol.
+    # Opens the library and binds every function once, in #initialize, and
+    # holds them for the instance's lifetime; each call below reuses the
+    # already-bound function rather than re-resolving the symbol.
     class Real
-      # Opens +path+ (default: Hegel::Locate.resolve) and binds the four
+      # Opens +path+ (default: Hegel::Locate.resolve) and binds the
       # functions this boundary calls. Immediately after, opens a context
       # of its own to compare the loaded engine's version against
       # Hegel::LIBHEGEL_VERSION, warning on +io+ (default $stderr) on a
@@ -27,6 +27,64 @@ module Hegel
         @context_free_fn = bind("hegel_context_free", [Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
         @context_last_error_fn = bind("hegel_context_last_error", [Fiddle::TYPE_VOIDP], Fiddle::TYPE_VOIDP)
         @version_fn = bind("hegel_version", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+
+        @settings_new_fn = bind("hegel_settings_new", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+        @settings_free_fn = bind("hegel_settings_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+        @settings_set_test_cases_fn = bind(
+          "hegel_settings_set_test_cases",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_verbosity_fn = bind(
+          "hegel_settings_set_verbosity",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT32_T],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_seed_fn = bind(
+          "hegel_settings_set_seed",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_BOOL],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_derandomize_fn = bind(
+          "hegel_settings_set_derandomize",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_BOOL],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_database_fn = bind(
+          "hegel_settings_set_database",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+
+        @run_start_fn = bind(
+          "hegel_run_start",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @next_test_case_fn = bind(
+          "hegel_next_test_case",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @run_free_fn = bind("hegel_run_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+        @test_case_free_fn = bind("hegel_test_case_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+        @mark_complete_fn = bind(
+          "hegel_mark_complete",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT32_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+
+        @generate_boolean_fn = bind(
+          "hegel_generate_boolean",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_DOUBLE, Fiddle::TYPE_BOOL, Fiddle::TYPE_BOOL,
+            Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @generate_integer_fn = bind(
+          "hegel_generate_integer",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT64_T, Fiddle::TYPE_INT64_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
 
         LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
       end
@@ -61,6 +119,130 @@ module Hegel
         code = @version_fn.call(ctx, out)
         LibHegel.check!(self, ctx, code)
         out.ptr.to_s
+      end
+
+      # Returns a settings handle initialized with libhegel's defaults, or
+      # raises the exception LibHegel.check! translates this call's result
+      # code to.
+      def settings_new(ctx)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @settings_new_fn.call(ctx, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # No-op when +s+ is nil, matching hegel_settings_free's documented
+      # no-op-on-NULL contract; not translated, for the same reason as
+      # #context_free: the header documents this call as always returning
+      # HEGEL_OK.
+      def settings_free(ctx, s)
+        @settings_free_fn.call(ctx, s)
+        nil
+      end
+
+      def settings_set_test_cases(ctx, s, n)
+        code = @settings_set_test_cases_fn.call(ctx, s, n)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_verbosity(ctx, s, v)
+        code = @settings_set_verbosity_fn.call(ctx, s, v)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_seed(ctx, s, seed, has_seed)
+        code = @settings_set_seed_fn.call(ctx, s, seed, has_seed)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_derandomize(ctx, s, derandomize)
+        code = @settings_set_derandomize_fn.call(ctx, s, derandomize)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # +database+ may be nil (libhegel's own default path) or a String,
+      # including "" to disable the database. A Ruby String passed for a
+      # TYPE_VOIDP argument is marshalled as a pointer to its bytes by
+      # Fiddle, which is what a const char* parameter needs here.
+      def settings_set_database(ctx, s, database)
+        code = @settings_set_database_fn.call(ctx, s, database)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # +settings+ can be freed by the caller as soon as this call returns:
+      # the header documents that hegel_run_start copies the settings it is
+      # given rather than borrowing them. callback and user_data are always
+      # NULL here, which the header documents as leaving libhegel's output
+      # on stderr; wiring a Ruby-backed callback through Fiddle::Closure is
+      # left to a later task.
+      def run_start(ctx, settings)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @run_start_fn.call(ctx, settings, nil, nil, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # Returns the next test case, or nil once the run has finished (the
+      # header documents *out_test_case as NULL at that point, with a
+      # HEGEL_OK result rather than an error).
+      def next_test_case(ctx, run)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @next_test_case_fn.call(ctx, run, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr.null? ? nil : out.ptr
+      end
+
+      # No-op when +run+ is nil, matching hegel_run_free's documented
+      # no-op-on-NULL contract; not translated, for the same reason as
+      # #context_free.
+      def run_free(ctx, run)
+        @run_free_fn.call(ctx, run)
+        nil
+      end
+
+      # No-op when +tc+ is nil, matching hegel_test_case_free's documented
+      # no-op-on-NULL contract; not translated, for the same reason as
+      # #context_free.
+      def test_case_free(ctx, tc)
+        @test_case_free_fn.call(ctx, tc)
+        nil
+      end
+
+      # +origin+ must be non-nil only when +status+ is
+      # HEGEL_STATUS_INTERESTING, per the header; this layer neither builds
+      # nor validates that string, only passes through what the caller
+      # supplies. A Ruby nil marshals to NULL for the TYPE_VOIDP argument.
+      def mark_complete(ctx, tc, status, origin)
+        code = @mark_complete_fn.call(ctx, tc, status, origin)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Forcing has to agree with +p+. Measured against libhegel 0.32.5:
+      # forcing true at p = 0.0 and forcing false at p = 1.0 both come back
+      # HEGEL_E_INVALID_ARG ("generate_boolean: cannot force ..."), while
+      # forcing either way succeeds at any p between them. The header
+      # describes the two ends as yielding false and true without consuming
+      # entropy, and says nothing about what forcing does against them, so
+      # this is written down where a caller constructing a forced draw will
+      # look for it.
+      def generate_boolean(ctx, tc, p, forced, has_forced)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_BOOL, Fiddle::RUBY_FREE)
+        code = @generate_boolean_fn.call(ctx, tc, p, forced, has_forced, out)
+        LibHegel.check!(self, ctx, code)
+        out[0] != 0
+      end
+
+      def generate_integer(ctx, tc, min_value, max_value)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT64_T, Fiddle::RUBY_FREE)
+        code = @generate_integer_fn.call(ctx, tc, min_value, max_value, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(Fiddle::SIZEOF_INT64_T).unpack1("q")
       end
 
       private

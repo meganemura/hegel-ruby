@@ -154,4 +154,135 @@ class TestLibHegel < Minitest::Test
       assert_respond_to fake, method_name
     end
   end
+
+  def test_real_settings_free_run_free_and_test_case_free_are_no_ops_on_nil
+    real = Hegel::LibHegel::Real.new
+    assert_nil real.settings_free(nil, nil)
+    assert_nil real.run_free(nil, nil)
+    assert_nil real.test_case_free(nil, nil)
+  end
+
+  # Exercises every settings setter, hegel_run_start, and a full
+  # hegel_next_test_case loop against the real engine, marking every case
+  # VALID and freeing every handle it opens (settings, run, each test
+  # case). The database is disabled ("") so the run leaves nothing on
+  # disk.
+  def test_real_run_loop_marks_every_case_valid_and_frees_every_handle
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 3)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_seed(ctx, settings, 42, true)
+      real.settings_set_derandomize(ctx, settings, true)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      cases_seen = 0
+      loop do
+        tc = real.next_test_case(ctx, run)
+        break if tc.nil?
+
+        cases_seen += 1
+        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, tc)
+      end
+
+      real.run_free(ctx, run)
+      assert_operator cases_seen, :>, 0
+    end
+  end
+
+  # hegel_generate_boolean and hegel_generate_integer's documented
+  # boundary behaviour: p = 0.0 / 1.0 always yield false / true without
+  # consuming entropy, has_forced forces the result at a p that allows it,
+  # and min_value == max_value always yields that value.
+  def test_real_generate_boolean_and_generate_integer_at_their_bounds
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      assert_equal false, real.generate_boolean(ctx, tc, 0.0, false, false)
+      assert_equal true, real.generate_boolean(ctx, tc, 1.0, false, false)
+      assert_equal true, real.generate_boolean(ctx, tc, 0.5, true, true)
+      assert_equal 5, real.generate_integer(ctx, tc, 5, 5)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  def test_fake_generate_boolean_stop_test_translates_to_hegel_stop_test
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_boolean_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    assert_raises(Hegel::StopTest) { fake.generate_boolean(ctx, Object.new, 0.5, false, false) }
+  end
+
+  def test_fake_generate_integer_stop_test_translates_to_hegel_stop_test
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_integer_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    assert_raises(Hegel::StopTest) { fake.generate_integer(ctx, Object.new, 0, 10) }
+  end
+
+  def test_fake_mark_complete_records_origin_only_when_passed
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    tc = Object.new
+
+    fake.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, "origin.rb:1")
+    fake.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+
+    assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING, Hegel::LibHegel::HEGEL_STATUS_VALID],
+      fake.marked_statuses
+    assert_equal ["origin.rb:1", nil], fake.marked_origins
+  end
+
+  def test_fake_next_test_case_yields_the_configured_count_then_nil
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.test_case_count = 2
+
+    first = fake.next_test_case(ctx, nil)
+    second = fake.next_test_case(ctx, nil)
+    third = fake.next_test_case(ctx, nil)
+
+    refute_nil first
+    refute_nil second
+    assert_nil third
+  end
+
+  def test_fake_run_start_returns_nil_when_configured_to
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.run_start_returns_nil = true
+
+    assert_nil fake.run_start(ctx, Object.new)
+  end
 end

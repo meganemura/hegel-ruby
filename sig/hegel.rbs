@@ -44,6 +44,14 @@ module Hegel
     HEGEL_E_INTERNAL: Integer
     HEGEL_E_CONCURRENT_USE: Integer
     CODE_NAMES: Hash[Integer, String]
+    HEGEL_STATUS_VALID: Integer
+    HEGEL_STATUS_INVALID: Integer
+    HEGEL_STATUS_OVERRUN: Integer
+    HEGEL_STATUS_INTERESTING: Integer
+    HEGEL_VERBOSITY_QUIET: Integer
+    HEGEL_VERBOSITY_NORMAL: Integer
+    HEGEL_VERBOSITY_VERBOSE: Integer
+    HEGEL_VERBOSITY_DEBUG: Integer
     METHODS: Array[Symbol]
 
     def self.with_context: [R] (untyped impl) { (untyped) -> R } -> R
@@ -56,6 +64,20 @@ module Hegel
       def context_free: (untyped ctx) -> nil
       def context_last_error: (untyped ctx) -> String
       def version: (untyped ctx) -> String
+      def settings_new: (untyped ctx) -> untyped
+      def settings_free: (untyped ctx, untyped s) -> nil
+      def settings_set_test_cases: (untyped ctx, untyped s, Integer n) -> nil
+      def settings_set_verbosity: (untyped ctx, untyped s, Integer v) -> nil
+      def settings_set_seed: (untyped ctx, untyped s, Integer seed, bool has_seed) -> nil
+      def settings_set_derandomize: (untyped ctx, untyped s, bool derandomize) -> nil
+      def settings_set_database: (untyped ctx, untyped s, String? database) -> nil
+      def run_start: (untyped ctx, untyped settings) -> untyped
+      def next_test_case: (untyped ctx, untyped run) -> untyped?
+      def run_free: (untyped ctx, untyped run) -> nil
+      def test_case_free: (untyped ctx, untyped tc) -> nil
+      def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin) -> nil
+      def generate_boolean: (untyped ctx, untyped tc, Float p, bool forced, bool has_forced) -> bool
+      def generate_integer: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
     end
   end
 end

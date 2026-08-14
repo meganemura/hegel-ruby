@@ -47,11 +47,31 @@ module Hegel
       HEGEL_E_CONCURRENT_USE => "HEGEL_E_CONCURRENT_USE"
     }.freeze
 
+    # hegel_status_t, named from hegel.h's enum of the same name. Passed to
+    # hegel_mark_complete to describe how a test case ended.
+    HEGEL_STATUS_VALID = 0
+    HEGEL_STATUS_INVALID = 1
+    HEGEL_STATUS_OVERRUN = 2
+    HEGEL_STATUS_INTERESTING = 3
+
+    # hegel_verbosity_t, named from hegel.h's enum of the same name. Passed
+    # to hegel_settings_set_verbosity.
+    HEGEL_VERBOSITY_QUIET = 0
+    HEGEL_VERBOSITY_NORMAL = 1
+    HEGEL_VERBOSITY_VERBOSE = 2
+    HEGEL_VERBOSITY_DEBUG = 3
+
     # The methods every implementation of this boundary (Real, Fake) must
     # answer to. Held as data, not a Ruby interface/protocol, because Ruby
     # has none; test/hegel/test_lib_hegel.rb asserts every implementation
     # responds to each name here.
-    METHODS = %i[context_new context_free context_last_error version].freeze
+    METHODS = %i[
+      context_new context_free context_last_error version
+      settings_new settings_free settings_set_test_cases settings_set_verbosity
+      settings_set_seed settings_set_derandomize settings_set_database
+      run_start next_test_case run_free test_case_free mark_complete
+      generate_boolean generate_integer
+    ].freeze
 
     module_function
 
