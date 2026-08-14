@@ -201,6 +201,23 @@ class TestRunner < Minitest::Test
     assert_includes output.string, "xs = 501"
   end
 
+  # tc.draw(generator) must recover a name from the caller's own source the
+  # same way tc.draw_integer does (see Hegel::TestCase#draw and
+  # DRAW_CALLER_DEPTH's own comment), even though a Hegel::Generator's own
+  # #do_draw sits between the two.
+  def test_report_names_a_draw_made_through_tc_draw
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        n = tc.draw(Hegel::Generators.integers(min_value: 0, max_value: 1_000_000))
+        raise "too big: #{n}" if n > 500
+      end
+    end
+
+    assert_includes output.string, "n = 501"
+  end
+
   # #name_for's own caller_locations call returns nil when the stack is
   # shallower than DRAW_CALLER_DEPTH -- a case no real draw_* call site
   # produces (see Hegel::TestCase#name_for), reached directly here the same

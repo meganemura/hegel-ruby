@@ -3,6 +3,9 @@
 require_relative "hegel/version"
 require_relative "hegel/errors"
 require_relative "hegel/runner"
+require_relative "hegel/generator"
+require_relative "hegel/generators"
+require_relative "hegel/syntax/methods"
 require_relative "hegel/lib_hegel/real"
 
 # Hegel is a property-based testing library for Ruby. It drives libhegel, the

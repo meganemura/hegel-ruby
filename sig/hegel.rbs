@@ -22,6 +22,84 @@ module Hegel
     def draws: () -> Array[[String, untyped]]?
     def draw_integer: (Integer min_value, Integer max_value, ?label: String?) -> Integer
     def draw_boolean: (?Float p, ?label: String?) -> bool
+    def draw: (Generator generator, ?label: String?) -> untyped
+    def generate_integer: (Integer min_value, Integer max_value) -> Integer
+    def generate_boolean: (?Float p) -> bool
+    def generate_float: (Integer width, Float min_value, Float max_value, allow_nan: bool, allow_infinity: bool, exclude_min: bool, exclude_max: bool, smallest_nonzero_magnitude: Float) -> Float
+    def start_span: (Integer label) -> untyped
+    def stop_span: (?discard: bool) -> untyped
+    def new_collection: (Integer min_size, Integer max_size) -> untyped
+    def collection_more: (untyped collection) -> bool
+    def collection_free: (untyped collection) -> untyped
+    def with_string_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
+    def generate_string: (untyped generator) -> String
+  end
+
+  class Generator
+    def do_draw: (untyped tc) -> untyped
+    def map: () { (untyped) -> untyped } -> Generator
+    def filter: () { (untyped) -> boolish } -> Generator
+
+    class Mapped < Generator
+      def initialize: (Generator source, Proc block) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+
+    class Filtered < Generator
+      MAX_ATTEMPTS: Integer
+
+      def initialize: (Generator source, Proc block) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+  end
+
+  module Generators
+    class BooleanGenerator < Generator
+      def initialize: (p: Float) -> void
+      def do_draw: (untyped tc) -> bool
+    end
+
+    class IntegerGenerator < Generator
+      INT64_MIN: Integer
+      INT64_MAX: Integer
+
+      def initialize: (min_value: Integer?, max_value: Integer?) -> void
+      def do_draw: (untyped tc) -> Integer
+    end
+
+    class FloatGenerator < Generator
+      WIDTH: Integer
+
+      def initialize: (min_value: Float?, max_value: Float?, allow_nan: bool, allow_infinity: bool, exclude_min: bool, exclude_max: bool) -> void
+      def do_draw: (untyped tc) -> Float
+    end
+
+    class TextGenerator < Generator
+      def initialize: (min_size: Integer, max_size: Integer?, codec: String?, min_codepoint: Integer?, max_codepoint: Integer?) -> void
+      def do_draw: (untyped tc) -> String
+    end
+
+    class ArrayGenerator < Generator
+      def initialize: (Generator elements, min_size: Integer, max_size: Integer?) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+
+      private
+
+      def draw_elements: (untyped tc, Integer max_size) -> Array[untyped]
+      def draw_element: (untyped tc) -> untyped
+    end
+
+    extend Syntax::Methods
+  end
+
+  module Syntax
+    module Methods
+      def booleans: (?p: Float) -> Generators::BooleanGenerator
+      def integers: (?min_value: Integer?, ?max_value: Integer?) -> Generators::IntegerGenerator
+      def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool, ?allow_infinity: bool, ?exclude_min: bool, ?exclude_max: bool) -> Generators::FloatGenerator
+      def text: (?min_size: Integer, ?max_size: Integer?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::TextGenerator
+      def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::ArrayGenerator
+    end
   end
 
   module DrawName
