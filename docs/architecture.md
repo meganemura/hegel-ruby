@@ -1,0 +1,99 @@
+# Architecture
+
+## Status
+
+Most of what follows is design intent, not existing code. What exists
+today is the library-resolution layer: `Hegel::Locate`, the pinned
+`Hegel::LIBHEGEL_VERSION`, and the development-only `libhegel:fetch` Rake
+task that downloads the pinned engine and verifies its SHA-256. `lib/hegel.rb`
+itself defines the `Hegel` module and `Hegel::Error`. Each section below
+says so wherever a boundary is planned but not yet built.
+
+## Where meaning comes from
+
+libhegel is hegel-rust's native engine. hegel-rust's Cargo workspace builds
+it from the `hegel-c` directory, as the crate `hegeltest-c`, whose header is
+`hegel-c/include/hegel.h`. That header defines the ABI this gem calls: what
+each function does, what its error codes mean, and who owns each pointer.
+
+The Java, Go, TypeScript, OCaml, and C++ implementations bind the same
+engine. Each works under a constraint hegel-rust does not have: a dynamic
+loader, a garbage collector, or a package manager that ships prebuilt
+binaries. Where this document cites one of them, it cites a binding
+mechanism, not the meaning of a call.
+
+## libhegel and the Ruby boundary
+
+libhegel runs in the same process as its caller. Nearly every function in
+`hegel.h` takes a `hegel_context_t*` as its first argument and returns a
+`hegel_result_t` status code. `hegel_context_new` returns the context
+itself instead. `hegel_context_last_error` returns a borrowed message
+pointer instead of a status code.
+
+Ruby will call this ABI through Fiddle. See
+[ADR 0001](adr/0001-bind-libhegel-through-fiddle.md).
+
+## FFI confined to one module
+
+Every raw Fiddle call will live in `Hegel::LibHegel`. The rest of the
+library will call that module's wrappers, never Fiddle directly. This gives
+the library one seam where a test can substitute a fake implementation,
+exercising libhegel's error codes without loading the real engine.
+
+## Run loop ownership
+
+The Ruby side will own the run loop. It starts a run, asks libhegel for
+each test case, calls the caller's test body, and reports the result back.
+A test body's own assertion failure must not cross the C boundary as if it
+were a crash.
+
+Ruby's test frameworks complicate this. With minitest 5.27.0, the version
+this gem's `Gemfile.lock` pins, `Minitest::Assertion.superclass` is
+`Exception`. With rspec-expectations 3.13.5,
+`RSpec::Expectations::ExpectationNotMetError.superclass` is `Exception`
+as well. By default, `rescue => e` catches only `StandardError`. A run
+loop written that way would let a failing assertion pass by uncaught,
+instead of being reported as a Hegel failure.
+
+Read the superclass rather than the full ancestor list. `ancestors` also
+reports what a given load order mixed into `Object`, so it answers a
+different question on a run that loaded `minitest/spec` than on one that
+did not.
+
+The run loop will `rescue Exception` and re-raise the library's own control
+exceptions first. Those control exceptions will themselves descend from
+`Exception`, not `StandardError`, so a test body's own `rescue => e` cannot
+swallow them mid-run. `Hegel::Error`, which reports ordinary library errors
+to a caller outside a run, stays a `StandardError`.
+
+## Native handle lifetime
+
+Every `hegel_*_free` function in `hegel.h` takes the handle's owning
+context as an argument, so the context must outlive every handle allocated
+from it. Ruby's garbage collector does not guarantee finalizer ordering
+between a context and its handles.
+
+The code that owns a run will release its handles in an `ensure` block,
+freeing every other handle before the context. A finalizer may back up an
+`ensure` block that a raised exception skipped, but it must free nothing a
+prior `ensure` already freed.
+
+## Generator validation happens at draw time
+
+hegel-rust's own contributor documentation states the rule for its
+generators: every invalid combination of builder values must be caught at
+draw time. The check does not run when the generator is built. The same
+documentation treats a validation message as public API, asserted against
+by tests as a stable substring. `integers(min_value: 5, max_value: 1)`
+will therefore return a generator; the error will arrive from `tc.draw`.
+
+## Open questions
+
+- Whether the vendored `linux` binaries run under musl (Alpine) has not
+  been checked.
+- Whether `Fiddle::Closure` behaves the same across the fiddle versions
+  Ruby 3.3 through 4.0 bundle (1.1.2 through 1.1.8) has not been checked.
+- How far Prism can recover a draw's assignment target across a heredoc,
+  several `draw` calls on one line, or a method chain has not been checked.
+- How Fiddle's `dlopen`-based loading searches for a DLL on Windows has not
+  been checked.
