@@ -15,9 +15,12 @@ library is `hegel`.
 
 ## Project rules
 
-This repository is public. Every commit message, code comment, README, and
-document is written in English. Nothing here may carry material from private or
-employer contexts.
+This repository is written for publication, and is private only until the work
+is ready to show. Write every commit message, code comment, README, and
+document in English, and write each one as though it were already public,
+because rewriting history later is the expensive way to find out something
+should not have been committed. Nothing here may carry material from private
+or employer contexts.
 
 Anything committed must make sense to a reader who has only this repository. Do
 not reference working notes, task files, or conversations that a person who
