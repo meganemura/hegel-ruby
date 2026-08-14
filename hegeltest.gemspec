@@ -31,11 +31,18 @@ Gem::Specification.new do |spec|
 
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
+  #
+  # The reject list drops development files, and it drops the coding-agent
+  # instructions with them. Those instructions describe how to work on this
+  # repository, so they mean nothing to somebody who installed the gem, and
+  # `git ls-files` would otherwise package every one of them. hegel-rust
+  # excludes `/.agents`, `/.claude`, and `/AGENTS.md` from its own crate for
+  # the same reason.
   gemspec = File.basename(__FILE__)
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
-        f.start_with?(*%w[bin/ Gemfile .gitignore test/ .github/ .standard.yml justfile])
+        f.start_with?(*%w[bin/ Gemfile .gitignore test/ .github/ .standard.yml justfile .claude/ CLAUDE.md])
     end
   end
   spec.bindir = "exe"
