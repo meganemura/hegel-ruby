@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    name: Select the platform matrix
+    runs-on: ubuntu-latest
+    outputs:
+      os: ${{ steps.select.outputs.os }}
+    steps:
+      # A pull request runs on Linux x64 alone, so that feedback stays fast.
+      # A push to main runs every platform that gets a platform-specific gem,
+      # because such a gem is only as good as the platform it was tested on.
+      - id: select
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ]; then
+            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'os=["ubuntu-latest","ubuntu-24.04-arm","macos-latest","windows-latest","windows-11-arm"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: select
+    name: Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.select.outputs.os) }}
+        # Every Ruby that is not end-of-life. 3.2 reached end of life on
+        # 2026-03-31.
+        ruby: ["3.3", "3.4", "4.0"]
+        exclude:
+          # RubyInstaller publishes no arm64 build before 3.4, so this pair
+          # cannot exist. Nobody can run Ruby 3.3 on Windows arm64 either, so
+          # the aarch64-mingw-ucrt gem loses no reachable user.
+          - os: windows-11-arm
+            ruby: "3.3"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - name: Run the tests and the linter
+        run: bundle exec rake
