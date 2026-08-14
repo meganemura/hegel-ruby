@@ -44,11 +44,17 @@ Gem::Specification.new do |spec|
   # `git ls-files` would otherwise package every one of them. hegel-rust
   # excludes `/.agents`, `/.claude`, and `/AGENTS.md` from its own crate for
   # the same reason.
+  #
+  # `.claude-plugin/` is rejected too, but `skills/` is not: `skills/`
+  # is this gem's own payload for whoever installs it, while
+  # `.claude-plugin/` only points the Claude Code marketplace at this git
+  # repository, which an installed gem is not.
   gemspec = File.basename(__FILE__)
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
-        f.start_with?(*%w[bin/ Gemfile .gitignore test/ .github/ .standard.yml justfile .claude/ CLAUDE.md])
+        f.start_with?(*%w[bin/ Gemfile .gitignore test/ .github/ .standard.yml justfile .claude/ CLAUDE.md
+          .claude-plugin/])
     end
   end
   spec.bindir = "exe"
