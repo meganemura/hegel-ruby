@@ -5,6 +5,12 @@ module Hegel
   class Error < StandardError
   end
 
+  class StopTest < Exception
+  end
+
+  class AssumeFailed < Exception
+  end
+
   module Locate
     LIBRARY_PATH_ENV: String
     ASSET_NAMES: Hash[String, String]
@@ -24,5 +30,32 @@ module Hegel
     def self.unsupported_host_message: (String, String) -> String
     def self.missing_bundle_message: (String, String) -> String
     def self.missing_override_message: (String, Array[String]) -> String
+  end
+
+  module LibHegel
+    HEGEL_OK: Integer
+    HEGEL_E_STOP_TEST: Integer
+    HEGEL_E_ASSUME: Integer
+    HEGEL_E_BACKEND: Integer
+    HEGEL_E_INVALID_HANDLE: Integer
+    HEGEL_E_INVALID_ARG: Integer
+    HEGEL_E_ALREADY_COMPLETE: Integer
+    HEGEL_E_NOT_COMPLETE: Integer
+    HEGEL_E_INTERNAL: Integer
+    HEGEL_E_CONCURRENT_USE: Integer
+    CODE_NAMES: Hash[Integer, String]
+    METHODS: Array[Symbol]
+
+    def self.with_context: [R] (untyped impl) { (untyped) -> R } -> R
+    def self.check!: (untyped impl, untyped ctx, Integer code) -> void
+    def self.warn_on_version_mismatch: (untyped impl, untyped ctx, ?io: untyped) -> void
+
+    class Real
+      def initialize: (?String path, ?io: untyped) -> void
+      def context_new: () -> untyped
+      def context_free: (untyped ctx) -> nil
+      def context_last_error: (untyped ctx) -> String
+      def version: (untyped ctx) -> String
+    end
   end
 end

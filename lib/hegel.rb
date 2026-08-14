@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "hegel/version"
+require_relative "hegel/errors"
 
 # Hegel is a property-based testing library for Ruby. It drives libhegel, the
 # native engine that also backs the Rust, Go, TypeScript, Java, OCaml, and C++
