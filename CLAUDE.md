@@ -80,16 +80,44 @@ are the layer that catches it.
 **The engine is single-threaded.** A context, a run, and a test case each
 belong to one thread at a time.
 
-## Reference implementations
+**A generator validates its arguments when it is drawn, not when it is built.**
+`integers(min_value: 5, max_value: 1)` returns a generator. The error arrives
+from `tc.draw`. hegel-rust states the rule for its own generators: "Every
+invalid combination of builder values must be caught at draw time", and its
+validation runs at the start of the draw. Follow it, so that a generator means
+the same thing in Ruby as it does in every other implementation.
 
-Read these when a decision needs precedent. They target the same engine.
+**Validation messages are public API.** hegel-rust says so directly: "These
+messages are part of the public API: tests assert against them. Pick a stable,
+descriptive substring." Treat a change to one as a change to the interface.
 
-- **hegel-java** — the closest match. Its foreign-function binding occupies the
-  same position as Fiddle does here, it manages native handles under a garbage
-  collector, and JUnit 5 sits where RSpec and Minitest sit.
-- **hegel-typescript** — the only implementation that ships one prebuilt engine
-  per platform-specific package, which is the model this gem follows.
+## Where the answers come from
+
+**hegel-rust defines what is correct.** libhegel lives inside it, as the
+`hegel-c` member of the same Cargo workspace. Every question about meaning
+answers there: what a call does, what an error code means, who owns what, what
+a span changes, how a value shrinks, what a generator option constrains.
+
+- `hegel-c/include/hegel.h` — the ABI
+- `src/ffi.rs` — the safe wrappers the ABI is meant to get, one per handle
+- `src/run_lifecycle.rs` — the per-test-case lifecycle
+- `tests/` — the behaviour a binding must reproduce, including
+  `tests/test_shrink_quality/`
+- `.agents/skills/` — the project's own procedures. `new-generator` lists the
+  test set every generator needs, `coverage` gives the 100% rule and the
+  narrow conditions for an exemption, and `self-review` is a pre-review
+  checklist.
+
+**The other implementations show how to do it in a language like this one.**
+They bind the same engine under constraints Rust does not have.
+
+- **hegel-java** — the closest match on mechanism. Its foreign-function binding
+  occupies the same position as Fiddle does here, it manages native handles
+  under a garbage collector, and JUnit 5 sits where RSpec and Minitest sit.
+- **hegel-typescript** — ships one prebuilt engine per platform-specific
+  package, which is the model this gem follows.
 - **hegel-go** — how a repository vendors prebuilt engines.
 - **hegel-cpp** — a short, direct reading of the C ABI.
-- **hegel-rust** — the source of truth. `hegel-c/include/hegel.h` defines the
-  ABI and `src/ffi.rs` shows the intended usage.
+
+When a mechanism reference and hegel-rust disagree about meaning, hegel-rust
+wins.
