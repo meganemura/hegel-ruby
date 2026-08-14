@@ -1,43 +1,122 @@
-# Hegeltest
+# Hegel for Ruby
 
-TODO: Delete this and the text below, and describe your gem
+> [!IMPORTANT]
+> **This is an unofficial, third-party implementation.** The Hegel project and
+> the `libhegel` engine belong to Antithesis, LLC. This repository has no
+> affiliation with Antithesis or with the `hegeldev` organization, and nobody
+> there reviews or endorses it.
+>
+> The official implementations are
+> [Rust](https://github.com/hegeldev/hegel-rust),
+> [Go](https://github.com/hegeldev/hegel-go),
+> [C++](https://github.com/hegeldev/hegel-cpp),
+> [TypeScript](https://github.com/hegeldev/hegel-typescript),
+> [Java](https://github.com/hegeldev/hegel-java), and
+> [OCaml](https://github.com/hegeldev/hegel-ocaml). Report problems with this
+> gem here, not to them.
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/hegeltest`. To experiment with that code, run `bin/console` for an interactive prompt.
+> [!NOTE]
+> Hegel itself is in beta, and its maintainers expect to make breaking changes.
+> See <https://hegel.dev/compatibility>.
 
-## Installation
+Hegel is a property-based testing framework based on
+[Hypothesis](https://github.com/hypothesisworks/hypothesis). Instead of writing
+tests with hand-picked inputs, you state a property that must hold for every
+input. Hegel generates inputs, tries to falsify the property, and shrinks any
+failure to a minimal counterexample.
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
+This gem drives [libhegel](https://hegel.dev/reference/libhegel), the native
+engine that the official implementations also drive. The engine runs in the
+same process. There is no server and no Python dependency.
 
-Install the gem and add to the application's Gemfile by executing:
+## Status
 
-```bash
-bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+**Nothing is released and nothing works yet.** This repository holds a gem
+skeleton and the design decisions listed below. The version stays at `0.0.0`
+until the first release.
+
+Work runs in three stages:
+
+1. **The walking skeleton** — the libhegel binding, the run loop, failure
+   reports, and the `booleans`, `integers`, `floats`, `text`, and `arrays`
+   generators.
+2. **The full generator set** — the remaining generators and combinators.
+3. **The advanced features** — the example database, targeted testing, stateful
+   testing, phases, and health checks.
+
+The first release to RubyGems.org comes after stage 3.
+
+## Design
+
+| Decision | Choice |
+| --- | --- |
+| Gem name | `hegeltest` |
+| Require path | `require "hegel"` (`require "hegeltest"` also works) |
+| Namespace | `Hegel` |
+| Binding | `fiddle`, so installing the gem needs no compiler |
+| Ruby | 3.3, 3.4, and 4.0 |
+| Platforms | Linux amd64/arm64, macOS arm64, Windows amd64/arm64 |
+| Engine delivery | One prebuilt `libhegel` per platform-specific gem |
+
+`HEGEL_LIBHEGEL_PATH` will override the bundled engine with a local build.
+
+The gem name follows the Rust implementation, whose published crate is
+`hegeltest` and whose library is `hegel`. The name `hegel` on RubyGems.org
+stays free for whoever publishes an official Ruby implementation.
+
+macOS on Intel has no published `libhegel` artifact, so that platform will need
+`HEGEL_LIBHEGEL_PATH` and a local build.
+
+### The intended API
+
+This is the shape the library is being built toward. **None of it runs yet.**
+
+```ruby
+# spec/spec_helper.rb
+require "hegel"
+
+RSpec.configure do |config|
+  config.include Hegel::Syntax::Methods
+end
 ```
 
-If bundler is not being used to manage dependencies, install the gem by executing:
-
-```bash
-gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+```ruby
+# spec/my_sort_spec.rb
+RSpec.describe "my_sort" do
+  it "matches the builtin sort" do
+    Hegel.test do |tc|
+      xs = tc.draw(arrays(integers))
+      expect(my_sort(xs)).to eq(xs.sort)
+    end
+  end
+end
 ```
 
-## Usage
-
-TODO: Write usage instructions here
+Including `Hegel::Syntax::Methods` makes the generators available without a
+prefix, the way FactoryBot makes `create` available. The same generators stay
+reachable as `Hegel::Generators.arrays(...)` without the include.
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+```bash
+bin/setup          # install dependencies
+bundle exec rake   # run the tests and the linter
+bin/console        # open an interactive prompt
+```
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+`just` recipes call the same Rake tasks, so `just test` and `just lint` work
+for anyone who already uses `just` with the other Hegel implementations.
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/hegeltest. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/[USERNAME]/hegeltest/blob/main/CODE_OF_CONDUCT.md).
+Report bugs and open pull requests at
+<https://github.com/meganemura/hegel-ruby>. Contributors follow the
+[code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
+This gem is available under the [MIT License](LICENSE.txt).
 
-## Code of Conduct
-
-Everyone interacting in the Hegeltest project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/[USERNAME]/hegeltest/blob/main/CODE_OF_CONDUCT.md).
+Released gems will also carry the license of `libhegel`, which is MIT and
+copyright Antithesis, LLC, together with the licenses of the Rust crates that
+`libhegel` links.
