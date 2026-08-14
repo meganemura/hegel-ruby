@@ -430,35 +430,6 @@ class TestLibHegel < Minitest::Test
     assert_nil fake.failure_reproduction_blob(ctx, failure)
   end
 
-  def test_with_string_generator_yields_the_generator_and_frees_it_on_a_normal_return
-    fake = Hegel::LibHegel::Fake.new
-    ctx = fake.context_new
-    yielded_generator = nil
-
-    result = Hegel::LibHegel.with_string_generator(fake, ctx, min_size: 0, max_size: 5) do |generator|
-      yielded_generator = generator
-      :block_result
-    end
-
-    assert_equal :block_result, result
-    assert_includes fake.freed_string_generators, yielded_generator
-  end
-
-  def test_with_string_generator_frees_the_generator_even_when_the_block_raises
-    fake = Hegel::LibHegel::Fake.new
-    ctx = fake.context_new
-    raised_generator = nil
-
-    assert_raises(RuntimeError) do
-      Hegel::LibHegel.with_string_generator(fake, ctx, min_size: 0, max_size: 5) do |generator|
-        raised_generator = generator
-        raise "boom"
-      end
-    end
-
-    assert_includes fake.freed_string_generators, raised_generator
-  end
-
   def test_real_collection_free_string_generator_free_and_generate_string_result_free_are_no_ops_on_nil
     real = Hegel::LibHegel::Real.new
     assert_nil real.collection_free(nil, nil)

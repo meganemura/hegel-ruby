@@ -563,7 +563,7 @@ module Hegel
 
       # Returns a caller-owned string generator handle, released
       # separately with #string_generator_free (or scoped with
-      # LibHegel.with_string_generator). +categories+,
+      # Hegel::TestCase#with_text_generator). +categories+,
       # +exclude_categories+, +include_characters+, and
       # +exclude_characters+ are always passed as NULL/0 below: this call
       # only wires up the codepoint-range constraints of the 14-argument
@@ -665,7 +665,7 @@ module Hegel
       # (Python re syntax), released the same way as #string_generator_text:
       # with #string_generator_free. +alphabet+ is an optional string
       # generator handle (built via #string_generator_text, scoped with
-      # LibHegel.with_string_generator) whose character set constrains the
+      # Hegel::TestCase#with_text_generator) whose character set constrains the
       # padding and wildcard characters; nil (the default) marshals to NULL,
       # the header's documented "no particular alphabet" case.
       def string_generator_regex(ctx, pattern, fullmatch, alphabet = nil)

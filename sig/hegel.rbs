@@ -32,7 +32,11 @@ module Hegel
     def collection_more: (untyped collection) -> bool
     def collection_reject: (untyped collection, ?why: String?) -> untyped
     def collection_free: (untyped collection) -> untyped
-    def with_string_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
+    def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
+    def with_regex_generator: [R] (String pattern, fullmatch: bool) { (untyped) -> R } -> R
+    def with_email_generator: [R] () { (untyped) -> R } -> R
+    def with_url_generator: [R] () { (untyped) -> R } -> R
+    def with_domain_generator: [R] (max_length: Integer) { (untyped) -> R } -> R
     def generate_string: (untyped generator) -> String
     def generate_bytes: (Integer min_size, Integer max_size) -> String
     def generate_ipv4: () -> String
@@ -143,6 +147,43 @@ module Hegel
       def draw_entry: (untyped tc) -> [untyped, untyped]
     end
 
+    class CharactersGenerator < Generator
+      def initialize: (codec: String?, min_codepoint: Integer?, max_codepoint: Integer?) -> void
+      def do_draw: (untyped tc) -> String
+    end
+
+    class BinaryGenerator < Generator
+      def initialize: (min_size: Integer, max_size: Integer?) -> void
+      def do_draw: (untyped tc) -> String
+    end
+
+    class FromRegexGenerator < Generator
+      def initialize: (untyped pattern, fullmatch: bool) -> void
+      def do_draw: (untyped tc) -> String
+    end
+
+    class EmailsGenerator < Generator
+      def do_draw: (untyped tc) -> String
+    end
+
+    class UrlsGenerator < Generator
+      def do_draw: (untyped tc) -> String
+    end
+
+    class DomainsGenerator < Generator
+      def initialize: (max_length: Integer) -> void
+      def do_draw: (untyped tc) -> String
+    end
+
+    class IpAddressesGenerator < Generator
+      def initialize: (v4: bool, v6: bool) -> void
+      def do_draw: (untyped tc) -> untyped
+
+      private
+
+      def draw_address: (untyped tc) -> untyped
+    end
+
     extend Syntax::Methods
   end
 
@@ -160,6 +201,13 @@ module Hegel
       def tuples: (*Generator generators) -> Generators::TupleGenerator
       def sets: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::SetGenerator
       def hashes: (Generator keys, Generator values, ?min_size: Integer, ?max_size: Integer?) -> Generators::HashGenerator
+      def characters: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::CharactersGenerator
+      def binary: (?min_size: Integer, ?max_size: Integer?) -> Generators::BinaryGenerator
+      def from_regex: (untyped pattern, ?fullmatch: bool) -> Generators::FromRegexGenerator
+      def emails: () -> Generators::EmailsGenerator
+      def urls: () -> Generators::UrlsGenerator
+      def domains: (?max_length: Integer) -> Generators::DomainsGenerator
+      def ip_addresses: (?v4: bool, ?v6: bool) -> Generators::IpAddressesGenerator
     end
   end
 
@@ -302,7 +350,6 @@ module Hegel
     def self.with_context: [R] (untyped impl) { (untyped) -> R } -> R
     def self.check!: (untyped impl, untyped ctx, Integer code) -> void
     def self.warn_on_version_mismatch: (untyped impl, untyped ctx, ?io: untyped) -> void
-    def self.with_string_generator: [R] (untyped impl, untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
 
     class Real
       def initialize: (?String path, ?io: untyped) -> void

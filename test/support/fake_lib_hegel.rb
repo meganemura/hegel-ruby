@@ -384,7 +384,7 @@ module Hegel
       end
 
       # Records +generator+, so a test can confirm
-      # LibHegel.with_string_generator freed the handle it yielded,
+      # Hegel::TestCase#with_text_generator freed the handle it yielded,
       # mirroring #context_free / #freed_contexts for with_context.
       def string_generator_free(_ctx, generator)
         @freed_string_generators << generator

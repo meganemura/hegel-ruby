@@ -161,22 +161,6 @@ module Hegel
       impl.context_free(ctx)
     end
 
-    # Runs the block with a string generator obtained from
-    # +impl.string_generator_text(ctx, **kwargs)+, freeing it via
-    # +impl.string_generator_free+ whether the block returns or raises.
-    #
-    # hegel_string_generator_t is documented as immutable and shareable
-    # once built, which is what lets a caller reuse the same generator
-    # across many draws instead of rebuilding it each time; this helper
-    # covers the simpler case of a single scoped use, mirroring
-    # with_context's block-and-ensure shape for the generator handle.
-    def with_string_generator(impl, ctx, **kwargs)
-      generator = impl.string_generator_text(ctx, **kwargs)
-      yield generator
-    ensure
-      impl.string_generator_free(ctx, generator)
-    end
-
     # Raises the exception +code+ translates to, or returns without effect
     # for HEGEL_OK. The message is read from +impl.context_last_error(ctx)+
     # immediately, since libhegel's own buffer for it is invalidated by the

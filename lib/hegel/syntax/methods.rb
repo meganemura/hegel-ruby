@@ -9,7 +9,7 @@ module Hegel
     #
     #   RSpec.configure { |config| config.include Hegel::Syntax::Methods }
     #
-    # This is the one place any of these five methods is defined.
+    # This is the one place any of these methods is defined.
     # Hegel::Generators.<name> reaches the same methods without an
     # include, via Hegel::Generators extending this module below.
     module Methods
@@ -83,6 +83,46 @@ module Hegel
       # with [min_size, max_size] entries.
       def hashes(keys, values, min_size: 0, max_size: nil)
         Generators::HashGenerator.new(keys, values, min_size: min_size, max_size: max_size)
+      end
+
+      # A String of exactly one character, sharing #text's own alphabet
+      # options.
+      def characters(codec: nil, min_codepoint: nil, max_codepoint: nil)
+        Generators::CharactersGenerator.new(codec: codec, min_codepoint: min_codepoint, max_codepoint: max_codepoint)
+      end
+
+      # A byte String of [min_size, max_size] bytes.
+      def binary(min_size: 0, max_size: nil)
+        Generators::BinaryGenerator.new(min_size: min_size, max_size: max_size)
+      end
+
+      # A String matching +pattern+ (Python `re` syntax, not Ruby's
+      # Regexp syntax; see Generators::FromRegexGenerator). fullmatch
+      # requires the whole string to match, not just contain a match.
+      def from_regex(pattern, fullmatch: false)
+        Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch)
+      end
+
+      # An RFC 5321/5322 email address String.
+      def emails
+        Generators::EmailsGenerator.new
+      end
+
+      # An RFC 3986 http/https URL String.
+      def urls
+        Generators::UrlsGenerator.new
+      end
+
+      # A fully-qualified domain name String of at most +max_length+
+      # characters.
+      def domains(max_length: 255)
+        Generators::DomainsGenerator.new(max_length: max_length)
+      end
+
+      # An IPAddr, v4 or v6 depending on +v4+/+v6+ (see
+      # Generators::IpAddressesGenerator).
+      def ip_addresses(v4: true, v6: true)
+        Generators::IpAddressesGenerator.new(v4: v4, v6: v6)
       end
     end
   end

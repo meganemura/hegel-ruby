@@ -142,15 +142,46 @@ module Hegel
       @impl.collection_free(@ctx, collection)
     end
 
-    # Runs the block with a string generator handle scoped to this one
-    # call, freeing it before returning. See Hegel::Generators::
-    # TextGenerator for why this is built fresh per draw rather than cached
-    # on the generator instance.
-    def with_string_generator(**kwargs, &block)
-      LibHegel.with_string_generator(@impl, @ctx, **kwargs, &block)
+    # Runs the block with a text generator handle scoped to this one call,
+    # freeing it before returning. See Hegel::Generators::TextGenerator for
+    # why this is built fresh per draw rather than cached on the generator
+    # instance. Named for what it builds (hegel_string_generator_text), to
+    # read the same way as #with_regex_generator/#with_email_generator/
+    # #with_url_generator/#with_domain_generator below, each named for its
+    # own hegel_string_generator_* call.
+    def with_text_generator(**kwargs, &block)
+      with_generator_handle(@impl.string_generator_text(@ctx, **kwargs), &block)
     end
 
-    # hegel_generate_string against +generator+ (from #with_string_generator).
+    # Runs the block with a regex-matching string generator handle built
+    # from +pattern+/+fullmatch+ (see #string_generator_regex), freeing it
+    # via #with_generator_handle whether the block returns or raises.
+    def with_regex_generator(pattern, fullmatch:, &block)
+      with_generator_handle(string_generator_regex(pattern, fullmatch), &block)
+    end
+
+    # Runs the block with an email-address string generator handle (see
+    # #string_generator_email), freed the same way as #with_regex_generator.
+    def with_email_generator(&block)
+      with_generator_handle(string_generator_email, &block)
+    end
+
+    # Runs the block with a URL string generator handle (see
+    # #string_generator_url), freed the same way as #with_regex_generator.
+    def with_url_generator(&block)
+      with_generator_handle(string_generator_url, &block)
+    end
+
+    # Runs the block with a domain-name string generator handle built from
+    # +max_length+ (see #string_generator_domain), freed the same way as
+    # #with_regex_generator.
+    def with_domain_generator(max_length:, &block)
+      with_generator_handle(string_generator_domain(max_length), &block)
+    end
+
+    # hegel_generate_string against +generator+ (from #with_text_generator,
+    # #with_regex_generator, #with_email_generator, #with_url_generator, or
+    # #with_domain_generator).
     def generate_string(generator)
       @impl.generate_string(@ctx, @handle, generator)
     end
@@ -175,41 +206,67 @@ module Hegel
     end
 
     # hegel_string_generator_regex. +alphabet+ is an optional string
-    # generator handle (from #with_string_generator), or nil (the default)
-    # for the header's documented "no particular alphabet" case. Released
-    # the same way as any other string generator handle, with
-    # #string_generator_free.
+    # generator handle (from #with_text_generator), or nil (the default)
+    # for the header's documented "no particular alphabet" case. Public,
+    # like the three constructors below it, because
+    # test/hegel/test_lib_hegel.rb's own layer-1 conformance test already
+    # calls all four (and #string_generator_free) directly against the
+    # Fake to prove this thin delegation reaches +@impl+ correctly; a
+    # Hegel::Generator's do_draw should reach it only through
+    # #with_regex_generator instead.
     def string_generator_regex(pattern, fullmatch, alphabet = nil)
       @impl.string_generator_regex(@ctx, pattern, fullmatch, alphabet)
     end
 
-    # hegel_string_generator_email. Released with #string_generator_free.
+    # hegel_string_generator_email. Public for the same reason
+    # #string_generator_regex is; reached only through
+    # #with_email_generator otherwise.
     def string_generator_email
       @impl.string_generator_email(@ctx)
     end
 
-    # hegel_string_generator_url. Released with #string_generator_free.
+    # hegel_string_generator_url. Public for the same reason
+    # #string_generator_regex is; reached only through #with_url_generator
+    # otherwise.
     def string_generator_url
       @impl.string_generator_url(@ctx)
     end
 
-    # hegel_string_generator_domain. Released with #string_generator_free.
+    # hegel_string_generator_domain. Public for the same reason
+    # #string_generator_regex is; reached only through
+    # #with_domain_generator otherwise.
     def string_generator_domain(max_length)
       @impl.string_generator_domain(@ctx, max_length)
     end
 
     # hegel_string_generator_free, for a handle built by
     # #string_generator_regex, #string_generator_email,
-    # #string_generator_url, or #string_generator_domain.
-    # #with_string_generator already frees a text generator's handle
-    # itself; these four constructors have no scoped-block helper of their
-    # own, so a do_draw calling one of them frees the handle itself, the
-    # same way #new_collection's caller frees it with #collection_free.
+    # #string_generator_url, or #string_generator_domain. Public for the
+    # same reason #string_generator_regex is: the layer-1 conformance test
+    # calls it directly to prove the delegation. #with_generator_handle
+    # below is what pairs it with one of the four constructors for a
+    # do_draw.
     def string_generator_free(generator)
       @impl.string_generator_free(@ctx, generator)
     end
 
     private
+
+    # Runs the block with +generator+, freeing it via #string_generator_free
+    # whether the block returns or raises. The one #ensure
+    # #with_regex_generator/#with_email_generator/#with_url_generator/
+    # #with_domain_generator above share, so each of them stays a single
+    # line and none writes its own begin/ensure. Private, unlike the four
+    # methods that call it: a public version would take an already-built
+    # handle as its argument, the same shape a do_draw could otherwise call
+    # and forget to free. Keeping it private leaves #with_regex_generator
+    # and friends as the sanctioned path into a do_draw, each already
+    # pairing its own acquire with this release in one call.
+    def with_generator_handle(generator)
+      yield generator
+    ensure
+      string_generator_free(generator)
+    end
 
     # Records (name, value) for the eventual failure report. A no-op unless
     # +record+ was true at #initialize: a run iterates the generation and

@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "support/conformance"
+require "ipaddr"
 require "stringio"
 require "timeout"
 
@@ -442,6 +443,145 @@ class TestGenerators < Minitest::Test
     end
 
     assert_includes error.message, "must not be negative"
+  end
+
+  # ---- characters ----
+
+  def test_characters_draws_against_the_real_engine
+    assert_all_examples(characters) { |v| v.is_a?(String) && v.length == 1 }
+  end
+
+  def test_characters_codec_restricts_the_alphabet
+    assert_all_examples(characters(codec: "ascii")) { |v| v.ascii_only? }
+  end
+
+  def test_characters_min_codepoint_bounds_the_alphabet
+    assert_all_examples(characters(min_codepoint: 0x41)) { |v| v.codepoints.all? { |cp| cp >= 0x41 } }
+  end
+
+  def test_characters_max_codepoint_bounds_the_alphabet
+    assert_all_examples(characters(max_codepoint: 0x7A)) { |v| v.codepoints.all? { |cp| cp <= 0x7A } }
+  end
+
+  # ---- binary ----
+
+  def test_binary_draws_against_the_real_engine
+    assert_all_examples(binary) { |v| v.is_a?(String) && v.encoding == Encoding::BINARY }
+  end
+
+  def test_binary_min_size_bounds_the_draw
+    assert_all_examples(binary(min_size: 5)) { |v| v.bytesize >= 5 }
+  end
+
+  def test_binary_max_size_bounds_the_draw
+    assert_all_examples(binary(max_size: 3)) { |v| v.bytesize <= 3 }
+  end
+
+  def test_binary_max_size_less_than_min_size_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(binary(min_size: 5, max_size: 1)) }
+    end
+
+    assert_includes error.message, "max_size < min_size"
+  end
+
+  # ---- from_regex ----
+
+  # fullmatch: false (the default): the drawn string only has to contain a
+  # match, not equal one, so this checks for the pattern anywhere in the
+  # result rather than anchoring it. "[a-z]{3}" is simple enough to mean
+  # the same thing in Python re syntax (what the engine draws against) and
+  # Ruby's Regexp syntax (what this assertion checks with), per the task's
+  # own decision record.
+  def test_from_regex_draws_against_the_real_engine
+    assert_all_examples(from_regex("[a-z]{3}")) { |v| v.match?(/[a-z]{3}/) }
+  end
+
+  # fullmatch: true requires the whole drawn string to match, which this
+  # anchors with \A...\z to check on the Ruby side (see Test 5 in the
+  # skill: Ruby-side matching, and a pattern simple enough not to change
+  # meaning between the two regex syntaxes).
+  def test_from_regex_fullmatch_true_matches_the_whole_string
+    assert_all_examples(from_regex("[a-z]{3}", fullmatch: true)) { |v| v.match?(/\A[a-z]{3}\z/) }
+  end
+
+  # Construction alone must not raise (a Regexp is a legal, if useless,
+  # argument to build a generator from); only the draw below does.
+  def test_from_regex_pattern_must_be_a_string_raises_at_draw_time
+    generator = from_regex(/[a-z]{3}/)
+
+    assert_kind_of Hegel::Generator, generator
+    error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+    assert_includes error.message, "must be a String"
+  end
+
+  # ---- emails ----
+
+  def test_emails_draws_against_the_real_engine
+    assert_all_examples(emails) { |v| v.is_a?(String) }
+  end
+
+  # ---- urls ----
+
+  def test_urls_draws_against_the_real_engine
+    assert_all_examples(urls) { |v| v.is_a?(String) }
+  end
+
+  # ---- domains ----
+
+  def test_domains_draws_against_the_real_engine
+    assert_all_examples(domains) { |v| v.is_a?(String) }
+  end
+
+  def test_domains_max_length_bounds_the_draw
+    assert_all_examples(domains(max_length: 20)) { |v| v.length <= 20 }
+  end
+
+  # This layer does not validate max_length itself (see the task's own
+  # decision record); hegel_string_generator_domain rejects a value
+  # outside its documented 4..=255 range, and LibHegel.check! translates
+  # that HEGEL_E_INVALID_ARG into this Hegel::Error.
+  def test_domains_max_length_out_of_range_raises_at_draw_time
+    generator = domains(max_length: 3)
+
+    assert_kind_of Hegel::Generator, generator
+    error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+    assert_includes error.message, "HEGEL_E_INVALID_ARG"
+  end
+
+  # ---- ip_addresses ----
+
+  def test_ip_addresses_draws_against_the_real_engine
+    assert_all_examples(ip_addresses) { |v| v.is_a?(IPAddr) }
+  end
+
+  def test_ip_addresses_v4_only_draws_ipv4_addresses
+    assert_all_examples(ip_addresses(v6: false)) { |v| v.ipv4? }
+  end
+
+  def test_ip_addresses_v6_only_draws_ipv6_addresses
+    assert_all_examples(ip_addresses(v4: false)) { |v| v.ipv6? }
+  end
+
+  # With both families enabled (the default), the family choice itself
+  # varies from draw to draw -- these two find an example of each, the
+  # same way test_optional_can_find_a_nil_example / _a_non_nil_example
+  # prove optional's own boolean choice goes both ways.
+  def test_ip_addresses_v4_and_v6_can_find_an_ipv4_example
+    assert find_any(ip_addresses) { |v| v.ipv4? }.ipv4?
+  end
+
+  def test_ip_addresses_v4_and_v6_can_find_an_ipv6_example
+    assert find_any(ip_addresses) { |v| v.ipv6? }.ipv6?
+  end
+
+  # Construction alone must not raise; only the draw below does.
+  def test_ip_addresses_v4_and_v6_both_false_raises_at_draw_time
+    generator = ip_addresses(v4: false, v6: false)
+
+    assert_kind_of Hegel::Generator, generator
+    error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+    assert_includes error.message, "must not both be false"
   end
 
   # ---- mixin ----

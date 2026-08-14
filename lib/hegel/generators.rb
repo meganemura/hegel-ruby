@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
+require "ipaddr"
 require_relative "errors"
 require_relative "generator"
 require_relative "lib_hegel"
 
 module Hegel
-  # The five generators Hegel::Syntax::Methods exposes as bare, include-able
+  # The generators Hegel::Syntax::Methods exposes as bare, include-able
   # methods (see docs/adr/0004): booleans, integers, floats, text, and
   # arrays.
   #
@@ -112,7 +113,7 @@ module Hegel
         raise Hegel::Error, "text: max_size < min_size" if max_size < @min_size
 
         # A fresh generator handle every draw, freed before this method
-        # returns via Hegel::TestCase#with_string_generator, rather than
+        # returns via Hegel::TestCase#with_text_generator, rather than
         # cached on this generator instance: hegel_string_generator_free
         # takes the context, so the handle cannot outlive it, and this
         # generator object can be drawn from again in a later run against a
@@ -122,7 +123,7 @@ module Hegel
         # free at a fixed, known scope exit; Ruby has no equivalent
         # lifetime to hang a cache on, so this pays the alphabet-building
         # cost every draw instead.
-        tc.with_string_generator(
+        tc.with_text_generator(
           min_size: @min_size, max_size: max_size, codec: @codec,
           min_codepoint: @min_codepoint || 0, max_codepoint: @max_codepoint || 0xFFFFFFFF
         ) { |generator| tc.generate_string(generator) }
@@ -392,6 +393,169 @@ module Hegel
         [@keys.do_draw(tc), @values.do_draw(tc)]
       ensure
         tc.stop_span(discard: false)
+      end
+    end
+
+    # Hegel::Syntax::Methods#characters. A String of exactly one character,
+    # sharing TextGenerator's own alphabet options (codec, min_codepoint,
+    # max_codepoint) by delegating to a TextGenerator built with min_size
+    # and max_size both fixed at 1 -- the same alphabet-building logic,
+    # just bounded to a single character instead of a run of them. Opens
+    # no span of its own for the same reason TextGenerator does not: the
+    # delegated #do_draw is the whole draw, not a composition of several.
+    class CharactersGenerator < Generator
+      def initialize(codec:, min_codepoint:, max_codepoint:)
+        super()
+        @text = TextGenerator.new(
+          min_size: 1, max_size: 1, codec: codec,
+          min_codepoint: min_codepoint, max_codepoint: max_codepoint
+        )
+      end
+
+      def do_draw(tc)
+        @text.do_draw(tc)
+      end
+    end
+
+    # Hegel::Syntax::Methods#binary. A byte String of [min_size, max_size]
+    # bytes, unbounded above by default.
+    class BinaryGenerator < Generator
+      def initialize(min_size:, max_size:)
+        super()
+        @min_size = min_size
+        @max_size = max_size
+      end
+
+      def do_draw(tc)
+        max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+        raise Hegel::Error, "binary: max_size < min_size" if max_size < @min_size
+
+        # hegel_generate_bytes already returns an Encoding::BINARY String
+        # (see LibHegel::Real#generate_bytes); force_encoding here would
+        # be redundant at best, and wrong the moment a caller's own bytes
+        # happened to be valid UTF-8 and got silently relabelled as text.
+        tc.generate_bytes(@min_size, max_size)
+      end
+    end
+
+    # Hegel::Syntax::Methods#from_regex. A String matching +pattern+, which
+    # the header documents as Python `re` syntax -- a different grammar
+    # from Ruby's own Regexp, even though the two agree on simple patterns
+    # (character classes, quantifiers, alternation). fullmatch defaults to
+    # false, matching hegel_string_generator_regex's own documented
+    # default: the drawn string only has to contain a match, not equal one.
+    #
+    # +pattern+ must be a String, checked at draw time like every other
+    # validation in this file. A Ruby Regexp is rejected rather than
+    # accepted and translated: Regexp#source drops modifiers such as /i,
+    # /m, and /x silently, and the two grammars give the same characters
+    # different meanings in places -- Ruby's ^ and $ are always line
+    # anchors, where Python re's are string anchors unless re.MULTILINE is
+    # set, and Ruby's [[:alpha:]] POSIX bracket syntax has no Python re
+    # counterpart at all. Accepting a Regexp here would build a generator
+    # whose output quietly stopped matching the flags or anchors its
+    # caller wrote, with nothing to signal the mismatch. A caller who has
+    # confirmed a pattern needs no flags and uses only syntax the two
+    # grammars share can still pass `my_regexp.source` explicitly.
+    #
+    # alphabet is not exposed here: the header's third argument accepts a
+    # text generator to constrain the wildcard/padding characters this
+    # regex can produce, but wiring that surface up is out of scope for
+    # this batch (see the task's own decision record); nil, the header's
+    # documented "no particular alphabet" default, is passed in its place.
+    class FromRegexGenerator < Generator
+      def initialize(pattern, fullmatch:)
+        super()
+        @pattern = pattern
+        @fullmatch = fullmatch
+      end
+
+      def do_draw(tc)
+        unless @pattern.is_a?(String)
+          raise Hegel::Error, "from_regex: pattern must be a String in Python re syntax, not a #{@pattern.class}"
+        end
+
+        tc.with_regex_generator(@pattern, fullmatch: @fullmatch) { |generator| tc.generate_string(generator) }
+      end
+    end
+
+    # Hegel::Syntax::Methods#emails. An RFC 5321/5322 email address String.
+    # hegel_string_generator_email takes no arguments, so there is nothing
+    # to validate and nothing for #initialize to hold.
+    class EmailsGenerator < Generator
+      def do_draw(tc)
+        tc.with_email_generator { |generator| tc.generate_string(generator) }
+      end
+    end
+
+    # Hegel::Syntax::Methods#urls. An RFC 3986 http/https URL String.
+    # hegel_string_generator_url takes no arguments, for the same reason
+    # EmailsGenerator has no #initialize.
+    class UrlsGenerator < Generator
+      def do_draw(tc)
+        tc.with_url_generator { |generator| tc.generate_string(generator) }
+      end
+    end
+
+    # Hegel::Syntax::Methods#domains. A fully-qualified domain name String
+    # of at most +max_length+ characters (default 255, the header's own
+    # upper bound). The header documents the valid range as 4..=255; that
+    # range is not checked here -- hegel_string_generator_domain already
+    # returns HEGEL_E_INVALID_ARG outside it, which LibHegel.check! turns
+    # into a Hegel::Error naming that code, so a local check here would
+    # only repeat the engine's own validation with a worse message.
+    class DomainsGenerator < Generator
+      def initialize(max_length:)
+        super()
+        @max_length = max_length
+      end
+
+      def do_draw(tc)
+        tc.with_domain_generator(max_length: @max_length) { |generator| tc.generate_string(generator) }
+      end
+    end
+
+    # Hegel::Syntax::Methods#ip_addresses. An IPAddr, v4 or v6 depending on
+    # +v4+/+v6+. Both true (the default) draws a boolean to pick the
+    # family for each value; both false has no family left to draw from,
+    # so it raises here rather than reaching hegel_generate_ipv4 or
+    # hegel_generate_ipv6 at all.
+    #
+    # Spanned with HEGEL_LABEL_IP_ADDRESS around the whole draw, the same
+    # way OptionalGenerator spans its own boolean-then-delegate draw
+    # (see the HEGEL_LABEL_* table): when both families are enabled this
+    # generator makes two native calls (the family choice, then the
+    # address) to produce one value, and the span is what lets the
+    # shrinker retry that pair together instead of the two calls
+    # separately.
+    class IpAddressesGenerator < Generator
+      def initialize(v4:, v6:)
+        super()
+        @v4 = v4
+        @v6 = v6
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "ip_addresses: v4 and v6 must not both be false" if !@v4 && !@v6
+
+        tc.start_span(LibHegel::HEGEL_LABEL_IP_ADDRESS)
+        begin
+          draw_address(tc)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      private
+
+      # hegel_generate_ipv4/hegel_generate_ipv6 return the address's raw
+      # network-order bytes (see TestCase#generate_ipv4/#generate_ipv6).
+      # IPAddr.new_ntoh builds an IPAddr straight from that byte string,
+      # picking v4 or v6 by its length (4 or 16), so no manual byte-to-
+      # integer conversion belongs here.
+      def draw_address(tc)
+        use_v4 = (@v4 && @v6) ? tc.generate_boolean : @v4
+        IPAddr.new_ntoh(use_v4 ? tc.generate_ipv4 : tc.generate_ipv6)
       end
     end
   end
