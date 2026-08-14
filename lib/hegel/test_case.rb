@@ -155,6 +155,60 @@ module Hegel
       @impl.generate_string(@ctx, @handle, generator)
     end
 
+    # hegel_generate_bytes. A future Hegel::Generators::BinaryGenerator's
+    # own primitive, the bytes counterpart to #generate_string.
+    def generate_bytes(min_size, max_size)
+      @impl.generate_bytes(@ctx, @handle, min_size, max_size)
+    end
+
+    # hegel_generate_ipv4, returning the address's 4 raw bytes. Converting
+    # to a caller-facing address type (IPAddr or similar) is left to the
+    # generator built on top of this call.
+    def generate_ipv4
+      @impl.generate_ipv4(@ctx, @handle)
+    end
+
+    # hegel_generate_ipv6, returning the address's 16 raw bytes. Same
+    # division of labor as #generate_ipv4.
+    def generate_ipv6
+      @impl.generate_ipv6(@ctx, @handle)
+    end
+
+    # hegel_string_generator_regex. +alphabet+ is an optional string
+    # generator handle (from #with_string_generator), or nil (the default)
+    # for the header's documented "no particular alphabet" case. Released
+    # the same way as any other string generator handle, with
+    # #string_generator_free.
+    def string_generator_regex(pattern, fullmatch, alphabet = nil)
+      @impl.string_generator_regex(@ctx, pattern, fullmatch, alphabet)
+    end
+
+    # hegel_string_generator_email. Released with #string_generator_free.
+    def string_generator_email
+      @impl.string_generator_email(@ctx)
+    end
+
+    # hegel_string_generator_url. Released with #string_generator_free.
+    def string_generator_url
+      @impl.string_generator_url(@ctx)
+    end
+
+    # hegel_string_generator_domain. Released with #string_generator_free.
+    def string_generator_domain(max_length)
+      @impl.string_generator_domain(@ctx, max_length)
+    end
+
+    # hegel_string_generator_free, for a handle built by
+    # #string_generator_regex, #string_generator_email,
+    # #string_generator_url, or #string_generator_domain.
+    # #with_string_generator already frees a text generator's handle
+    # itself; these four constructors have no scoped-block helper of their
+    # own, so a do_draw calling one of them frees the handle itself, the
+    # same way #new_collection's caller frees it with #collection_free.
+    def string_generator_free(generator)
+      @impl.string_generator_free(@ctx, generator)
+    end
+
     private
 
     # Records (name, value) for the eventual failure report. A no-op unless

@@ -34,6 +34,14 @@ module Hegel
     def collection_free: (untyped collection) -> untyped
     def with_string_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
     def generate_string: (untyped generator) -> String
+    def generate_bytes: (Integer min_size, Integer max_size) -> String
+    def generate_ipv4: () -> String
+    def generate_ipv6: () -> String
+    def string_generator_regex: (String pattern, bool fullmatch, ?untyped alphabet) -> untyped
+    def string_generator_email: () -> untyped
+    def string_generator_url: () -> untyped
+    def string_generator_domain: (Integer max_length) -> untyped
+    def string_generator_free: (untyped generator) -> nil
   end
 
   class Generator
@@ -337,6 +345,14 @@ module Hegel
       def string_generator_free: (untyped ctx, untyped generator) -> nil
       def generate_string: (untyped ctx, untyped tc, untyped generator) -> String
       def generate_string_result_free: (untyped ctx, untyped result) -> nil
+      def generate_bytes: (untyped ctx, untyped tc, Integer min_size, Integer max_size) -> String
+      def generate_bytes_result_free: (untyped ctx, untyped result) -> nil
+      def string_generator_regex: (untyped ctx, String pattern, bool fullmatch, ?untyped alphabet) -> untyped
+      def string_generator_email: (untyped ctx) -> untyped
+      def string_generator_url: (untyped ctx) -> untyped
+      def string_generator_domain: (untyped ctx, Integer max_length) -> untyped
+      def generate_ipv4: (untyped ctx, untyped tc) -> String
+      def generate_ipv6: (untyped ctx, untyped tc) -> String
     end
   end
 end

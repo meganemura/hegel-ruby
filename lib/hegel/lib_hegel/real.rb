@@ -189,6 +189,39 @@ module Hegel
           "hegel_generate_string_result_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
         )
 
+        @generate_bytes_fn = bind(
+          "hegel_generate_bytes",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @generate_bytes_result_free_fn = bind(
+          "hegel_generate_bytes_result_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+
+        @string_generator_regex_fn = bind(
+          "hegel_string_generator_regex",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_BOOL, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @string_generator_email_fn = bind(
+          "hegel_string_generator_email", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+        @string_generator_url_fn = bind(
+          "hegel_string_generator_url", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+        @string_generator_domain_fn = bind(
+          "hegel_string_generator_domain",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+
+        @generate_ipv4_fn = bind(
+          "hegel_generate_ipv4", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+        @generate_ipv6_fn = bind(
+          "hegel_generate_ipv6", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
+
         LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
       end
 
@@ -589,6 +622,114 @@ module Hegel
       def generate_string_result_free(ctx, result)
         @generate_string_result_free_fn.call(ctx, result)
         nil
+      end
+
+      # Returns drawn bytes as a String, read via +len+ the same way
+      # #generate_string reads its own out-parameter: the header gives no
+      # NUL-termination guarantee for this buffer either, so the length is
+      # what makes the copy exact.
+      #
+      # Unlike #generate_string, the result is never force-encoded.
+      # hegel_generate_bytes_result_t is documented as a byte buffer, not
+      # text, and Fiddle::Pointer#to_str already returns ASCII-8BIT
+      # (Encoding::BINARY), which is the encoding a byte string belongs in.
+      #
+      # The native buffer is released in +ensure+ via
+      # #generate_bytes_result_free, for the same reason #generate_string
+      # frees its own result from inside this file: Fiddle is confined to
+      # this file, so the freeable handle never leaves this method. Freeing
+      # is safe even when the draw above raised, for the same
+      # zero-filled-malloc reason documented on #generate_string: the
+      # header documents hegel_generate_bytes_result_free as safe on an
+      # already-freed (zeroed) struct too.
+      def generate_bytes(ctx, tc, min_size, max_size)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP + Fiddle::SIZEOF_SIZE_T, Fiddle::RUBY_FREE)
+        code = @generate_bytes_fn.call(ctx, tc, min_size, max_size, out)
+        LibHegel.check!(self, ctx, code)
+        len = out[Fiddle::SIZEOF_VOIDP, Fiddle::SIZEOF_SIZE_T].unpack1("J")
+        out.ptr.to_str(len)
+      ensure
+        generate_bytes_result_free(ctx, out)
+      end
+
+      # No-op when +result+ is nil, matching
+      # hegel_generate_bytes_result_free's documented no-op-on-NULL
+      # contract (also safe on an already-freed, zeroed struct); not
+      # translated, for the same reason as #context_free.
+      def generate_bytes_result_free(ctx, result)
+        @generate_bytes_result_free_fn.call(ctx, result)
+        nil
+      end
+
+      # Returns a caller-owned string generator handle matching +pattern+
+      # (Python re syntax), released the same way as #string_generator_text:
+      # with #string_generator_free. +alphabet+ is an optional string
+      # generator handle (built via #string_generator_text, scoped with
+      # LibHegel.with_string_generator) whose character set constrains the
+      # padding and wildcard characters; nil (the default) marshals to NULL,
+      # the header's documented "no particular alphabet" case.
+      def string_generator_regex(ctx, pattern, fullmatch, alphabet = nil)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @string_generator_regex_fn.call(ctx, pattern, fullmatch, alphabet, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # Returns a caller-owned string generator handle producing RFC
+      # 5321/5322 email addresses, released the same way as
+      # #string_generator_text.
+      def string_generator_email(ctx)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @string_generator_email_fn.call(ctx, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # Returns a caller-owned string generator handle producing RFC 3986
+      # http/https URLs, released the same way as #string_generator_text.
+      def string_generator_url(ctx)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @string_generator_url_fn.call(ctx, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # Returns a caller-owned string generator handle producing
+      # fully-qualified domain names, released the same way as
+      # #string_generator_text. +max_length+ is the total FQDN length; the
+      # header documents it as valid in 4..=255. This layer does not
+      # validate that range itself, only translates the
+      # HEGEL_E_INVALID_ARG the engine returns outside it, the same
+      # division of labor #settings_set_database and every other setter
+      # above already follows.
+      def string_generator_domain(ctx, max_length)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @string_generator_domain_fn.call(ctx, max_length, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # hegel_generate_ipv4 writes into a caller-supplied fixed-length
+      # buffer instead of handing back a pointer through an out-parameter,
+      # unlike every generate_* call above: the header documents out_bytes
+      # as the address's 4 network-order bytes with no separate length to
+      # read, so the buffer's own size is the contract instead of a
+      # trailing len field. IPAddr conversion is left to the generator
+      # built on top of this call; this layer returns the raw bytes.
+      def generate_ipv4(ctx, tc)
+        out = Fiddle::Pointer.malloc(4, Fiddle::RUBY_FREE)
+        code = @generate_ipv4_fn.call(ctx, tc, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(4)
+      end
+
+      # Same fixed-buffer shape as #generate_ipv4, sized for the header's
+      # documented 16 network-order bytes.
+      def generate_ipv6(ctx, tc)
+        out = Fiddle::Pointer.malloc(16, Fiddle::RUBY_FREE)
+        code = @generate_ipv6_fn.call(ctx, tc, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(16)
       end
 
       private

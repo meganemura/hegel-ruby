@@ -42,7 +42,9 @@ module Hegel
         :failure_origin_code, :failure_reproduction_blob_code, :test_case_from_blob_code,
         :start_span_code, :stop_span_code,
         :new_collection_code, :collection_more_code, :collection_reject_code,
-        :generate_float_code, :string_generator_text_code, :generate_string_code
+        :generate_float_code, :string_generator_text_code, :generate_string_code,
+        :generate_bytes_code, :string_generator_regex_code, :string_generator_email_code,
+        :string_generator_url_code, :string_generator_domain_code, :generate_ipv4_code, :generate_ipv6_code
 
       # Values #generate_boolean / #generate_integer hand back on success.
       attr_writer :generate_boolean_value, :generate_integer_value
@@ -52,6 +54,10 @@ module Hegel
 
       # Value #generate_string hands back on success.
       attr_writer :generate_string_value
+
+      # Values #generate_bytes / #generate_ipv4 / #generate_ipv6 hand back
+      # on success.
+      attr_writer :generate_bytes_value, :generate_ipv4_value, :generate_ipv6_value
 
       # Number of times #collection_more answers true before it answers
       # false, mirroring #test_case_count / @cases_served below so a loop
@@ -154,6 +160,17 @@ module Hegel
         @string_generator_text_code = HEGEL_OK
         @generate_string_code = HEGEL_OK
         @generate_string_value = ""
+
+        @generate_bytes_code = HEGEL_OK
+        @generate_bytes_value = "".b
+        @string_generator_regex_code = HEGEL_OK
+        @string_generator_email_code = HEGEL_OK
+        @string_generator_url_code = HEGEL_OK
+        @string_generator_domain_code = HEGEL_OK
+        @generate_ipv4_code = HEGEL_OK
+        @generate_ipv4_value = "\x00\x00\x00\x00".b
+        @generate_ipv6_code = HEGEL_OK
+        @generate_ipv6_value = ("\x00" * 16).b
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -381,6 +398,45 @@ module Hegel
 
       def generate_string_result_free(_ctx, _result)
         nil
+      end
+
+      def generate_bytes(ctx, _tc, _min_size, _max_size)
+        LibHegel.check!(self, ctx, @generate_bytes_code)
+        @generate_bytes_value
+      end
+
+      def generate_bytes_result_free(_ctx, _result)
+        nil
+      end
+
+      def string_generator_regex(ctx, _pattern, _fullmatch, _alphabet = nil)
+        LibHegel.check!(self, ctx, @string_generator_regex_code)
+        Object.new
+      end
+
+      def string_generator_email(ctx)
+        LibHegel.check!(self, ctx, @string_generator_email_code)
+        Object.new
+      end
+
+      def string_generator_url(ctx)
+        LibHegel.check!(self, ctx, @string_generator_url_code)
+        Object.new
+      end
+
+      def string_generator_domain(ctx, _max_length)
+        LibHegel.check!(self, ctx, @string_generator_domain_code)
+        Object.new
+      end
+
+      def generate_ipv4(ctx, _tc)
+        LibHegel.check!(self, ctx, @generate_ipv4_code)
+        @generate_ipv4_value
+      end
+
+      def generate_ipv6(ctx, _tc)
+        LibHegel.check!(self, ctx, @generate_ipv6_code)
+        @generate_ipv6_value
       end
     end
   end

@@ -791,4 +791,314 @@ class TestLibHegel < Minitest::Test
     assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_ERROR, fake.run_result_status(ctx, Object.new)
     assert_equal "a failed health check", fake.run_result_error(ctx, Object.new)
   end
+
+  # hegel_generate_bytes returns a {uint8_t *data; size_t len} buffer, not
+  # text: unlike #generate_string, the returned String must stay
+  # Encoding::BINARY rather than being force-encoded UTF-8. The database
+  # is disabled ("") so the run leaves nothing on disk.
+  def test_real_generate_bytes_returns_binary_encoded_bytes_within_the_configured_size_bounds
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      value = real.generate_bytes(ctx, tc, 2, 5)
+      assert_equal Encoding::BINARY, value.encoding
+      assert_includes(2..5, value.bytesize)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  def test_fake_generate_bytes_stop_test_translates_to_hegel_stop_test
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_bytes_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    assert_raises(Hegel::StopTest) { fake.generate_bytes(ctx, Object.new, 0, 10) }
+  end
+
+  # hegel_string_generator_email / _url / _domain each build a
+  # hegel_string_generator_t*, freed and drawn the same way as the text
+  # generator above (#string_generator_free / #generate_string): the
+  # header documents no dedicated free or draw call for any of them. The
+  # database is disabled ("") so the run leaves nothing on disk.
+  def test_real_email_url_and_domain_generators_draw_strings
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      [
+        real.string_generator_email(ctx),
+        real.string_generator_url(ctx),
+        real.string_generator_domain(ctx, 50)
+      ].each do |generator|
+        value = real.generate_string(ctx, tc, generator)
+        assert_kind_of String, value
+      ensure
+        real.string_generator_free(ctx, generator)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # hegel_string_generator_domain's max_length is documented as valid in
+  # 4..=255. Measured against libhegel 0.32.5: both ends outside that
+  # range come back HEGEL_E_INVALID_ARG, translated here to Hegel::Error,
+  # matching the header's "Returns ... HEGEL_E_INVALID_ARG for a
+  # max_length that leaves no eligible top-level domains" (which also
+  # covers the upper bound, past RFC 1035's 255-byte limit).
+  def test_real_string_generator_domain_raises_on_max_length_out_of_range
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      assert_raises(Hegel::Error) { real.string_generator_domain(ctx, 3) }
+      assert_raises(Hegel::Error) { real.string_generator_domain(ctx, 256) }
+    end
+  end
+
+  # hegel_string_generator_regex's alphabet is optional (NULL). This draws
+  # with no alphabet at all -- the default branch of #string_generator_regex's
+  # optional argument -- while the next test below exercises the other
+  # branch, passing one built from #string_generator_text. The database is
+  # disabled ("") so the run leaves nothing on disk.
+  def test_real_regex_generator_draws_without_an_alphabet
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      generator = real.string_generator_regex(ctx, "a+", true)
+      begin
+        value = real.generate_string(ctx, tc, generator)
+        assert_kind_of String, value
+      ensure
+        real.string_generator_free(ctx, generator)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # The explicit-alphabet path #string_generator_regex's optional argument
+  # is for: a text generator, built the same way #string_generator_text is
+  # used everywhere else in this file, constrains the regex draw's padding
+  # and wildcard characters. The database is disabled ("") so the run
+  # leaves nothing on disk.
+  def test_real_regex_generator_accepts_a_text_alphabet_generator
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      alphabet = real.string_generator_text(ctx, min_size: 1, max_size: 1, codec: "ascii")
+      begin
+        generator = real.string_generator_regex(ctx, "a+", false, alphabet)
+        begin
+          value = real.generate_string(ctx, tc, generator)
+          assert_kind_of String, value
+        ensure
+          real.string_generator_free(ctx, generator)
+        end
+      ensure
+        real.string_generator_free(ctx, alphabet)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  def test_fake_string_generator_regex_email_url_and_domain_translate_configured_error_codes
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    fake.string_generator_regex_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.string_generator_regex(ctx, "a+", false) }
+
+    fake.string_generator_email_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.string_generator_email(ctx) }
+
+    fake.string_generator_url_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.string_generator_url(ctx) }
+
+    fake.string_generator_domain_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.string_generator_domain(ctx, 50) }
+  end
+
+  # hegel_generate_ipv4 / hegel_generate_ipv6 write into a caller-supplied
+  # fixed-length buffer (4 and 16 bytes respectively) rather than an
+  # out-parameter pointer, per the header. This layer returns the raw
+  # bytes, not an IPAddr -- conversion is a future generator's job. The
+  # database is disabled ("") so the run leaves nothing on disk.
+  def test_real_generate_ipv4_and_generate_ipv6_return_the_documented_byte_lengths
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      ipv4 = real.generate_ipv4(ctx, tc)
+      assert_equal 4, ipv4.bytesize
+      assert_equal Encoding::BINARY, ipv4.encoding
+
+      ipv6 = real.generate_ipv6(ctx, tc)
+      assert_equal 16, ipv6.bytesize
+      assert_equal Encoding::BINARY, ipv6.encoding
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  def test_fake_generate_ipv4_and_generate_ipv6_return_the_configured_values
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_ipv4_value = "\x01\x02\x03\x04".b
+    fake.generate_ipv6_value = ("\x00" * 15 + "\x01").b
+
+    assert_equal "\x01\x02\x03\x04".b, fake.generate_ipv4(ctx, Object.new)
+    assert_equal ("\x00" * 15 + "\x01").b, fake.generate_ipv6(ctx, Object.new)
+  end
+
+  # Hegel::TestCase's own wrappers for the eight native calls this file
+  # adds bindings for above: real.rb only makes them callable, not
+  # reachable from a Hegel::Generator#do_draw (see
+  # .claude/skills/new-generator/SKILL.md, "bound is not the same as
+  # callable"). Driven against the Fake since these are thin, unconditional
+  # delegations to the same-named Hegel::LibHegel method -- nothing here
+  # depends on the native engine.
+  def test_test_case_generate_bytes_generate_ipv4_and_generate_ipv6_delegate_to_impl
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_bytes_value = "\xAB\xCD".b
+    fake.generate_ipv4_value = "\x01\x02\x03\x04".b
+    fake.generate_ipv6_value = ("\x00" * 16).b
+    tc = Hegel::TestCase.new(fake, ctx, Object.new)
+
+    assert_equal "\xAB\xCD".b, tc.generate_bytes(1, 5)
+    assert_equal "\x01\x02\x03\x04".b, tc.generate_ipv4
+    assert_equal ("\x00" * 16).b, tc.generate_ipv6
+  end
+
+  # Exercises both branches of #string_generator_regex's optional
+  # +alphabet+ argument -- called with none (the default) and with an
+  # explicit handle -- so this method's own default-argument branch is
+  # covered from the TestCase layer, not just Real's.
+  def test_test_case_string_generator_constructors_and_free_delegate_to_impl
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    tc = Hegel::TestCase.new(fake, ctx, Object.new)
+
+    generators = [
+      tc.string_generator_regex("a+", false),
+      tc.string_generator_regex("a+", true, Object.new),
+      tc.string_generator_email,
+      tc.string_generator_url,
+      tc.string_generator_domain(50)
+    ]
+
+    generators.each { |generator| refute_nil generator }
+    generators.each { |generator| assert_nil tc.string_generator_free(generator) }
+    assert_equal generators, fake.freed_string_generators
+  end
 end
