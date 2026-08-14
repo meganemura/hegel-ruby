@@ -116,6 +116,17 @@ failures with identical origins are the same bug and get shrunk together. Each
 new origin is a new bug." Build it from where the exception was raised, the
 way hegel-rust builds one from a panic's location.
 
+**The test-case setting bounds generation, not the number of times the loop
+runs.** Shrinking draws more cases on top of it. Measured against libhegel
+0.32.5, a run configured for 20 test cases whose body always failed on a drawn
+integer yielded 1003 cases; the same run failing conditionally yielded 109.
+Two things follow. Drive the loop until `hegel_next_test_case` hands back
+nothing, never by counting. And keep per-case work cheap: anything expensive
+enough to notice — reading source to name a drawn value, formatting a
+backtrace — belongs in the single final replay rather than in every shrink
+probe. hegel-rust reaches the same conclusion from the other side, calling
+backtrace capture "the dominant cost of failing-heavy property runs".
+
 **Free native handles deterministically.** Every `hegel_*_free` function takes
 the context, so the context must outlive every handle allocated from it.
 Finalizer ordering cannot guarantee that. Release handles in an `ensure` block

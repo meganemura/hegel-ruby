@@ -285,4 +285,158 @@ class TestLibHegel < Minitest::Test
 
     assert_nil fake.run_start(ctx, Object.new)
   end
+
+  def test_real_run_result_free_and_failure_free_are_no_ops_on_nil
+    real = Hegel::LibHegel::Real.new
+    assert_nil real.run_result_free(nil, nil)
+    assert_nil real.failure_free(nil, nil)
+  end
+
+  # A run where every case is marked VALID has no counterexample: status
+  # comes back HEGEL_RUN_STATUS_PASSED and hegel_run_result_error's
+  # out-parameter is NULL (nil here), since the run completed normally.
+  # hegel_run_result is read before hegel_run_free and everything but
+  # hegel_run_result_free is read after it, confirming the header's claim
+  # that the copy stays valid past the run's own lifetime. The database is
+  # disabled ("") so the run leaves nothing on disk.
+  def test_real_passed_run_reports_passed_status_and_nil_error_after_run_free
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 3)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      loop do
+        tc = real.next_test_case(ctx, run)
+        break if tc.nil?
+
+        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, tc)
+      end
+
+      result = real.run_result(ctx, run)
+      real.run_free(ctx, run)
+
+      assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_PASSED, real.run_result_status(ctx, result)
+      assert_nil real.run_result_error(ctx, result)
+      assert_equal 0, real.run_result_failure_count(ctx, result)
+
+      real.run_result_free(ctx, result)
+    end
+  end
+
+  # Every case is marked INTERESTING under the same origin, so libhegel
+  # groups every shrink probe as one bug and the run always fails. Reads
+  # hegel_run_result's status, failure count, and each failure's origin
+  # and reproduction blob, then replays that blob through
+  # hegel_test_case_from_blob (no run handle or run loop needed for
+  # replay, per the header). The database is disabled ("") so the run
+  # leaves nothing on disk.
+  def test_real_failing_run_reports_failed_status_and_a_replayable_blob
+    real = Hegel::LibHegel::Real.new
+    origin = "hegel-ruby-test-origin"
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 3)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      loop do
+        tc = real.next_test_case(ctx, run)
+        break if tc.nil?
+
+        real.generate_integer(ctx, tc, 0, 100)
+        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin)
+        real.test_case_free(ctx, tc)
+      end
+
+      result = real.run_result(ctx, run)
+      real.run_free(ctx, run)
+
+      assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED, real.run_result_status(ctx, result)
+
+      count = real.run_result_failure_count(ctx, result)
+      assert_operator count, :>=, 1
+
+      count.times do |index|
+        failure = real.run_result_failure(ctx, result, index)
+        assert_includes real.failure_origin(ctx, failure), origin
+
+        blob = real.failure_reproduction_blob(ctx, failure)
+        assert_kind_of String, blob
+
+        # Marking the replayed handle complete (rather than freeing it
+        # right away) proves it is a live test case, not merely a NULL
+        # out.ptr that test_case_free's documented no-op-on-NULL contract
+        # would silently accept.
+        replay_settings = real.settings_new(ctx)
+        real.settings_set_verbosity(ctx, replay_settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+        real.settings_set_database(ctx, replay_settings, "")
+        replayed = real.test_case_from_blob(ctx, replay_settings, blob)
+        real.mark_complete(ctx, replayed, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin)
+        real.test_case_free(ctx, replayed)
+        real.settings_free(ctx, replay_settings)
+
+        real.failure_free(ctx, failure)
+      end
+
+      real.run_result_free(ctx, result)
+    end
+  end
+
+  # The header documents HEGEL_E_INVALID_ARG for a blob that is corrupt,
+  # non-UTF-8, or from an incompatible Hegel version; a plain string that
+  # was never produced by hegel_failure_reproduction_blob hits the same
+  # "corrupt" case.
+  def test_real_test_case_from_blob_raises_on_a_corrupt_blob
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      assert_raises(Hegel::Error) { real.test_case_from_blob(ctx, settings, "not a blob") }
+
+      real.settings_free(ctx, settings)
+    end
+  end
+
+  # #run_result_error and #failure_reproduction_blob share the ternary
+  # that copies libhegel's borrowed string or reports nil for a NULL
+  # out-parameter (LibHegel::Real#nullable_out_string); the real-engine
+  # tests above exercise its non-nil branch (a failure's blob) and its nil
+  # branch (a passed run's error). This confirms the Fake can model the
+  # nil-blob case, distinct from that ternary, for logic built on this
+  # boundary that needs to be testable without the native engine.
+  def test_fake_failure_reproduction_blob_returns_nil_when_configured_to
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.failure_origins = ["origin.rb:1"]
+    fake.failure_blobs = [nil]
+
+    failure = fake.run_result_failure(ctx, Object.new, 0)
+
+    assert_equal "origin.rb:1", fake.failure_origin(ctx, failure)
+    assert_nil fake.failure_reproduction_blob(ctx, failure)
+  end
+
+  def test_fake_run_result_status_and_error_return_the_configured_values
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_ERROR
+    fake.run_result_error_value = "a failed health check"
+
+    assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_ERROR, fake.run_result_status(ctx, Object.new)
+    assert_equal "a failed health check", fake.run_result_error(ctx, Object.new)
+  end
 end

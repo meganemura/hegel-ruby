@@ -54,6 +54,12 @@ module Hegel
     HEGEL_STATUS_OVERRUN = 2
     HEGEL_STATUS_INTERESTING = 3
 
+    # hegel_run_status_t, named from hegel.h's enum of the same name. Read
+    # via hegel_run_result_status once a run has finished.
+    HEGEL_RUN_STATUS_PASSED = 0
+    HEGEL_RUN_STATUS_FAILED = 1
+    HEGEL_RUN_STATUS_ERROR = 2
+
     # hegel_verbosity_t, named from hegel.h's enum of the same name. Passed
     # to hegel_settings_set_verbosity.
     HEGEL_VERBOSITY_QUIET = 0
@@ -71,6 +77,9 @@ module Hegel
       settings_set_seed settings_set_derandomize settings_set_database
       run_start next_test_case run_free test_case_free mark_complete
       generate_boolean generate_integer
+      run_result run_result_free run_result_status run_result_error
+      run_result_failure_count run_result_failure failure_free failure_origin
+      failure_reproduction_blob test_case_from_blob
     ].freeze
 
     module_function

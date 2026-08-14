@@ -48,6 +48,9 @@ module Hegel
     HEGEL_STATUS_INVALID: Integer
     HEGEL_STATUS_OVERRUN: Integer
     HEGEL_STATUS_INTERESTING: Integer
+    HEGEL_RUN_STATUS_PASSED: Integer
+    HEGEL_RUN_STATUS_FAILED: Integer
+    HEGEL_RUN_STATUS_ERROR: Integer
     HEGEL_VERBOSITY_QUIET: Integer
     HEGEL_VERBOSITY_NORMAL: Integer
     HEGEL_VERBOSITY_VERBOSE: Integer
@@ -78,6 +81,16 @@ module Hegel
       def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin) -> nil
       def generate_boolean: (untyped ctx, untyped tc, Float p, bool forced, bool has_forced) -> bool
       def generate_integer: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
+      def run_result: (untyped ctx, untyped run) -> untyped
+      def run_result_free: (untyped ctx, untyped r) -> nil
+      def run_result_status: (untyped ctx, untyped r) -> Integer
+      def run_result_error: (untyped ctx, untyped r) -> String?
+      def run_result_failure_count: (untyped ctx, untyped r) -> Integer
+      def run_result_failure: (untyped ctx, untyped r, Integer index) -> untyped
+      def failure_free: (untyped ctx, untyped f) -> nil
+      def failure_origin: (untyped ctx, untyped f) -> String
+      def failure_reproduction_blob: (untyped ctx, untyped f) -> String?
+      def test_case_from_blob: (untyped ctx, untyped settings, String blob) -> untyped
     end
   end
 end

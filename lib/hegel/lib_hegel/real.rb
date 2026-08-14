@@ -74,6 +74,50 @@ module Hegel
           Fiddle::TYPE_INT
         )
 
+        @run_result_fn = bind(
+          "hegel_run_result",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @run_result_free_fn = bind("hegel_run_result_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+        @run_result_status_fn = bind(
+          "hegel_run_result_status",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @run_result_error_fn = bind(
+          "hegel_run_result_error",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @run_result_failure_count_fn = bind(
+          "hegel_run_result_failure_count",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @run_result_failure_fn = bind(
+          "hegel_run_result_failure",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @failure_free_fn = bind("hegel_failure_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+        @failure_origin_fn = bind(
+          "hegel_failure_origin",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @failure_reproduction_blob_fn = bind(
+          "hegel_failure_reproduction_blob",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @test_case_from_blob_fn = bind(
+          "hegel_test_case_from_blob",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP,
+            Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+
         @generate_boolean_fn = bind(
           "hegel_generate_boolean",
           [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_DOUBLE, Fiddle::TYPE_BOOL, Fiddle::TYPE_BOOL,
@@ -223,6 +267,111 @@ module Hegel
         nil
       end
 
+      # Returns a caller-owned copy of the finished run's result, or raises
+      # HEGEL_E_NOT_COMPLETE (via LibHegel.check!) if the run has not
+      # finished. The header documents this copy as staying valid after
+      # #run_free, so +run+ can be freed as soon as this call returns; it
+      # must be released separately, exactly once, with #run_result_free.
+      def run_result(ctx, run)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @run_result_fn.call(ctx, run, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # No-op when +r+ is nil, matching hegel_run_result_free's documented
+      # no-op-on-NULL contract; not translated, for the same reason as
+      # #context_free.
+      def run_result_free(ctx, r)
+        @run_result_free_fn.call(ctx, r)
+        nil
+      end
+
+      # Returns the raw hegel_run_status_t value (HEGEL_RUN_STATUS_PASSED /
+      # _FAILED / _ERROR); this layer does not interpret it, matching how
+      # #mark_complete passes hegel_status_t values through unexamined.
+      def run_result_status(ctx, r)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT, Fiddle::RUBY_FREE)
+        code = @run_result_status_fn.call(ctx, r, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(Fiddle::SIZEOF_INT).unpack1("l")
+      end
+
+      # Returns nil when the run completed normally (PASSED or FAILED),
+      # matching the header's documented NULL-on-success contract for this
+      # out-parameter, distinct from an empty-string message. See
+      # #nullable_out_string for the ownership note shared with
+      # #failure_reproduction_blob.
+      def run_result_error(ctx, r)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @run_result_error_fn.call(ctx, r, out)
+        LibHegel.check!(self, ctx, code)
+        nullable_out_string(out)
+      end
+
+      def run_result_failure_count(ctx, r)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T, Fiddle::RUBY_FREE)
+        code = @run_result_failure_count_fn.call(ctx, r, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(Fiddle::SIZEOF_SIZE_T).unpack1("J")
+      end
+
+      # +index+ must be less than #run_result_failure_count's value, per the
+      # header. Returns a caller-owned failure handle, released separately
+      # with #failure_free. Measured against libhegel 0.32.5: an
+      # out-of-range +index+ comes back HEGEL_E_INVALID_ARG, even though
+      # the header's Returns line for this call names only HEGEL_OK.
+      def run_result_failure(ctx, r, index)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @run_result_failure_fn.call(ctx, r, index, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # No-op when +f+ is nil, matching hegel_failure_free's documented
+      # no-op-on-NULL contract; not translated, for the same reason as
+      # #context_free.
+      def failure_free(ctx, f)
+        @failure_free_fn.call(ctx, f)
+        nil
+      end
+
+      # Copies the origin string out of libhegel's own buffer before
+      # returning, since it is owned by the failure and only valid until
+      # #failure_free.
+      def failure_origin(ctx, f)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @failure_origin_fn.call(ctx, f, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr.to_s
+      end
+
+      # Returns nil when libhegel produced no reproduction blob for this
+      # failure, matching the header's documented NULL-on-that-case
+      # contract. See #nullable_out_string for the shared ownership note.
+      def failure_reproduction_blob(ctx, f)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @failure_reproduction_blob_fn.call(ctx, f, out)
+        LibHegel.check!(self, ctx, code)
+        nullable_out_string(out)
+      end
+
+      # Replays +blob+ (from #failure_reproduction_blob) against +settings+
+      # with no run handle and no run loop involved, per the header.
+      # callback and user_data are always NULL here, for the same reason as
+      # #run_start. +blob+ marshals as a pointer to its bytes for the const
+      # char* argument, same as #settings_set_database. Raises
+      # HEGEL_E_INVALID_ARG (via LibHegel.check!) for a blob that is
+      # corrupt, non-UTF-8, or from an incompatible Hegel version;
+      # HEGEL_E_STOP_TEST if the blob's choices no longer match the
+      # caller's generators.
+      def test_case_from_blob(ctx, settings, blob)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @test_case_from_blob_fn.call(ctx, settings, blob, nil, nil, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
       # Forcing has to agree with +p+. Measured against libhegel 0.32.5:
       # forcing true at p = 0.0 and forcing false at p = 1.0 both come back
       # HEGEL_E_INVALID_ARG ("generate_boolean: cannot force ..."), while
@@ -249,6 +398,15 @@ module Hegel
 
       def bind(symbol, arg_types, ret_type)
         Fiddle::Function.new(@handle[symbol], arg_types, ret_type)
+      end
+
+      # Copies +out+'s const char* out-parameter into a Ruby String, or
+      # returns nil if libhegel left it NULL. Shared by #run_result_error
+      # and #failure_reproduction_blob, the two out-parameters the header
+      # documents as nullable, so both branches only need to be exercised
+      # once between the two call sites rather than at each one.
+      def nullable_out_string(out)
+        out.ptr.null? ? nil : out.ptr.to_s
       end
     end
   end
