@@ -64,5 +64,12 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
+      # The suite drives the real engine, so the engine has to be here before
+      # it runs. A fresh runner has no tmp/libhegel and no
+      # HEGEL_LIBHEGEL_PATH, and Hegel::LibHegel::Real would fail to open
+      # anything. This step is also the only place the fetch task is
+      # exercised on Linux and Windows rather than on a developer's Mac.
+      - name: Fetch the pinned libhegel
+        run: bundle exec rake libhegel:fetch
       - name: Run the tests and the linter
         run: bundle exec rake

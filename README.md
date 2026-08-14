@@ -120,6 +120,42 @@ reachable as `Hegel::Generators.arrays(...)` without the include.
 Today's generators are `booleans`, `integers`, `floats`, `text`, and `arrays`,
 and each one composes through `map` and `filter`.
 
+### Minitest
+
+Hegel needs nothing from your test framework. Install the generator methods
+once, and write the property inside an ordinary test:
+
+```ruby
+# test/test_helper.rb
+require "hegel"
+
+class Minitest::Test
+  include Hegel::Syntax::Methods
+end
+```
+
+```ruby
+# test/my_sort_test.rb
+class MySortTest < Minitest::Test
+  def test_matches_the_builtin_sort
+    Hegel.test do |tc|
+      xs = tc.draw(arrays(integers))
+      assert_equal xs.sort, my_sort(xs)
+    end
+  end
+end
+```
+
+Minitest reports the shrunk case as its own assertion failure, pointing at
+your line:
+
+```
+1) Failure:
+MySortTest#test_matches_the_builtin_sort [test/my_sort_test.rb:5]:
+Expected: [0, 0]
+  Actual: [0]
+```
+
 ## Development
 
 ```bash
