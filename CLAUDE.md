@@ -188,6 +188,13 @@ See the `new-generator` skill: the validation and span pattern distilled from
 `IntegerGenerator`, `ArrayGenerator`, and `TextGenerator`, plus the required
 test set for each new generator.
 
+### Testing against the real engine
+
+See the `real-engine-tests` skill. It collects what the engine does to a test
+regardless of what is drawn — why a case that discards without drawing ends
+the run, why counting iterations is wrong, and which mistakes make a test pass
+for a reason nobody intended.
+
 ## Where the answers come from
 
 **hegel-rust defines what is correct.** libhegel lives inside it, as the
