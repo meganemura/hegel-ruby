@@ -134,9 +134,8 @@ module Hegel
     # this binding runs with libhegel's own output callback set to NULL
     # (Hegel::LibHegel::Real#run_start passes it, and says why), so there
     # is no engine-printed line for a per-iteration note to line up with.
-    # Second, printing on every
-    # iteration would reintroduce the per-case cost the block form above
-    # exists to avoid.
+    # Second, printing on every iteration would reintroduce the per-case
+    # cost the block form above exists to avoid.
     def note(message = nil)
       has_message = !message.nil?
       if has_message == block_given?
@@ -175,6 +174,41 @@ module Hegel
       smallest_nonzero_magnitude:)
       @impl.generate_float(@ctx, @handle, width, min_value, max_value, allow_nan, allow_infinity, exclude_min,
         exclude_max, smallest_nonzero_magnitude)
+    end
+
+    # hegel_target: records +value+ as a numeric observation for libhegel's
+    # own hill-climbing between generation rounds, under +label+. Not
+    # recorded to the eventual failure report -- hegel-rust's own
+    # TestCase::target and hegel-java's own TestCase#target both leave an
+    # observation out of their report too, so this sits in the same
+    # "native surface that does not record" group as #generate_integer,
+    # #generate_boolean, and #generate_float above, rather than beside
+    # #draw_integer/#draw_boolean/#draw.
+    #
+    # +label+ defaults to "", matching hegel-go's own Target(value) and
+    # hegel-java's own target(double). hegel-rust's tc.target(expr) reaches
+    # a labelled call only because a macro rewrites it to
+    # target_labelled(expr, "expr") at compile time, using the call's own
+    # source text; Ruby has no such macro. Recovering a label from the call
+    # site the way #name_for does for an unlabelled draw was rejected: it
+    # would call caller_locations on every #target call, working against
+    # this class's own per-case cost concern (see #note's own comment on
+    # the same point), and it would make this default observably differ
+    # from hegel-go's and hegel-java's.
+    #
+    # +value+ is passed through as given, not #to_f'd: Fiddle's
+    # TYPE_DOUBLE argument marshals via NUM2DBL, which already accepts an
+    # Integer or a Float, so converting here would only add a second
+    # Ruby-side step ahead of the one Fiddle already performs.
+    #
+    # No argument validation here. hegel_target's own HEGEL_E_INVALID_ARG
+    # messages -- a label recorded twice, a non-finite value -- are
+    # already specific, and Hegel::LibHegel.check! already translates them
+    # to Hegel::Error the same way it does for every other hegel_* call
+    # this class makes. Writing the same check on this side would only
+    # give one mistake two messages to drift apart from each other.
+    def target(value, label: "")
+      @impl.target(@ctx, @handle, value, label)
     end
 
     # hegel_start_span, labelled with one of the Hegel::LibHegel::

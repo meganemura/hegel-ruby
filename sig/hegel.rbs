@@ -30,6 +30,7 @@ module Hegel
     def generate_integer_big: (Integer min_value, Integer max_value) -> Integer
     def generate_boolean: (?Float p) -> bool
     def generate_float: (Integer width, Float min_value, Float max_value, allow_nan: bool, allow_infinity: bool, exclude_min: bool, exclude_max: bool, smallest_nonzero_magnitude: Float) -> Float
+    def target: (Numeric value, ?label: String) -> nil
     def start_span: (Integer label) -> untyped
     def stop_span: (?discard: bool) -> untyped
     def new_collection: (Integer min_size, Integer max_size) -> untyped

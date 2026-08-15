@@ -828,6 +828,100 @@ class TestRunner < Minitest::Test
     assert_equal "boom", error.message
   end
 
+  # Targeting drives the observed maximum of two [0, 1000] draws' sum up to
+  # its ceiling, 2000, without any failure -- the same shape as hegel-rust's
+  # own test_can_target_a_score_upwards_without_failing
+  # (tests/test_targeting.rs), against the same engine underneath. A
+  # comparison run that fails past a threshold instead, with and without
+  # #target, does not tell targeting apart from luck: measured 10 runs each
+  # way at a fixed threshold, the mean case count before the first failure
+  # was 40.4 with #target called and 40.0 without, no distinguishable
+  # difference. Reaching a fixed ceiling has no such ambiguity, so this
+  # shape is deterministic instead. Run 5 times here, at test_cases: 1000
+  # (matching hegel-rust's own test_cases(1000)) to confirm it does not
+  # flake.
+  def test_target_climbs_a_summed_score_to_its_maximum
+    5.times do
+      max_score = 0
+
+      result = Hegel.test(test_cases: 1000, verbosity: :quiet, output: StringIO.new) do |tc|
+        n = tc.draw_integer(0, 1000)
+        m = tc.draw_integer(0, 1000)
+        score = n + m
+        tc.target(score)
+        max_score = score if score > max_score
+      end
+
+      assert_nil result
+      assert_equal 2000, max_score
+    end
+  end
+
+  # label: reaches the engine and does not disturb an otherwise-passing run.
+  def test_target_accepts_a_label
+    result = Hegel.test(test_cases: 20, verbosity: :quiet, output: StringIO.new) do |tc|
+      n = tc.draw_integer(0, 1000)
+      tc.target(n, label: "score")
+    end
+
+    assert_nil result
+  end
+
+  # hegel_target's own HEGEL_E_INVALID_ARG for a label recorded twice
+  # reaches the caller as Hegel::Error, translated by
+  # Hegel::LibHegel.check! the same way as every other invalid argument
+  # this library passes through. Raised from inside the body, it is a
+  # StandardError descendant, so Hegel::Runner.classify treats it as an
+  # ordinary counterexample and re-raises it unaltered once the run
+  # finishes -- the same path #classify's own comment documents for a
+  # test-body assertion failure.
+  def test_target_with_a_repeated_label_raises
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 5, verbosity: :quiet, output: StringIO.new) do |tc|
+        tc.target(1, label: "score")
+        tc.target(2, label: "score")
+      end
+    end
+
+    assert_includes error.message, "at most once per test case"
+  end
+
+  # Two distinct labels on the same test case are two distinct
+  # observations to the engine, not a conflict.
+  def test_target_with_two_different_labels_both_succeed
+    result = Hegel.test(test_cases: 5, verbosity: :quiet, output: StringIO.new) do |tc|
+      tc.target(1, label: "a")
+      tc.target(2, label: "b")
+    end
+
+    assert_nil result
+  end
+
+  # hegel_target's own "requires a finite score" HEGEL_E_INVALID_ARG for
+  # Float::NAN, reaching the caller the same way a repeated label does.
+  def test_target_with_a_non_finite_value_raises
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 5, verbosity: :quiet, output: StringIO.new) do |tc|
+        tc.target(Float::NAN)
+      end
+    end
+
+    assert_includes error.message, "finite"
+  end
+
+  # The header documents hegel_target as a no-op unless HEGEL_PHASE_TARGET
+  # is enabled, not an error; dropping that one phase from the mask (every
+  # other phase kept) must leave #target callable and the run passing.
+  def test_target_is_a_no_op_when_the_target_phase_is_dropped
+    result = Hegel.test(test_cases: 10, phases: [:explicit, :reuse, :generate, :shrink], verbosity: :quiet,
+      output: StringIO.new) do |tc|
+      n = tc.draw_integer(0, 1000)
+      tc.target(n)
+    end
+
+    assert_nil result
+  end
+
   private
 
   # A Fake configured for a FAILED run with exactly one failure whose blob
