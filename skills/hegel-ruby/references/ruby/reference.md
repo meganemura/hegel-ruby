@@ -6,7 +6,7 @@
 - [Test Structure](#test-structure) — `Hegel.test`, its block, return value, failure behavior
 - [Settings](#settings) — `test_cases:` `seed:` `derandomize:` `verbosity:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods) — `draw`, `draw_integer`, `draw_boolean`
-- [Generator Reference](#generator-reference) — `booleans`, `integers`, `floats`, `text`, `arrays`
+- [Generator Reference](#generator-reference) — `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
 - [Combinator Methods](#combinator-methods) — `.map`, `.filter`
 - [Gotchas](#gotchas)
 
@@ -29,10 +29,10 @@ require "hegel"
 include Hegel::Syntax::Methods
 ```
 
-`Hegel::Syntax::Methods` makes the generator methods (`booleans`, `integers`,
-`floats`, `text`, `arrays`) callable bare, the way FactoryBot's own
-`Syntax::Methods` makes `create` callable bare. With Minitest, include it
-once on the base test class:
+`Hegel::Syntax::Methods` makes every generator method (`booleans` through
+`deferred`; see [Generator Reference](#generator-reference)) callable bare,
+the way FactoryBot's own `Syntax::Methods` makes `create` callable bare.
+With Minitest, include it once on the base test class:
 
 ```ruby
 require "hegel"
@@ -208,7 +208,7 @@ To reproduce this failure, pass the blob below to Hegel.test:
 ```
 
 `assume` and `note` — `TestCase` methods other Hegel bindings expose — are
-not available yet; they arrive in a later milestone. Today, `.filter` (see
+not available yet; they arrive in milestone C. Today, `.filter` (see
 [Combinator Methods](#combinator-methods)) discards a test case when its
 predicate does not hold.
 
@@ -240,20 +240,35 @@ end
 
 ### `integers(min_value: nil, max_value: nil)`
 
-An integer in `[min_value, max_value]`, defaulting to the full signed
-64-bit range (`-2**63..(2**63 - 1)`) when either bound is omitted.
+An integer in `[min_value, max_value]`. Omitting `min_value` or `max_value`
+defaults it to the signed 64-bit boundary (`-2**63` or `2**63 - 1`); an
+explicit bound outside that range draws at arbitrary precision instead.
 
 ```ruby
 Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
   n = tc.draw(integers(min_value: 0, max_value: 100))
   raise "out of range" unless n.between?(0, 100)
 end
+
+seen = []
+Hegel.test(test_cases: 5, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(integers(min_value: 10**20, max_value: 10**20 + 100))
+end
+seen # => [100000000000000000000, 100000000000000000099, 100000000000000000039, 100000000000000000026, 100000000000000000059]
 ```
 
 `max_value < min_value` raises `Hegel::Error` at draw time:
-`"integers: max_value < min_value"`. A bound outside the 64-bit range also
-raises at draw time: `"integers: bounds outside the 64-bit range are not
-supported yet"`. Arbitrary-precision integers arrive in milestone B.
+`"integers: max_value < min_value"`. Because an omitted bound still
+defaults to the 64-bit boundary rather than to an unbounded range, this
+also fires for a one-sided big bound: `integers(min_value: 10**30)` raises
+the same error, since `max_value` defaults to `2**63 - 1`, smaller than
+`10**30` (see [Gotchas](#gotchas)). Pass both bounds explicitly to draw
+outside the 64-bit range:
+
+```ruby
+Hegel.test(verbosity: :quiet) { |tc| tc.draw(integers(min_value: 10**30, max_value: 10**30 + 100)) }
+# => nil
+```
 
 ### `floats(min_value: nil, max_value: nil, allow_nan: false, allow_infinity: false, exclude_min: false, exclude_max: false)`
 
@@ -301,7 +316,8 @@ end
 `max_size < min_size` raises `Hegel::Error` at draw time: `"text: max_size <
 min_size"`. `alphabet:`, `categories:`, `include_characters:`, and
 `exclude_characters:` (character-filtering options other Hegel bindings
-expose) arrive in milestone B.
+expose) are not available in this binding; `codec:`, `min_codepoint:`, and
+`max_codepoint:` are the alphabet controls it exposes today.
 
 ### `arrays(elements, min_size: 0, max_size: nil)`
 
@@ -318,13 +334,453 @@ end
 `max_size < min_size` raises `Hegel::Error` at draw time: `"arrays:
 max_size < min_size"`. A negative `min_size` also raises at draw time:
 `"arrays: min_size must not be negative"`. `unique:` (deduplicating
-elements, useful for key generation) arrives in milestone B, as do `sets`,
-`hashes`, `tuples`, and `sampled_from`.
+elements) is not available on `arrays`; `sets` (below) draws distinct
+elements instead.
+
+### `just(value)`
+
+Always `value`, drawing nothing.
+
+```ruby
+result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
+  v = tc.draw(just(42))
+  raise "not 42" unless v == 42
+end
+result # => nil
+```
+
+### `sampled_from(collection)`
+
+One element of `collection`, picked at random.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(sampled_from([1, 2, 3]))
+  raise "not in collection" unless [1, 2, 3].include?(v)
+end
+result # => nil
+```
+
+An empty `collection` raises `Hegel::Error` at draw time:
+`"sampled_from: collection must not be empty"`.
+
+### `one_of(*generators)`
+
+A value drawn from one of `generators`, picked at random.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(one_of(just(1), just(2)))
+  raise "not in set" unless [1, 2].include?(v)
+end
+result # => nil
+```
+
+Calling it with no `generators` raises `Hegel::Error` at draw time:
+`"one_of: at least one generator is required"`.
+
+### `optional(generator)`
+
+A value drawn from `generator` half the time, `nil` the other half.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(optional(just(1)))
+  raise "wrong value" unless v.nil? || v == 1
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 10, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(optional(integers(min_value: 0, max_value: 9)))
+end
+seen # => [nil, 2, 3, 6, 1, 7, 5, 4, 8, 9]
+```
+
+### `tuples(*generators)`
+
+An `Array` holding one value drawn from each of `generators`, in order
+(Ruby has no tuple type).
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(tuples(integers, text))
+  raise "wrong shape" unless v.is_a?(Array) && v.size == 2
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(tuples(integers(min_value: 0, max_value: 9), booleans))
+end
+seen # => [[0, false], [5, false], [3, false]]
+```
+
+Calling it with no `generators` is a valid, zero-length tuple, not an
+error:
+
+```ruby
+value = nil
+Hegel.test(test_cases: 1, verbosity: :quiet) { |tc| value = tc.draw(tuples) }
+value # => []
+```
+
+### `sets(elements, min_size: 0, max_size: nil)`
+
+A `Set` of values from `elements`, with `[min_size, max_size]` entries,
+unbounded above by default.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(sets(integers(min_value: 0, max_value: 100), min_size: 1, max_size: 5))
+  raise "wrong type" unless v.is_a?(Set) && v.size.between?(1, 5)
+end
+result # => nil
+
+seen = nil
+Hegel.test(test_cases: 1, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen = tc.draw(sets(integers(min_value: 0, max_value: 9), min_size: 3, max_size: 3))
+end
+seen.to_a # => [5, 2, 6]
+```
+
+`max_size < min_size` raises `Hegel::Error` at draw time: `"sets: max_size <
+min_size"`. A negative `min_size` also raises at draw time: `"sets:
+min_size must not be negative"`.
+
+### `hashes(keys, values, min_size: 0, max_size: nil)`
+
+A `Hash` whose keys are drawn from `keys` and values from `values`, with
+`[min_size, max_size]` entries, unbounded above by default.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(hashes(integers(min_value: 0, max_value: 100), text, min_size: 1, max_size: 5))
+  raise "wrong type" unless v.is_a?(Hash) && v.size.between?(1, 5)
+end
+result # => nil
+
+seen = nil
+Hegel.test(test_cases: 1, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen = tc.draw(hashes(integers(min_value: 0, max_value: 9), booleans, min_size: 2, max_size: 2))
+end
+seen.to_a # => [[5, false], [3, false]]
+```
+
+`max_size < min_size` raises `Hegel::Error` at draw time: `"hashes:
+max_size < min_size"`. A negative `min_size` also raises at draw time:
+`"hashes: min_size must not be negative"`.
+
+### `characters(codec: nil, min_codepoint: nil, max_codepoint: nil)`
+
+A `String` of exactly one character, sharing `text`'s own alphabet options.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(characters(codec: "ascii"))
+  raise "wrong shape" unless v.is_a?(String) && v.length == 1 && v.ascii_only?
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 5, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(characters(min_codepoint: 0x41, max_codepoint: 0x5A))
+end
+seen # => ["A", "Z", "E", "T", "G"]
+```
+
+### `binary(min_size: 0, max_size: nil)`
+
+A byte `String` of `[min_size, max_size]` bytes, unbounded above by
+default.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(binary(min_size: 1, max_size: 8))
+  raise "wrong encoding" unless v.encoding == Encoding::BINARY && v.bytesize.between?(1, 8)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(binary(min_size: 2, max_size: 2))
+end
+seen # => ["\x00\x00", "\xCA\x95", "\xD5N"]
+```
+
+`max_size < min_size` raises `Hegel::Error` at draw time: `"binary:
+max_size < min_size"`.
+
+### `from_regex(pattern, fullmatch: false)`
+
+A `String` matching `pattern` (Python `re` syntax, not Ruby's `Regexp`
+syntax). `fullmatch` requires the whole string to match, not just contain
+a match.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(from_regex("[a-z]{3}"))
+  raise "no match" unless v.match?(/[a-z]{3}/)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(from_regex("[a-z]{3}", fullmatch: true))
+end
+seen # => ["aaa", "pgq", "iqy"]
+```
+
+`pattern` must be a `String`, not a Ruby `Regexp` (the two grammars diverge
+on flags and anchors, so a `Regexp` is rejected rather than silently
+translated): `from_regex(/[a-z]{3}/)` raises `Hegel::Error` at draw time,
+`"from_regex: pattern must be a String in Python re syntax, not a
+Regexp"`. Pass `my_regexp.source` explicitly for a pattern confirmed to
+need no flags and to use only syntax the two grammars share.
+
+### `emails`
+
+An RFC 5321/5322 email address `String`.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(emails)
+  raise "not a string" unless v.is_a?(String)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 1, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(emails)
+end
+seen # => ["0@a.COM"]
+```
+
+### `urls`
+
+An RFC 3986 http/https URL `String`.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(urls)
+  raise "not a string" unless v.is_a?(String)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 1, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(urls)
+end
+seen # => ["http://a.COM/"]
+```
+
+### `domains(max_length: 255)`
+
+A fully-qualified domain name `String` of at most `max_length` characters.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(domains(max_length: 20))
+  raise "too long" unless v.length <= 20
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 1, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(domains)
+end
+seen # => ["a.COM"]
+```
+
+`max_length` outside libhegel's valid range raises `Hegel::Error` at draw
+time, wrapping the engine's own message:
+
+```ruby
+Hegel.test(verbosity: :quiet) { |tc| tc.draw(domains(max_length: 3)) }
+# raises Hegel::Error, "HEGEL_E_INVALID_ARG (-5): domain max_length=3
+# leaves no eligible TLDs"
+```
+
+### `ip_addresses(v4: true, v6: true)`
+
+An `IPAddr`, v4 or v6 depending on `v4`/`v6`. With both true (the default),
+the family is picked at random for each value.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(ip_addresses)
+  raise "not an ipaddr" unless v.is_a?(IPAddr)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(ip_addresses(v6: false)).to_s
+end
+seen # => ["0.0.0.0", "172.17.134.161", "15.160.245.253"]
+```
+
+`v4: false, v6: false` together raise `Hegel::Error` at draw time:
+`"ip_addresses: v4 and v6 must not both be false"`.
+
+### `uuids(version: nil)`
+
+A UUID `String` in the standard 8-4-4-4-12 hex form. `version: nil` (the
+default) draws uniform random bits except the nil UUID; an explicit
+version forces the RFC 4122 version and variant nibbles.
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(uuids)
+  raise "wrong shape" unless v.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 1, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(uuids(version: 4))
+end
+seen # => ["00000000-0000-4000-8000-000000000000"]
+```
+
+A `version` outside `0..15` raises `Hegel::Error` at draw time, wrapping
+the engine's own message:
+
+```ruby
+Hegel.test(verbosity: :quiet) { |tc| tc.draw(uuids(version: 16)) }
+# raises Hegel::Error, "HEGEL_E_INVALID_ARG (-5): uuid version must be a
+# single hex nibble (0..=15), got 16"
+```
+
+### `dates(min_value: nil, max_value: nil)`
+
+A proleptic Gregorian calendar `Date` in `[min_value, max_value]`,
+defaulting to year 1 through year 9999.
+
+```ruby
+Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(dates(min_value: Date.new(2020, 1, 1), max_value: Date.new(2020, 12, 31)))
+  raise "out of range" unless v.between?(Date.new(2020, 1, 1), Date.new(2020, 12, 31))
+end
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(dates(min_value: Date.new(2020, 1, 1), max_value: Date.new(2020, 12, 31))).to_s
+end
+seen # => ["2020-01-01", "2020-07-23", "2020-04-28"]
+```
+
+`max_value < min_value` raises `Hegel::Error` at draw time: `"dates:
+max_value < min_value"`.
+
+### `times(min_value: nil, max_value: nil)`
+
+A time of day `String`, `"HH:MM:SS.ffffff"`, in `[min_value, max_value]`
+(also `"HH:MM:SS.ffffff"` Strings), defaulting to the full day.
+
+```ruby
+Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(times(min_value: "09:00:00.000000", max_value: "17:00:00.000000"))
+  raise "out of range" unless v.between?("09:00:00.000000", "17:00:00.000000")
+end
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(times(min_value: "09:00:00.000000", max_value: "17:00:00.000000"))
+end
+seen # => ["09:00:00.000000", "09:00:33.554432", "09:00:00.002652"]
+```
+
+`max_value < min_value` raises `Hegel::Error` at draw time: `"times:
+max_value < min_value"`. A bound that is not a `"HH:MM:SS.ffffff"` String
+also raises at draw time: `times(min_value: "1:2:3.4")` gives `'times:
+min_value must be "HH:MM:SS.ffffff", got "1:2:3.4"'`.
+
+### `datetimes(min_value: nil, max_value: nil)`
+
+A naive (no timezone) `Time` in `[min_value, max_value]`, defaulting to
+year 1 through year 9999.
+
+```ruby
+Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(datetimes(min_value: Time.utc(2020, 1, 1), max_value: Time.utc(2020, 12, 31, 23, 59, 59)))
+  raise "not a Time" unless v.is_a?(Time)
+end
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(datetimes(min_value: Time.utc(2020, 1, 1), max_value: Time.utc(2020, 12, 31, 23, 59, 59))).to_s
+end
+seen # => ["2020-01-01 00:00:00 UTC", "2020-07-23 00:00:00 UTC", "2020-04-28 00:00:00 UTC"]
+```
+
+`max_value < min_value` raises `Hegel::Error` at draw time: `"datetimes:
+max_value < min_value"`. See [Gotchas](#gotchas) for a Windows-specific
+note on how this generator's value crosses into the native engine.
+
+### `composite(&block)`
+
+A value built from imperative code: `block` receives a draw surface and
+may call `#draw` (or the direct `#draw_integer`/`#draw_boolean`
+primitives) on it any number of times to assemble one value.
+
+```ruby
+pair = composite { |dtc| [dtc.draw(integers(min_value: 0, max_value: 10)), dtc.draw(text(max_size: 5, codec: "ascii"))] }
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(pair)
+  raise "wrong shape" unless v.is_a?(Array) && v.size == 2 && v[0].is_a?(Integer) && v[1].is_a?(String)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(pair)
+end
+seen # => [[0, ""], [6, "11W1"], [3, "z\u007Fz\u0010~"]]
+```
+
+```ruby
+generator = composite { |dtc| [dtc.draw_integer(0, 10), dtc.draw_boolean] }
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(generator)
+end
+seen # => [[0, false], [6, false], [3, false]]
+```
+
+Calling it with no block raises `Hegel::Error` at draw time: `"composite:
+block is required"`.
+
+### `deferred`
+
+A forward reference to a generator whose definition is supplied later via
+`#set`, enabling self-recursive and mutually recursive generators:
+
+```ruby
+tree = deferred
+tree.set(one_of(integers(min_value: 0, max_value: 10), arrays(tree, max_size: 3)))
+
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(tree)
+  raise "wrong type" unless v.is_a?(Integer) || v.is_a?(Array)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(tree)
+end
+seen # => [0, [0, []], 4]
+```
+
+Drawing from it before `#set` raises `Hegel::Error` at draw time:
+`"deferred: draw called before set"`. Calling `#set` a second time raises
+immediately (not at draw time): `"deferred: set called more than once"`.
 
 ## Combinator Methods
 
-Every `Hegel::Generator` — including the five above — has `.map` and
-`.filter`, each returning a new `Hegel::Generator`.
+Every `Hegel::Generator` — including every generator above — has `.map`
+and `.filter`, each returning a new `Hegel::Generator`.
 
 ### `.map(&block)`
 
@@ -378,17 +834,24 @@ need).
    both off; pass `allow_nan: true` and/or `allow_infinity: true`
    deliberately if the code under test needs to see them.
 
-2. **`integers` only covers the signed 64-bit range.** A bound outside
-   `-2**63..(2**63 - 1)` raises `Hegel::Error` at draw time. Arbitrary
-   precision integers arrive in milestone B.
+2. **`integers`'s default range, when a bound is omitted, is still the
+   signed 64-bit range (`-2**63..(2**63 - 1)`), even though arbitrary
+   precision is available.** Passing both `min_value` and `max_value`
+   explicitly draws outside that range at arbitrary precision; leaving one
+   bound out still defaults it to `-2**63` or `2**63 - 1`. That default can
+   surprise a caller who supplies only one big bound:
+   `integers(min_value: 10**30)` raises `Hegel::Error`, `"integers:
+   max_value < min_value"`, because `max_value` defaults to `2**63 - 1`,
+   smaller than `10**30`. Pass both bounds explicitly to draw a value
+   outside the 64-bit range.
 
 3. **Invalid generator options raise at draw time, not at construction
    time.** `integers(min_value: 5, max_value: 1)` builds without error;
    only `tc.draw` on it raises `Hegel::Error`. Every generator in this
    binding follows the same rule, matching hegel-rust's own contract.
 
-4. **`tc.assume` and `tc.note` are not available yet.** They arrive in a
-   later milestone. `.filter` discards a test case today when its predicate
+4. **`tc.assume` and `tc.note` are not available yet.** They arrive in
+   milestone C. `.filter` discards a test case today when its predicate
    does not hold.
 
 5. **`Hegel.test` returns `nil` on a pass and re-raises the failing case's
@@ -402,9 +865,19 @@ need).
 
 7. **This binding always disables libhegel's example database.** There is
    no `database:` setting to pass yet, and no `.hegel/` directory to manage
-   in a project that uses this gem.
+   in a project that uses this gem; the example database arrives in
+   milestone C.
 
-8. **Only five generators exist today: `booleans`, `integers`, `floats`,
-   `text`, and `arrays`.** `sets`, `hashes`, `tuples`, `sampled_from`,
-   `composite`, `record`, format generators (emails, URLs, dates), stateful
-   testing, and targeted testing all arrive in later milestones.
+8. **Targeted testing is not available yet.** It arrives in milestone C,
+   alongside the example database and stateful testing.
+
+9. **Stateful testing is not available yet.** It arrives in milestone C.
+
+10. **`datetimes` passes a 16-byte struct across the call into the native
+    engine, and that struct-passing is verified on arm64-darwin only.**
+    arm64 and System V (Linux) both pass a struct that size in two
+    registers, which this binding reproduces with two 64-bit arguments;
+    Win64 passes anything over eight bytes by reference instead, and that
+    divergent path is not yet confirmed. `dates` and `times` each pass an
+    8-byte struct, which every one of the three ABIs passes in a single
+    register, so neither carries this gap.
