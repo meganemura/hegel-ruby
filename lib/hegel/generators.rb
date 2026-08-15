@@ -735,5 +735,126 @@ module Hegel
         Time.utc(*date, *time)
       end
     end
+
+    # Hegel::Syntax::Methods#composite. Builds a generator from imperative
+    # code, the way Hypothesis's @composite decorator and hegel-rust's
+    # compose!/hegel-go's Composite let a caller assemble one value out of
+    # several draws without writing a Generator subclass: +block+ receives
+    # a draw surface (BlockTestCase below) and can call #draw on it any
+    # number of times.
+    #
+    # Spanned with HEGEL_LABEL_FLAT_MAP, not a label of its own: the header
+    # documents that label as the span around "a `flat_map` / monadic
+    # dependent draw", and a composite block is exactly that shape -- one
+    # or more draws, each free to depend on values the block already
+    # built, folded into a single result. No composite-specific label
+    # exists in the table this binding draws from (see lib_hegel.rb); if a
+    # true flat_map combinator is added later it can share this label, or
+    # the table can grow a dedicated one (hegel.h documents that a library
+    # may mint its own stable u64).
+    class CompositeGenerator < Generator
+      def initialize(&block)
+        super()
+        @block = block
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "composite: block is required" unless @block
+
+        tc.start_span(LibHegel::HEGEL_LABEL_FLAT_MAP)
+        begin
+          @block.call(BlockTestCase.new(tc))
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      # The draw surface a composite block receives. #draw reaches an
+      # inner generator's own #do_draw directly -- the same non-recording
+      # path ArrayGenerator#draw_element and every other compound
+      # generator's do_draw already takes -- rather than the real
+      # Hegel::TestCase#draw, which records. TestCase's own class comment
+      # states the invariant this preserves: a compound generator making
+      # several native calls produces exactly one report line for the
+      # value it built, not one per call. A composite block draws exactly
+      # the way a generator author's own do_draw does, so it is held to
+      # the same rule; letting the block reach the recording #draw instead
+      # would turn one composite draw into as many report lines as it made
+      # nested draws.
+      #
+      # #draw_integer/#draw_boolean are defined here for the same reason,
+      # not left to a method_missing delegation to the wrapped TestCase:
+      # the real TestCase already exposes both as recording methods, and a
+      # blanket delegation would let those two reach the engine
+      # unrecorded-in-name only, still bypassing the single-report-line
+      # rule #draw exists to keep the same way plain #draw would.
+      class BlockTestCase
+        def initialize(tc)
+          @tc = tc
+        end
+
+        # Draws +generator+ without recording a report line of its own.
+        def draw(generator)
+          generator.do_draw(@tc)
+        end
+
+        # hegel_generate_integer, without recording (see #draw).
+        def draw_integer(min_value, max_value)
+          @tc.generate_integer(min_value, max_value)
+        end
+
+        # hegel_generate_boolean, without recording (see #draw).
+        def draw_boolean(p = 0.5)
+          @tc.generate_boolean(p)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#deferred. A forward reference to a generator
+    # whose definition is not known yet, so a generator can refer to
+    # itself (or to another deferred still being built) before #set
+    # installs the real one -- enabling self-recursive and mutually
+    # recursive generators, the same shape as hegel-rust's
+    # DeferredGeneratorDefinition, hegel-cpp's DeferredGeneratorDefinition,
+    # and hegel-java's Deferred:
+    #
+    #   tree = deferred
+    #   tree.set(one_of(integers, arrays(tree)))
+    #   tc.draw(tree)
+    #
+    # Opens no span: #do_draw makes no native call of its own, only
+    # forwarding to whatever #set installed (one_of, above, already opens
+    # its own HEGEL_LABEL_ONE_OF span around that draw). This is the same
+    # "a generator opens a span only around more than one native call it
+    # makes itself" rule UuidsGenerator's own comment gives for a
+    # generator that makes exactly one -- applied here to a generator that
+    # makes zero. Every reference binding checked (hegel-rust's
+    # DeferredGenerator, hegel-cpp's DeferredGenerator, hegel-java's
+    # Deferred) opens none either.
+    class DeferredGenerator < Generator
+      def initialize
+        super
+        @inner = nil
+      end
+
+      # Installs the generator this reference forwards to. May be called
+      # only once: hegel-java's Deferred#set raises
+      # IllegalStateException on a second call and hegel-cpp's throws;
+      # hegel-rust's consumes self, making a second call a compile error.
+      # Three independent bindings agree a second #set is a caller
+      # mistake, not a silent overwrite or no-op, so this raises the same
+      # way.
+      def set(generator)
+        raise Hegel::Error, "deferred: set called more than once" if @inner
+
+        @inner = generator
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "deferred: draw called before set" unless @inner
+
+        @inner.do_draw(tc)
+      end
+    end
   end
 end

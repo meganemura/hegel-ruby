@@ -773,6 +773,120 @@ class TestGenerators < Minitest::Test
     end
   end
 
+  # ---- composite ----
+
+  def test_composite_draws_against_the_real_engine
+    generator = composite { |dtc| [dtc.draw(integers(min_value: 0, max_value: 10)), dtc.draw(text)] }
+
+    assert_all_examples(generator) { |v| v.is_a?(Array) && v.size == 2 && v[0].is_a?(Integer) && v[1].is_a?(String) }
+  end
+
+  # Covers BlockTestCase#draw_integer/#draw_boolean, the two primitives a
+  # composite block reaches the same way Hegel::TestCase#draw_integer/
+  # #draw_boolean let ordinary code reach the engine directly, without
+  # going through #draw and a Hegel::Generator.
+  def test_composite_draw_integer_and_draw_boolean_primitives
+    generator = composite { |dtc| [dtc.draw_integer(0, 10), dtc.draw_boolean] }
+
+    assert_all_examples(generator) { |v| v[0].between?(0, 10) && [true, false].include?(v[1]) }
+  end
+
+  # The span-placement layer (see the skill's Test 3): a composite value
+  # built from two dependent integer draws, composed inside arrays(...),
+  # shrinks to the minimal duplicate pair only when HEGEL_LABEL_FLAT_MAP
+  # wraps the whole composite draw -- a missing or misplaced span still
+  # passes but shrinks to a larger, non-minimal counterexample instead
+  # (mirrors test_arrays_composed_with_tuples_shrinks_to_the_minimal_duplicate_pair,
+  # since a 2-element composite and a 2-generator tuples() draw the same
+  # shape of value).
+  def test_arrays_composed_with_composite_shrinks_to_the_minimal_duplicate_pair
+    pair = composite do |dtc|
+      [dtc.draw(integers(min_value: 0, max_value: 1_000)), dtc.draw(integers(min_value: 0, max_value: 1_000))]
+    end
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(verbosity: :quiet) do |tc|
+        v = tc.draw(arrays(pair))
+        raise "duplicate in #{v.inspect}" if v.sort != v.sort.uniq
+      end
+    end
+
+    assert_includes error.message, "[[0, 0], [0, 0]]"
+  end
+
+  def test_composite_without_a_block_raises_at_draw_time
+    generator = composite
+
+    assert_kind_of Hegel::Generator, generator
+    error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+    assert_includes error.message, "block is required"
+  end
+
+  # Pins the decision that a composite block's own tc.draw calls do not
+  # each get their own report line: BlockTestCase#draw reaches the inner
+  # generator's #do_draw directly, never Hegel::TestCase#draw, so the two
+  # integer draws below stay unrecorded and only the composite's own
+  # value (bound to v) shows in the rendered failure report.
+  def test_composite_block_draws_do_not_record_their_own_report_line
+    output = StringIO.new
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        v = tc.draw(composite { |dtc|
+          [dtc.draw(integers(min_value: 0, max_value: 10)), dtc.draw(integers(min_value: 0, max_value: 10))]
+        })
+        raise "boom: #{v.inspect}"
+      end
+    end
+
+    assert_includes error.message, "[0, 0]"
+    draw_lines = output.string.lines.select { |line| line.start_with?("  ") && line.include?(" = ") }
+    assert_equal ["  v = [0, 0]\n"], draw_lines
+  end
+
+  # ---- deferred ----
+
+  def test_deferred_draws_after_set
+    generator = deferred
+    generator.set(integers(min_value: 0, max_value: 10))
+
+    assert_all_examples(generator) { |v| v.between?(0, 10) }
+  end
+
+  def test_deferred_draw_before_set_raises_at_draw_time
+    generator = deferred
+
+    assert_kind_of Hegel::Generator, generator
+    error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+    assert_includes error.message, "draw called before set"
+  end
+
+  def test_deferred_set_called_twice_raises
+    generator = deferred
+    generator.set(integers)
+
+    error = assert_raises(Hegel::Error) { generator.set(integers) }
+    assert_includes error.message, "set called more than once"
+  end
+
+  # A self-referential generator (the shape a recursive data type like a
+  # tree needs) must terminate: the engine's own size control (the
+  # collection_more budget arrays() draws against) bounds how many times
+  # arrays(tree) recurses into another tree before it stops offering more
+  # elements. Timeout.timeout is a second, independent guard, the same
+  # role it plays in test_sets_of_a_single_value_cannot_reach_a_larger_
+  # min_size_and_does_not_hang above: if a future change reintroduces
+  # unbounded recursion, this fails with Timeout::Error rather than
+  # hanging the suite.
+  def test_deferred_self_referential_generator_terminates
+    tree = deferred
+    tree.set(one_of(integers, arrays(tree)))
+
+    Timeout.timeout(20) do
+      assert_all_examples(tree) { |v| v.is_a?(Integer) || v.is_a?(Array) }
+    end
+  end
+
   # ---- mixin ----
 
   # Hegel::Generators.integers (module-level, via Hegel::Generators

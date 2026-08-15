@@ -54,6 +54,17 @@ to `lib/hegel/generators.rb`, four pieces:
    and the generator opens no span. Presence in the table is not the test;
    how many native calls the draw makes is.
 
+   One that makes **none** opens none either. `DeferredGenerator` forwards
+   to whatever `#set` installed and calls nothing itself; hegel-rust,
+   hegel-cpp, and hegel-java all forward the same way, with no span.
+
+**A generator that hands its own block a draw surface must hand it a
+non-recording one.** `CompositeGenerator` gives the caller's block a wrapper
+rather than the real `Hegel::TestCase`, so the block's inner draws reach the
+engine without each claiming its own line in the failure report. The
+one-compound-draw-one-report-line rule holds for a generator an author
+writes in a block exactly as it does for one written as a class.
+
 **A collection that keeps rejecting is already bounded; do not bound it
 again.** `SetGenerator` and `HashGenerator` call
 `TestCase#collection_reject` when a drawn element duplicates one they

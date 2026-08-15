@@ -223,6 +223,24 @@ module Hegel
       def do_draw: (untyped tc) -> Time
     end
 
+    class CompositeGenerator < Generator
+      def initialize: () { (CompositeGenerator::BlockTestCase) -> untyped } -> void
+      def do_draw: (untyped tc) -> untyped
+
+      class BlockTestCase
+        def initialize: (untyped tc) -> void
+        def draw: (Generator generator) -> untyped
+        def draw_integer: (Integer min_value, Integer max_value) -> Integer
+        def draw_boolean: (?Float p) -> bool
+      end
+    end
+
+    class DeferredGenerator < Generator
+      def initialize: () -> void
+      def set: (Generator generator) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+
     extend Syntax::Methods
   end
 
@@ -251,6 +269,8 @@ module Hegel
       def dates: (?min_value: untyped, ?max_value: untyped) -> Generators::DatesGenerator
       def times: (?min_value: String?, ?max_value: String?) -> Generators::TimesGenerator
       def datetimes: (?min_value: Time?, ?max_value: Time?) -> Generators::DatetimesGenerator
+      def composite: () { (Generators::CompositeGenerator::BlockTestCase) -> untyped } -> Generators::CompositeGenerator
+      def deferred: () -> Generators::DeferredGenerator
     end
   end
 

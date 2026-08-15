@@ -150,6 +150,20 @@ module Hegel
       def datetimes(min_value: nil, max_value: nil)
         Generators::DatetimesGenerator.new(min_value: min_value, max_value: max_value)
       end
+
+      # A value built from imperative code: +block+ receives a draw
+      # surface and may call #draw on it any number of times to assemble
+      # one value (see Generators::CompositeGenerator).
+      def composite(&block)
+        Generators::CompositeGenerator.new(&block)
+      end
+
+      # A forward reference to a generator whose definition is supplied
+      # later via #set, enabling self-recursive and mutually recursive
+      # generators (see Generators::DeferredGenerator).
+      def deferred
+        Generators::DeferredGenerator.new
+      end
     end
   end
 
