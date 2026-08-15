@@ -303,8 +303,9 @@ module Hegel
     # recording its entries for the report (see Hegel::TestCase). Returns
     # [exception, Hegel::Report::Failure] on success.
     #
-    # Flaky is "not INTERESTING", not "did not raise": #classify's other two
-    # non-INTERESTING outcomes both matter here. A body that raises nothing
+    # Flaky means any outcome other than INTERESTING, which is broader than
+    # "the body did not raise": #classify's other two non-INTERESTING
+    # outcomes both matter here. A body that raises nothing
     # on replay is the textbook flaky case. A blob whose choices no longer
     # match the caller's generators is the other one: the header puts that
     # at "the draw that overruns", so the body raises Hegel::StopTest and

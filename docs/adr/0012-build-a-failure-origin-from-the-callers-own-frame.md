@@ -58,9 +58,9 @@ lose the failure's identity entirely.
 ## Consequences
 
 Two failures raised from one line in a caller's own code stay one bug. That is
-the intended behaviour, not a residue of this one: a ternary that raises two
-different messages is one line and one origin, and splitting it across an
-`if`/`else` is what makes it two.
+the intended behaviour. A ternary that raises two different messages is one
+line and one origin, and splitting it across an `if`/`else` is what makes it
+two.
 
 A caller whose code under test is itself an installed gem now gets their own
 test line as the origin, rather than the line inside that gem. Two distinct
