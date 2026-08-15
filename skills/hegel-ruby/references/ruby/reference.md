@@ -1157,17 +1157,20 @@ result # => nil
    framework (RSpec, Minitest) reports it as its own failure, not a
    Hegel-specific one.
 
-5. **Two failures raised from the same source line are one failure.** This
-   binding builds the origin libhegel groups by from where the exception
-   was raised — its path and line number — so libhegel shrinks them
-   together as a single bug. Two logically distinct bugs written on one
-   line share an origin:
+5. **Failures are grouped by the line they are attributed to, and one
+   group is one bug.** The attributed line is the first one in your own
+   code: assertions count as failing where you wrote them, not inside
+   `minitest` or `rspec-expectations` where the exception is raised. So
+   two `assert_equal` failures on different lines are two bugs, and two
+   different failures reaching Hegel through one line are one bug —
+   whether that line is a ternary or the single `raise` inside a helper
+   you wrote. Split the line when two bugs need to stay apart:
 
    ```ruby
-   # one origin: report_multiple_failures: true still reports 1 failure
+   # one bug: report_multiple_failures: true reports 1 failure
    n.zero? ? raise("boom-zero") : raise("boom-one")
 
-   # two origins: report_multiple_failures: true reports 2
+   # two bugs: report_multiple_failures: true reports 2
    if n.zero?
      raise "boom-zero"
    else
@@ -1175,9 +1178,9 @@ result # => nil
    end
    ```
 
-   The exception's class is deliberately left out of the origin: the same
-   line raising a `NoMethodError` on one input and a `TypeError` on another
-   is still one bug.
+   The exception's class is left out on purpose: one line raising a
+   `NoMethodError` on one input and a `TypeError` on another is still one
+   bug.
 
 6. **`verbosity: :quiet` silences the failure report text itself**, not
    just libhegel's own progress output. Even when `output:` is given,
