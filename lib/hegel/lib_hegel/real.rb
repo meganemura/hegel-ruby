@@ -261,7 +261,7 @@ module Hegel
       # before returning, since the header documents that buffer as
       # borrowed and invalidated by the next call taking the same context.
       def context_last_error(ctx)
-        @hegel_context_last_error_fn.call(ctx).read_string
+        utf8(@hegel_context_last_error_fn.call(ctx))
       end
 
       # Returns the loaded engine's version string, or raises the
@@ -270,7 +270,7 @@ module Hegel
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_version_fn.call(ctx, out)
         LibHegel.check!(self, ctx, code)
-        out.read_pointer.read_string
+        utf8(out.read_pointer)
       end
 
       # Returns a settings handle initialized with libhegel's defaults, or
@@ -499,7 +499,7 @@ module Hegel
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_failure_origin_fn.call(ctx, f, out)
         LibHegel.check!(self, ctx, code)
-        out.read_pointer.read_string
+        utf8(out.read_pointer)
       end
 
       # Returns nil when libhegel produced no reproduction blob for this
@@ -1130,7 +1130,19 @@ module Hegel
       # once between the two call sites rather than at each one.
       def nullable_out_string(out)
         ptr = out.read_pointer
-        ptr.null? ? nil : ptr.read_string
+        ptr.null? ? nil : utf8(ptr)
+      end
+
+      # Reads the NUL-terminated string at +pointer+ and labels it UTF-8.
+      # The header calls every string libhegel hands back valid UTF-8, but
+      # FFI::Pointer#read_string labels what it reads ASCII-8BIT. A caller
+      # who matches an error message against a pattern of their own then
+      # gets Encoding::CompatibilityError rather than an answer, and the
+      # engine's own messages do carry characters outside ASCII: the
+      # FilterTooMuch health check writes an em dash into the sentence a
+      # caller is most likely to read.
+      def utf8(pointer)
+        pointer.read_string.force_encoding(Encoding::UTF_8)
       end
     end
   end

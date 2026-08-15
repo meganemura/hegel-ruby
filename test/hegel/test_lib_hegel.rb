@@ -18,6 +18,28 @@ class TestLibHegel < Minitest::Test
     real = Hegel::LibHegel::Real.new
     version = Hegel::LibHegel.with_context(real) { |ctx| real.version(ctx) }
     assert_equal Hegel::LIBHEGEL_VERSION, version
+    assert_equal Encoding::UTF_8, version.encoding
+  end
+
+  # The header calls every string libhegel returns valid UTF-8, and
+  # FFI::Pointer#read_string labels what it reads ASCII-8BIT. Left that way,
+  # a caller who matches an error message against a pattern of their own
+  # gets Encoding::CompatibilityError instead of an answer. That is not
+  # hypothetical: the message this test provokes carries an em dash, so
+  # #include? against a UTF-8 argument is what raises.
+  #
+  # A property that discards nearly every case trips libhegel's own
+  # FilterTooMuch check, which ends the run with ERROR and a diagnostic
+  # this library re-raises as Hegel::Error.
+  def test_real_engine_error_messages_are_utf8
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 20, verbosity: :quiet, output: StringIO.new) do |tc|
+        tc.assume(tc.draw_integer(0, 1_000_000) == 500_000)
+      end
+    end
+
+    assert_equal Encoding::UTF_8, error.message.encoding
+    assert_includes error.message, "FilterTooMuch —"
   end
 
   def test_real_context_last_error_is_empty_after_a_successful_call
