@@ -85,6 +85,28 @@ their sum over 1000 cases, and assert the maximum observed reaches exactly
 2000. Reaching the maximum is what the feature promises; getting there
 sooner on average is not something a single run can show.
 
+## A stateful case runs only some of the rules
+
+`hegel.h` says it directly: "Each test case enables a random subset of
+rules and selection draws only from that subset." So a machine with two
+rules can run a case where one of them never appears.
+
+A test proving that one rule's side effect happened cannot rely on that
+rule being in the subset. Give the machine a single rule that branches
+internally, rather than two rules where one is the interesting one.
+
+## `(N discarded)` proves where an AssumeFailed went
+
+`Hegel::Runner::GenerationStats` counts a case as discarded only when
+`Hegel::AssumeFailed` reaches `Hegel::Runner.classify`. So asserting the
+report says `(0 discarded)`, in a body whose only `assume`/`reject` calls
+are nested somewhere that is supposed to handle them itself — inside a
+stateful rule, say — proves none of them escaped.
+
+That assertion holds structurally, not on average, which makes it worth
+reaching for whenever the question is "did this control exception get
+caught at the right level".
+
 ## Shrinking is what makes a span test bite
 
 A misplaced span does not fail an assertion on the drawn value. It shows
