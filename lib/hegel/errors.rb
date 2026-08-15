@@ -32,4 +32,16 @@ module Hegel
   class AssumeFailed < Exception; end
 
   # standard:enable Lint/InheritException
+
+  # Say the process is ending, not that a property failed. Every
+  # `rescue Exception` in this library re-raises one of these before doing
+  # anything else: catching one as a counterexample would have the engine
+  # spend its shrink budget minimising an interrupt instead of letting the
+  # process exit, and NoMemoryError in particular must not be answered with
+  # another native call.
+  #
+  # Here rather than beside the run loop because two files now rescue
+  # Exception -- Hegel::Runner and Hegel::Stateful -- and this is the
+  # exception vocabulary both of them need, which is what this file is for.
+  FATAL_EXCEPTIONS = [Interrupt, SignalException, SystemExit, NoMemoryError].freeze
 end

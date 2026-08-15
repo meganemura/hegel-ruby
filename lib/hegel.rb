@@ -6,6 +6,8 @@ require_relative "hegel/runner"
 require_relative "hegel/generator"
 require_relative "hegel/generators"
 require_relative "hegel/syntax/methods"
+require_relative "hegel/state_machine"
+require_relative "hegel/stateful"
 require_relative "hegel/lib_hegel/real"
 
 # Hegel is a property-based testing library for Ruby. It drives libhegel, the
@@ -52,6 +54,12 @@ module Hegel
   # keyword above: see Hegel::Runner.run's own comment for why departing
   # from libhegel's own default (true) is itself the decision here.
   #
+  # +stateful_step_count+ bounds how many rules a Hegel::Stateful.run call
+  # applies per test case; left nil (the default) leaves libhegel's own
+  # default of 50 in place. hegel.h documents it as needing to be at least
+  # 1; like +tc.target+'s label, that requirement is left to the engine
+  # rather than re-checked here.
+  #
   # +output+ (default $stderr) is where a failure report is written; a
   # caller passes its own IO to capture that report instead (tests do).
   #
@@ -65,12 +73,12 @@ module Hegel
   # (#default_impl) only runs when +impl+ is not given, so a test that does
   # pass one never opens the native library at all.
   def test(test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
-    phases: nil, suppress_health_check: nil, report_multiple_failures: false, output: $stderr,
-    reproduce_failure: nil, impl: default_impl, &block)
+    phases: nil, suppress_health_check: nil, report_multiple_failures: false, stateful_step_count: nil,
+    output: $stderr, reproduce_failure: nil, impl: default_impl, &block)
     Runner.run(impl: impl, test_cases: test_cases, seed: seed, derandomize: derandomize, verbosity: verbosity,
       database: database, database_key: database_key, phases: phases, suppress_health_check: suppress_health_check,
-      report_multiple_failures: report_multiple_failures, output: output, reproduce_failure: reproduce_failure,
-      &block)
+      report_multiple_failures: report_multiple_failures, stateful_step_count: stateful_step_count, output: output,
+      reproduce_failure: reproduce_failure, &block)
   end
 
   # The Hegel::LibHegel::Real instance #test uses by default, built once and

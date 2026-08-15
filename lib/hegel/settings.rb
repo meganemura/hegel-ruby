@@ -52,9 +52,13 @@ module Hegel
     # with no nil case: Hegel.test defaults it to false rather than leaving
     # it nil, so this method never sees nil for it -- see Hegel::Runner.run's
     # own comment for why that default departs from every other keyword's
-    # nil-means-engine-default rule.
+    # nil-means-engine-default rule. +stateful_step_count+ follows the same
+    # nil-means-engine-default rule as +test_cases+/+seed+/and so on: the
+    # header documents the engine's own default (50) and requires the value
+    # be at least 1, and, like +tc.target+'s own label, that requirement is
+    # left to the engine rather than re-checked here.
     def apply(impl, ctx, settings, test_cases:, seed:, derandomize:, verbosity:, database:, database_key:, phases:,
-      suppress_health_check:, report_multiple_failures:)
+      suppress_health_check:, report_multiple_failures:, stateful_step_count:)
       impl.settings_set_test_cases(ctx, settings, test_cases) unless test_cases.nil?
       impl.settings_set_seed(ctx, settings, seed, true) unless seed.nil?
       impl.settings_set_derandomize(ctx, settings, derandomize) unless derandomize.nil?
@@ -63,6 +67,7 @@ module Hegel
       apply_phases(impl, ctx, settings, phases) unless phases.nil?
       apply_suppress_health_check(impl, ctx, settings, suppress_health_check) unless suppress_health_check.nil?
       impl.settings_set_report_multiple_failures(ctx, settings, report_multiple_failures)
+      impl.settings_set_stateful_step_count(ctx, settings, stateful_step_count) unless stateful_step_count.nil?
     end
 
     # Split from #apply so the VERBOSITY_CODES lookup (one of several

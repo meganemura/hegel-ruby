@@ -12,13 +12,6 @@ module Hegel
   # loop; libhegel owns generation, shrinking, and (on failure) database
   # replay, so a user's test body never has to cross the FFI boundary itself.
   module Runner
-    # Say the process is ending, not that a property failed. Catching one of
-    # these as a counterexample would have the engine spend its shrink budget
-    # minimising an interrupt instead of letting the process exit. Held as a
-    # constant, not a literal `rescue Interrupt, SignalException, ...` list,
-    # so #classify only names it once.
-    FATAL_EXCEPTIONS = [Interrupt, SignalException, SystemExit, NoMemoryError].freeze
-
     # #origin_for's fallback when an exception's backtrace has no first
     # location to build a real origin from. Named the way hegel-rust names
     # its own equivalent constant, "Panic at <unknown>", for a panic with no
@@ -67,12 +60,13 @@ module Hegel
 
     # Runs +block+ as a Hegel property against +impl+, applying +test_cases+,
     # +seed+, +derandomize+, +verbosity+, +database+, +database_key+,
-    # +phases+, +suppress_health_check+, and +report_multiple_failures+ (see
-    # Hegel::Settings) to a fresh settings handle first. Returns nil on a
-    # passing run, re-raises the exception the smallest failing case's body
-    # raised on a failing run, and raises Hegel::Error for a run-level
-    # failure (ERROR status, a replay that could not reproduce the recorded
-    # failure, or more than one distinct failure -- see #replay).
+    # +phases+, +suppress_health_check+, +report_multiple_failures+, and
+    # +stateful_step_count+ (see Hegel::Settings) to a fresh settings handle
+    # first. Returns nil on a passing run, re-raises the exception the
+    # smallest failing case's body raised on a failing run, and raises
+    # Hegel::Error for a run-level failure (ERROR status, a replay that
+    # could not reproduce the recorded failure, or more than one distinct
+    # failure -- see #replay).
     #
     # +database+ and +database_key+ follow the table
     # Hegel::Settings.apply_database documents; docs/adr/0009 has the
@@ -110,15 +104,16 @@ module Hegel
     # settings handle, so it must outlive the FAILED-status replay below, not
     # just the loop above it.
     def run(impl:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
-      phases: nil, suppress_health_check: nil, report_multiple_failures: false, output: $stderr,
-      reproduce_failure: nil, &block)
+      phases: nil, suppress_health_check: nil, report_multiple_failures: false, stateful_step_count: nil,
+      output: $stderr, reproduce_failure: nil, &block)
       quiet = verbosity == :quiet
       LibHegel.with_context(impl) do |ctx|
         settings = impl.settings_new(ctx)
         begin
           Settings.apply(impl, ctx, settings, test_cases: test_cases, seed: seed, derandomize: derandomize,
             verbosity: verbosity, database: database, database_key: database_key, phases: phases,
-            suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures)
+            suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures,
+            stateful_step_count: stateful_step_count)
 
           if reproduce_failure
             reproduce(impl, ctx, settings, reproduce_failure, quiet: quiet, output: output, &block)
@@ -336,7 +331,7 @@ module Hegel
       test_case = TestCase.new(impl, ctx, tc, record: record)
       block.call(test_case)
       [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil]
-    rescue *FATAL_EXCEPTIONS
+    rescue *Hegel::FATAL_EXCEPTIONS
       raise
     rescue Hegel::AssumeFailed
       [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil]

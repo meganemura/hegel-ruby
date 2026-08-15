@@ -111,7 +111,8 @@ module Hegel
       # matching hegel_settings_set_seed's two value arguments.
       attr_reader :settings_test_cases_calls, :settings_verbosity_calls, :settings_seed_calls,
         :settings_derandomize_calls, :settings_database_calls, :settings_database_key_calls,
-        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls
+        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls,
+        :settings_stateful_step_count_calls
 
       def initialize
         @version = Hegel::LIBHEGEL_VERSION
@@ -136,6 +137,7 @@ module Hegel
         @settings_phases_calls = []
         @settings_suppress_health_check_calls = []
         @settings_report_multiple_failures_calls = []
+        @settings_stateful_step_count_calls = []
 
         @run_start_code = HEGEL_OK
         @run_start_returns_nil = false
@@ -537,7 +539,8 @@ module Hegel
         nil
       end
 
-      def settings_set_stateful_step_count(ctx, _s, _n)
+      def settings_set_stateful_step_count(ctx, _s, n)
+        @settings_stateful_step_count_calls << n
         LibHegel.check!(self, ctx, @settings_set_stateful_step_count_code)
         nil
       end

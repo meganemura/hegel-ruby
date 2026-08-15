@@ -1,6 +1,7 @@
 module Hegel
   VERSION: String
   LIBHEGEL_VERSION: String
+  FATAL_EXCEPTIONS: Array[singleton(Exception)]
 
   class Error < StandardError
   end
@@ -11,7 +12,7 @@ module Hegel
   class AssumeFailed < Exception
   end
 
-  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
+  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stateful_step_count: Integer?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
   class TestCase
@@ -55,6 +56,10 @@ module Hegel
     def generate_date: (Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
     def generate_time: (Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
     def generate_datetime: (Array[Integer] min_date, Array[Integer] min_time, Array[Integer] max_date, Array[Integer] max_time) -> [Array[Integer], Array[Integer]]
+    def new_state_machine: (Array[String] rule_names, Array[String] invariant_names) -> untyped
+    def state_machine_next_rule: (untyped state_machine) -> Integer
+    def state_machine_rule_rejected: (untyped state_machine) -> nil
+    def state_machine_free: (untyped state_machine) -> nil
   end
 
   class Generator
@@ -248,6 +253,22 @@ module Hegel
     extend Syntax::Methods
   end
 
+  class StateMachine
+    include Syntax::Methods
+
+    def self.rule: (Symbol | String name) { (TestCase) -> untyped } -> void
+    def self.invariant: (Symbol | String name) { (TestCase) -> untyped } -> void
+    def self.rule_definitions: () -> Hash[String, Proc]
+    def self.invariant_definitions: () -> Hash[String, Proc]
+  end
+
+  module Stateful
+    def self.run: (StateMachine machine, TestCase tc) -> void
+    def self.drive: (StateMachine machine, Hash[String, Proc] rules, Array[String] rule_names, Hash[String, Proc] invariants, untyped state_machine, TestCase tc) -> void
+    def self.apply_rule: (StateMachine machine, Proc block, Hash[String, Proc] invariants, untyped state_machine, TestCase tc) -> void
+    def self.run_invariants: (StateMachine machine, Hash[String, Proc] invariants, TestCase tc) -> void
+  end
+
   module Syntax
     module Methods
       def booleans: (?p: Float) -> Generators::BooleanGenerator
@@ -309,7 +330,7 @@ module Hegel
     PHASE_CODES: Hash[Symbol, Integer]
     HEALTH_CHECK_CODES: Hash[Symbol, Integer]
 
-    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool) -> void
+    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool, stateful_step_count: Integer?) -> void
     def self.apply_verbosity: (untyped impl, untyped ctx, untyped settings, Symbol verbosity) -> void
     def self.apply_database: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?) -> void
     def self.apply_phases: (untyped impl, untyped ctx, untyped settings, Array[Symbol] phases) -> void
@@ -318,7 +339,7 @@ module Hegel
   end
 
   module Runner
-    FATAL_EXCEPTIONS: Array[singleton(Exception)]
+
     UNKNOWN_ORIGIN: String
     UNKNOWN_RUN_ERROR_MESSAGE: String
 
@@ -328,7 +349,7 @@ module Hegel
       def for: (String? origin) -> [Integer, Integer]
     end
 
-    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
+    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stateful_step_count: Integer?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
     def self.run_and_finish: (untyped impl, untyped ctx, untyped settings, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats) { (TestCase) -> void } -> void
     def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats) { (TestCase) -> void } -> void

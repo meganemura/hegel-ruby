@@ -367,6 +367,39 @@ module Hegel
       @impl.string_generator_free(@ctx, generator)
     end
 
+    # hegel_new_state_machine: opens the state-machine handle
+    # Hegel::Stateful.run drives for the rest of one stateful test. Kept
+    # here rather than on that module, the same reason every other native
+    # call is a method on this class: Hegel::Stateful never touches @impl or
+    # @ctx directly, only this handle-scoped surface.
+    def new_state_machine(rule_names, invariant_names)
+      @impl.new_state_machine(@ctx, @handle, rule_names, invariant_names)
+    end
+
+    # hegel_state_machine_next_rule: the index (into the +rule_names+
+    # #new_state_machine was given) of the next rule to run, or
+    # LibHegel::HEGEL_STATE_MACHINE_DONE once this test case's step budget
+    # is spent.
+    def state_machine_next_rule(state_machine)
+      @impl.state_machine_next_rule(@ctx, @handle, state_machine)
+    end
+
+    # hegel_state_machine_rule_rejected: tells libhegel the rule most
+    # recently returned by #state_machine_next_rule stopped early on a
+    # failed assumption, so it does not count toward the step budget.
+    def state_machine_rule_rejected(state_machine)
+      @impl.state_machine_rule_rejected(@ctx, @handle, state_machine)
+    end
+
+    # hegel_state_machine_free. Takes no test-case handle, unlike every
+    # other #state_machine_* method here: the header documents a
+    # state-machine handle as freeable through any handle of the same
+    # test-case family, and LibHegel::Real#state_machine_free's own bind
+    # reflects that by taking only +ctx+ and the state-machine handle.
+    def state_machine_free(state_machine)
+      @impl.state_machine_free(@ctx, state_machine)
+    end
+
     # hegel_generate_date, without recording. Hegel::Generators::
     # DatesGenerator's own primitive. +min_value+/+max_value+ are each a
     # [year, month, day] Array; the return value is the same shape.

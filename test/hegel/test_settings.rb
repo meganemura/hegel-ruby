@@ -19,7 +19,7 @@ class TestSettings < Minitest::Test
   DEFAULT_KEYWORDS = {
     test_cases: nil, seed: nil, derandomize: nil, verbosity: nil,
     database: nil, database_key: nil, phases: nil, suppress_health_check: nil,
-    report_multiple_failures: false
+    report_multiple_failures: false, stateful_step_count: nil
   }.freeze
 
   def apply_with(fake = @fake, **overrides)
@@ -36,6 +36,7 @@ class TestSettings < Minitest::Test
     assert_empty @fake.settings_database_key_calls
     assert_empty @fake.settings_phases_calls
     assert_empty @fake.settings_suppress_health_check_calls
+    assert_empty @fake.settings_stateful_step_count_calls
   end
 
   def test_apply_writes_test_cases_when_given
@@ -189,5 +190,11 @@ class TestSettings < Minitest::Test
     apply_with(report_multiple_failures: true)
 
     assert_equal [true], @fake.settings_report_multiple_failures_calls
+  end
+
+  def test_apply_writes_stateful_step_count_when_given
+    apply_with(stateful_step_count: 20)
+
+    assert_equal [20], @fake.settings_stateful_step_count_calls
   end
 end
