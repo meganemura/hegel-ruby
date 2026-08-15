@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR 0013](0013-bind-libhegel-through-the-ffi-gem.md),
+which binds libhegel through the `ffi` gem instead, on the measurement
+[ADR 0008](0008-revisit-the-binding-after-milestone-c-on-measurement.md)
+scheduled.
 
 ## Context
 

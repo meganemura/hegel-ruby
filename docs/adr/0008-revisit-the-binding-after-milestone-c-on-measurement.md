@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted. The work it schedules happens once milestone C is complete.
+Accepted, and carried out.
+[ADR 0013](0013-bind-libhegel-through-the-ffi-gem.md)
+records the measurement this scheduled and the decision it produced.
 
 ## Context
 
