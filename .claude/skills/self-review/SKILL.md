@@ -40,7 +40,7 @@ Run `git diff main...HEAD` and read it. Look for:
   read every line it prints:
 
   ```bash
-  git grep -nE "decision record|task'?s own|the spec\b|spec\.md|as specified|this batch|working note" -- lib test sig docs README.md CHANGELOG.md
+  git grep -nE "decision record|task'?-?s own|the spec\b|spec\.md|task-spec|as specified|this batch|working note" -- lib test sig docs skills README.md CHANGELOG.md
   ```
 
   A comment reading "see the task's own decision record" is a broken link

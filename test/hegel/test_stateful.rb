@@ -142,10 +142,10 @@ class TestStateful < Minitest::Test
     end
   end
 
-  # The central test of this batch: the shrunk counterexample is exactly 3
-  # pushes, no more. A span placed on the wrong draw still passes this test
-  # eventually but shrinks to something larger than 3 -- the same failure
-  # mode the skill's "Shrinking is what makes a span test bite" describes.
+  # The shrunk counterexample is exactly 3 pushes, no more. This is what
+  # holds the STATEFUL_RULE span in place: a span opened on the wrong draw
+  # still lets the property fail, and still lets this test reach an
+  # assertion, but shrinks to a longer step list than 3.
   def test_stateful_run_shrinks_to_the_minimal_step_count_that_breaks_the_invariant
     output = StringIO.new
 

@@ -5,8 +5,8 @@ description: "How to add a new generator to hegel-ruby. Use when asked to implem
 
 # Adding a New Generator
 
-A reference for implementing a single new generator, distilled from the five
-generators this gem already ships (`lib/hegel/generators.rb`). Read whichever
+A reference for implementing a single new generator, distilled from the
+twenty-five this gem already ships (`lib/hegel/generators.rb`). Read whichever
 is closest to your case before starting:
 
 - `IntegerGenerator` -- the shortest form: one primitive, one boundary check.
@@ -154,16 +154,13 @@ test because it reads as coverage:
   draw call checks its test-case handle before anything else, so a bare
   context with no live test case answers `HEGEL_E_INVALID_HANDLE` whatever
   else is wrong with the call.
-- **A packed struct needs two independent tests, and boundary values are
-  not enough for the second.** One test computes the size and offsets from
-  the field declarations, independently of the bit shifts in `real.rb`, and
-  catches the two drifting apart. The other draws a degenerate `min == max`
-  against the real engine and catches the packing disagreeing with the
-  native side, which the first cannot see because no header ships with the
-  gem. Give the second one a value whose fields all differ —
-  `13:45:06.123456`, not `00:00:00` or `23:59:59` — because a boundary
-  value is symmetric under swapping minute and second, and a shift that
-  transposes them passes.
+- **A struct passed by value needs a degenerate draw against the real
+  engine, at a value whose fields all differ.** `FFI::Struct` computes the
+  layout, so nothing here can drift from a hand-computed offset; what can
+  still be wrong is the field list itself, transcribed from `hegel.h` by
+  hand. A `min == max` draw catches that. Give it `13:45:06.123456`, not
+  `00:00:00` or `23:59:59` — a boundary value is symmetric under swapping
+  minute and second, so a transcription that transposes them would pass.
 - **A stdlib type does not resolve in `sig/hegel.rbs`.** The completion
   check is bare `rbs -I sig validate` with no `-r`, so `Date` and `IPAddr`
   fail to resolve while `Time` and `String`, being core, do not. Declare a

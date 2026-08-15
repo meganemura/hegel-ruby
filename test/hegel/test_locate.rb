@@ -8,8 +8,8 @@ require "rake"
 
 # lib/tasks/libhegel.rake is not required by the library itself (only the
 # `rake libhegel:fetch` task loads it); load it here so its logic is
-# reachable from this suite, per the task-spec's file list (this is the only
-# test file it permits).
+# reachable from this suite, which is what puts its logic under the same
+# coverage bar as the rest of lib/.
 load File.expand_path("../../lib/tasks/libhegel.rake", __dir__)
 
 class TestLocate < Minitest::Test

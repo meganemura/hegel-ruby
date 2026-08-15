@@ -45,12 +45,11 @@ library, nor an installed gem, nor Ruby's own standard library. Keep the
 exception's class out of it, as before.
 
 Identifying infrastructure by location rather than by name is where this
-departs from hegel-java. A list of framework names needs an entry per
-framework, and is wrong by omission the day someone uses a framework nobody
-added — silently wrong, in the same way the bug above was silently wrong.
-Location answers every framework with one rule, because a test framework is
-an installed gem and a caller's own code is not: Bundler loads a `path:` or
-`git:` gem from the working copy, not from the gem directory.
+departs from hegel-java. A name list needs an entry per framework, and this
+gem is driven from frameworks it does not enumerate. Ruby offers location as
+a handle that a name list does not need: Bundler installs a framework under a
+gem directory and loads a caller's own `path:` or `git:` code from the working
+copy, so one rule reaches every framework.
 
 When every frame is filtered out, the first frame is used after all. An origin
 that is merely coarse still groups consistently, where no origin at all would

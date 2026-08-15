@@ -1203,11 +1203,8 @@ result # => nil
    binding — at the top of a `Hegel.test` block, or inside a generator's
    own draw — discards the whole test case.
 
-10. **`datetimes` passes a 16-byte struct across the call into the native
-   engine, and that struct-passing is verified on arm64-darwin only.**
-   arm64 and System V (Linux) both pass a struct that size in two
-   registers, which this binding reproduces with two 64-bit arguments;
-   Win64 passes anything over eight bytes by reference instead, and that
-   divergent path is not yet confirmed. `dates` and `times` each pass an
-   8-byte struct, which every one of the three ABIs passes in a single
-   register, so neither carries this gap.
+10. **This binding has not been exercised on Windows or Linux yet.** It is
+    developed and tested on arm64 macOS. The native calls go through the
+    `ffi` gem, so libffi decides how each argument reaches the engine on a
+    given ABI rather than this binding deciding it, but that is an argument
+    for expecting it to work, not a report that it has.

@@ -108,8 +108,9 @@ module Hegel
     # +report_multiple_failures+ defaults to false, not nil: hegel-c/src/
     # settings.rs itself defaults to true, but hegel-rust's own Rust API
     # (src/runner.rs) and hegel-java both default to false, and hegel-java
-    # states the reason -- re-raising one failure's own exception, unaltered,
-    # is far kinder to a debugger and a stack trace than a summary would be.
+    # states the reason: one failure re-raised unaltered keeps the exception
+    # class and the stack trace a debugger reads, which a summary replaces
+    # with a count.
     # That is this library's own central promise (#classify re-raises a
     # body's exception with its class and backtrace intact), so the same
     # reason applies here, and choosing to depart from the engine's own
@@ -421,9 +422,11 @@ module Hegel
     # True when +path+ belongs to this library, an installed gem, or Ruby's
     # own standard library, rather than to the caller whose test #origin_for
     # is trying to identify. Location, not framework name, is what this
-    # checks: a list of framework names would need an entry per framework and
-    # would be silently wrong the day someone uses one nobody added, the same
-    # way the bug docs/adr/0012 fixes was silently wrong before it.
+    # checks. A name list needs an entry per framework, and this library is
+    # driven from frameworks it does not enumerate; location reaches every
+    # one of them with a single rule, because Bundler installs a framework
+    # under a gem directory and loads a caller's own path:/git: code from
+    # the working copy (docs/adr/0012).
     def infrastructure?(path)
       path.start_with?(LIBRARY_DIR) ||
         INSTALLED_GEM_DIRS.any? { |dir| path.start_with?(dir) } ||

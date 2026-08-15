@@ -56,8 +56,8 @@ two generators, not through the pool directly: `values_reusable` yields a
 value and leaves it in the pool, `values_consumed` removes the value it
 yields. Both are drawn with `tc.draw`, so the chosen value is named in the
 failure report and its choice shrinks like any other draw — hegel-rust says
-so of its own two in `src/stateful.rs`. hegel-ocaml draws them silently
-instead; hegel-rust decides meaning here.
+so of its own two in `src/stateful.rs`, and this record follows hegel-rust on
+meaning. hegel-ocaml reaches its own pool without a recorded draw.
 
 Drawing from an empty pool raises `Hegel::AssumeFailed`, translated from the
 engine's own `HEGEL_E_ASSUME` by the existing result-code check. Inside a rule

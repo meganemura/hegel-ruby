@@ -63,11 +63,10 @@ module Hegel
       # class-definition time, to methods it defines on a class or module
       # body. This class instead takes +path+ as a constructor argument,
       # resolved fresh per instance, so attach_function's own per-instance
-      # form is an anonymous module built fresh in #initialize -- measured
-      # against a realistic property run on this project's own machine,
-      # that form was consistently slower, call for call, than binding
-      # each function directly off a resolved symbol, the way #bind below
-      # does it: FFI::DynamicLibrary.open gives a handle to resolve
+      # form is an anonymous module built fresh in #initialize. Measured on
+      # ffi 1.17.4, arm64-darwin, over a failing property that shrinks: 777
+      # ms for that form against 750 ms for binding each function directly
+      # off a resolved symbol, which is what #bind below does: FFI::DynamicLibrary.open gives a handle to resolve
       # symbols against, and each call to #bind wraps one resolved symbol
       # as a callable FFI::Function, stored in its own instance variable
       # and invoked with #call by the method below it.
@@ -970,8 +969,8 @@ module Hegel
       # invalid date (month 13, say) already comes back
       # HEGEL_E_INVALID_ARG, translated by LibHegel.check! below, even
       # though the header's Returns line for this call names only
-      # HEGEL_OK/HEGEL_E_STOP_TEST -- the same gap #run_result_failure's own
-      # comment already notes for a different call.
+      # HEGEL_OK/HEGEL_E_STOP_TEST. #run_result_failure's own comment
+      # records the same measured behaviour for a different call.
       def generate_date(ctx, tc, min_value, max_value)
         out = DateStruct.new
         code = @hegel_generate_date_fn.call(ctx, tc, date_struct(min_value), date_struct(max_value), out)

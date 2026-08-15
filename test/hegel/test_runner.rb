@@ -726,9 +726,9 @@ class TestRunner < Minitest::Test
   # under an installed gem's own "gems/" directory, then raised from. Doing
   # this with a real file, rather than reusing minitest's own frames, proves
   # the rule is general -- any installed gem -- not merely "happens to work
-  # for minitest", which is the risk docs/adr/0012 names directly (a list of
-  # framework names is "wrong by omission the day someone uses a framework
-  # nobody added").
+  # for minitest": the rule has to hold for any installed gem, which is why
+  # docs/adr/0012 matches on location rather than on a list of framework
+  # names.
   def test_origin_for_skips_a_frame_under_an_installed_gem_directory
     fixture_dir = File.join(Gem.path.first, "gems", "hegel-origin-fixture-#{Process.pid}")
     fixture_path = File.join(fixture_dir, "raiser.rb")

@@ -114,8 +114,11 @@ read from `hegel_run_result_status` afterwards.
 **An origin string groups failures, so it must be stable.** `mark_complete`
 takes one alongside INTERESTING. The ABI documentation is explicit: "Two
 failures with identical origins are the same bug and get shrunk together. Each
-new origin is a new bug." Build it from where the exception was raised, the
-way hegel-rust builds one from a panic's location.
+new origin is a new bug." Build it from the first backtrace frame that is the
+caller's own — skipping this library, installed gems, and the standard library
+— so that an assertion counts as failing where the caller wrote it rather than
+inside the framework that raised. See
+[ADR 0012](docs/adr/0012-build-a-failure-origin-from-the-callers-own-frame.md).
 
 **The test-case setting bounds generation, not the number of times the loop
 runs.** Shrinking draws more cases on top of it. Measured against libhegel

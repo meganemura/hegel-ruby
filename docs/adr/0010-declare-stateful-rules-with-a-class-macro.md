@@ -26,11 +26,11 @@ is closer to hegel-rust's explicit list. Being Ruby-like does not decide it.
 
 What decides it is what happens to a mistake. Under prefix discovery, a rule
 written `rules_push` instead of `rule_push` is not a rule. Nothing raises, the
-machine runs with one fewer action, and the test passes. For a property-based
-test that is the worst available failure: the suite reports that a behaviour
-holds, when the behaviour was never exercised. hegel-go guards it by rejecting
-a method that takes a `TestCase` without the prefix, which Ruby can only
-approximate by inspecting parameter lists and guessing at intent.
+machine runs with one fewer action, and the test passes: the suite reports
+that a behaviour holds when the behaviour was never exercised. hegel-go keeps
+that from happening by rejecting a method that takes a `TestCase` without the
+prefix. In Ruby the same guard means reading parameter lists to infer intent,
+where a declared name raises on the spot.
 
 Writing all three shapes out inside a real Minitest file surfaced a second
 difference that the shapes alone did not. Rules want their framework's
