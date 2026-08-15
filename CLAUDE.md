@@ -7,7 +7,7 @@ Guidance for Claude Code and other coding agents working in this repository.
 An unofficial Ruby implementation of the [Hegel](https://hegel.dev/) protocol,
 published as the `hegeltest` gem. It drives `libhegel`, the native engine that
 the official Rust, Go, C++, TypeScript, Java, and OCaml implementations drive.
-The engine runs in the same process, over a C ABI, through Fiddle.
+The engine runs in the same process, over a C ABI, through the `ffi` gem.
 
 The gem is `hegeltest`, the require path and namespace are `hegel` and `Hegel`.
 This mirrors the Rust implementation, whose crate is `hegeltest` and whose
@@ -75,13 +75,13 @@ test cases off it with `hegel_next_test_case`, runs the user's block against
 each test-case handle, and reports each outcome with `hegel_mark_complete`.
 Generation, targeting, shrinking, database replay, and the final replay all
 happen inside the engine. Because Ruby owns the loop, an exception raised by a
-user's test body never crosses the FFI boundary.
+user's test body never crosses into native code.
 
 ### Standing constraints
 
 These shape code as you write it, so they live here rather than in a skill.
 
-**Only one module touches Fiddle.** Every raw `hegel_*` call goes through the
+**Only one module touches `ffi`.** Every raw `hegel_*` call goes through the
 libhegel binding module, and the rest of the library talks to that module's safe
 wrappers. hegel-rust confines its own FFI to `src/ffi.rs`, and hegel-java puts
 an interface at that seam so the runner can run against a fake engine. Do the
@@ -213,7 +213,7 @@ a span changes, how a value shrinks, what a generator option constrains.
 bind the same engine under constraints Rust does not have.
 
 - **hegel-java** — the closest match on mechanism. Its foreign-function binding
-  occupies the same position as Fiddle does here, it manages native handles
+  occupies the same position as `ffi` does here, it manages native handles
   under a garbage collector, and JUnit 5 sits where RSpec and Minitest sit.
 - **hegel-typescript** — ships one prebuilt engine per platform-specific
   package, which is the model this gem follows.

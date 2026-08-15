@@ -5,8 +5,6 @@ require "hegel/lib_hegel"
 require "hegel/lib_hegel/real"
 require "support/fake_lib_hegel"
 require "stringio"
-require "fiddle/import"
-require "objspace"
 
 class TestLibHegel < Minitest::Test
   def test_stop_test_and_assume_failed_do_not_inherit_standard_error
@@ -826,9 +824,10 @@ class TestLibHegel < Minitest::Test
   # and possibly containing interior NUL bytes, since the drawn alphabet
   # can include U+0000. Forcing min_codepoint: 0, max_codepoint: 0 draws
   # from an alphabet of exactly U+0000, so a correct implementation reads
-  # every byte via len; reading with Fiddle::Pointer#to_s (no length,
-  # stopping at the first NUL) would instead return an empty string. The
-  # database is disabled ("") so the run leaves nothing on disk.
+  # every byte via len; reading through a NUL-terminated string accessor
+  # (no length, stopping at the first NUL) would instead return an empty
+  # string. The database is disabled ("") so the run leaves nothing on
+  # disk.
   def test_real_generate_string_reads_the_full_length_including_interior_nul_bytes
     real = Hegel::LibHegel::Real.new
 
@@ -1306,58 +1305,21 @@ class TestLibHegel < Minitest::Test
     assert_equal generators, fake.freed_string_generators
   end
 
-  # hegel_date_t / hegel_time_t / hegel_datetime_t's own byte layout, which
-  # LibHegel::Real#pack_date/#pack_time/#unpack_date/#unpack_time hardcode
-  # as bit shifts (see docs/architecture.md, "Passing a struct by value").
-  # Packing a struct into uint64 register(s) only reproduces the native
-  # ABI's own call when the byte size and each field's offset match what
-  # the compiled struct actually uses; a mismatch would not fail to draw --
-  # it would draw a plausible-looking wrong value forever, since encoding
-  # and decoding both apply the same wrong assumption to themselves,
-  # consistently. This test computes size/offset independently, via
-  # Fiddle's own C-ABI alignment rules applied to the three fields hegel.h
-  # documents for each struct, rather than re-reading the bit-shift
-  # constants in real.rb -- a mismatch between the two is what this test
-  # exists to catch. Fiddle is confined to real.rb inside lib/ (see the
-  # skill's own "git grep Fiddle lib/" checklist item, scoped to lib/, not
-  # test/), so this reaches for it directly rather than through Real's
-  # private packing methods.
-  def test_hegel_date_time_and_datetime_struct_layout
-    date_t = build_c_struct(["int32_t year", "uint8_t month", "uint8_t day"])
-    time_t = build_c_struct(["uint8_t hour", "uint8_t minute", "uint8_t second", "uint32_t microsecond"])
-    datetime_t = Fiddle::CStructBuilder.create(Fiddle::CStruct, [date_t, time_t], ["date", "time"])
-
-    assert_equal 8, date_t.size
-    assert_equal 0, date_t.offsetof("year")
-    assert_equal 4, date_t.offsetof("month")
-    assert_equal 5, date_t.offsetof("day")
-
-    assert_equal 8, time_t.size
-    assert_equal 0, time_t.offsetof("hour")
-    assert_equal 1, time_t.offsetof("minute")
-    assert_equal 2, time_t.offsetof("second")
-    assert_equal 4, time_t.offsetof("microsecond")
-
-    assert_equal 16, datetime_t.size
-    assert_equal 0, datetime_t.offsetof("date")
-    assert_equal 8, datetime_t.offsetof("time")
-  end
-
   # hegel_generate_date / hegel_generate_time / hegel_generate_datetime each
-  # take a struct by value, packed into uint64 register(s) by
-  # LibHegel::Real#generate_date/#generate_time/#generate_datetime (see
-  # docs/architecture.md, "Passing a struct by value"). min_value ==
-  # max_value pins that packing against the engine's own interpretation,
-  # not just this binding's own pack/unpack as each other's inverse (a
-  # round trip alone cannot catch a self-consistent but wrong byte
-  # convention -- see the skill's own note on why a degenerate draw against
-  # the real engine is required). Exercises both ends of the conventional
-  # full range, and one value with every field distinct (13:45:06.123456,
-  # and that time embedded in a datetime): the boundary values alone are
-  # swap-symmetric in minute/second (00 vs 00, 59 vs 59), so a
-  # minute<->second packing bug would still pass them; a value with no two
-  # fields sharing a digit is what catches that. The database is disabled
-  # ("") so the run leaves nothing on disk.
+  # take a struct by value, passed through LibHegel::Real's own
+  # DateStruct/TimeStruct/DatetimeStruct declarations (see real.rb's own
+  # comment on those classes). min_value == max_value pins that
+  # struct-by-value marshalling against the engine's own interpretation, not
+  # just this binding's own struct-to-Array and Array-to-struct conversions
+  # as each other's inverse (a round trip alone cannot catch a
+  # self-consistent but wrong field order -- see the skill's own note on why
+  # a degenerate draw against the real engine is required). Exercises both
+  # ends of the conventional full range, and one value with every field
+  # distinct (13:45:06.123456, and that time embedded in a datetime): the
+  # boundary values alone are swap-symmetric in minute/second (00 vs 00, 59
+  # vs 59), so a minute<->second field-order bug would still pass them; a
+  # value with no two fields sharing a digit is what catches that. The
+  # database is disabled ("") so the run leaves nothing on disk.
   def test_real_generate_date_time_and_datetime_at_degenerate_bounds_pins_the_struct_packing
     real = Hegel::LibHegel::Real.new
 
@@ -1669,22 +1631,6 @@ class TestLibHegel < Minitest::Test
     end
   end
 
-  # #pack_name_array returns its per-name Fiddle::Pointer array for the
-  # caller to hold, and that is only worth holding because a pointer built
-  # by Fiddle::Pointer.to_ptr references the String whose buffer it
-  # addresses. Ruby 3.3 through 4.0 ship fiddle 1.1.2 through 1.1.8, and a
-  # version that dropped that reference would let the GC reclaim a rule
-  # name between packing and the native call -- an intermittent crash, not
-  # a failing assertion. This asserts the reference directly instead.
-  def test_fiddle_pointer_to_ptr_references_the_string_it_addresses
-    name = +"a_rule_name"
-    pointer = Fiddle::Pointer.to_ptr(name)
-
-    reachable = ObjectSpace.reachable_objects_from(pointer)
-
-    assert_includes reachable, name
-  end
-
   def test_real_pool_free_and_state_machine_free_are_no_ops_on_nil
     real = Hegel::LibHegel::Real.new
     assert_nil real.pool_free(nil, nil)
@@ -1777,19 +1723,5 @@ class TestLibHegel < Minitest::Test
 
     fake.state_machine_rule_rejected_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
     assert_raises(Hegel::Error) { fake.state_machine_rule_rejected(ctx, Object.new, Object.new) }
-  end
-
-  private
-
-  # A fresh Fiddle::Importer-backed struct class for +fields+ (C type
-  # declarations, e.g. "int32_t year"), so
-  # test_hegel_date_time_and_datetime_struct_layout can ask Fiddle itself
-  # for the size and per-field offset its own C-ABI alignment rules
-  # produce, independent of any hardcoded number in this file or in
-  # real.rb.
-  def build_c_struct(fields)
-    importer = Module.new
-    importer.extend(Fiddle::Importer)
-    importer.struct(fields)
   end
 end

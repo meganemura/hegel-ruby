@@ -10,7 +10,7 @@ module Hegel
   # Drives one Hegel.test run: this is the Ruby side of the per-test-case
   # lifecycle hegel-rust's src/run_lifecycle.rs calls `drive`. Ruby owns the
   # loop; libhegel owns generation, shrinking, and (on failure) database
-  # replay, so a user's test body never has to cross the FFI boundary itself.
+  # replay, so a user's test body never has to cross into native code itself.
   module Runner
     # #origin_for's fallback when an exception's backtrace has no first
     # location to build a real origin from. Named the way hegel-rust names

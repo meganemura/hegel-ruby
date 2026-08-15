@@ -9,7 +9,7 @@ its class intact.
 What exists: library resolution (`Hegel::Locate`, the pinned
 `Hegel::LIBHEGEL_VERSION`, and the development-only `libhegel:fetch` Rake
 task), the libhegel binding (`Hegel::LibHegel`, with a real implementation
-over Fiddle and a fake for tests), the settings mapping, `Hegel::TestCase`
+over `ffi` and a fake for tests), the settings mapping, `Hegel::TestCase`
 wrapping the engine's whole draw surface, and the run loop.
 
 What exists beyond that: the failure report, which names drawn values by
@@ -56,13 +56,14 @@ libhegel runs in the same process as its caller. Nearly every function in
 itself instead. `hegel_context_last_error` returns a borrowed message
 pointer instead of a status code.
 
-Ruby calls this ABI through Fiddle. See
+Ruby calls this ABI through the `ffi` gem. See
+[ADR 0013](adr/0013-bind-libhegel-through-the-ffi-gem.md), which supersedes
 [ADR 0001](adr/0001-bind-libhegel-through-fiddle.md).
 
-## FFI confined to one module
+## The binding confined to one module
 
-Every raw Fiddle call lives in `Hegel::LibHegel`. The rest of the
-library calls that module's wrappers, never Fiddle directly. This gives
+Every raw `ffi` call lives in `Hegel::LibHegel`. The rest of the
+library calls that module's wrappers, never `ffi` directly. This gives
 the library one seam where a test can substitute a fake implementation,
 exercising libhegel's error codes without loading the real engine.
 
@@ -136,45 +137,29 @@ therefore returns a generator; the error arrives from `tc.draw`.
 
 ## Passing a struct by value
 
-Fiddle has no struct-by-value argument. `Fiddle::Function` converts each
-entry of its argument-type list with `NUM2INT`
-(`ext/fiddle/function.c`), so an entry must be one of the integer
-`Fiddle::TYPE_*` constants; a `Fiddle::CStruct` subclass and an array of
-types each raise `TypeError`. Measured on fiddle 1.1.8.
+Exactly three ABI functions take a struct by value: `hegel_generate_date`,
+`hegel_generate_time`, and `hegel_generate_datetime`, each receiving two
+bound values.
 
-Exactly three ABI functions take a struct by value:
-`hegel_generate_date`, `hegel_generate_time`, and
-`hegel_generate_datetime`, each receiving two bound values.
+Each struct is declared as an `FFI::Struct` and passed with `.by_value`, so
+libffi classifies the argument from the same C-ABI rules the compiled
+library was built against. Nothing here computes a field offset or a size,
+and nothing here decides how a given ABI passes a struct of a given width —
+which matters most for the sixteen-byte `hegel_datetime_t`, where arm64 and
+System V use two registers and Win64 passes by reference.
 
-They are reached anyway, because passing the struct is not what the call
-needs — putting its bits where the ABI puts them is. `hegel_date_t` and
-`hegel_time_t` are eight bytes of integers, which arm64, System V, and
-Win64 all pass in one general-purpose register: the same register a
-`uint64` argument uses. Declaring the parameter `TYPE_UINT64_T` and
-passing the packed bits therefore produces the same call. Measured
-against libhegel 0.32.5 on arm64-darwin, drawing dates and times inside
-their requested bounds.
-
-`hegel_datetime_t` is sixteen bytes, and there the ABIs diverge: arm64 and
-System V pass it in two registers, which two `uint64` arguments reproduce,
-while Win64 passes anything over eight bytes by reference. The two-register
-form is verified on arm64-darwin; CI's windows-latest job is what confirms
-or refutes it for Win64, and a failure there is a real finding rather than
-a flake.
-
-Anything a packed struct relies on — a field offset, a size — belongs in a
-test, so that a layout change upstream fails loudly instead of drawing
-plausible nonsense.
+The layout is still worth a test, but a different one: the declaration is
+transcribed from `hegel.h` by hand, so a degenerate draw (`min == max`)
+against the real engine, with every field set to a distinct value, is what
+catches a transcription that disagrees with the header. Boundary values are
+not enough, since a value like `00:00:00` is symmetric under swapping two
+fields.
 
 ## Open questions
 
 - Whether the vendored `linux` binaries run under musl (Alpine) has not
   been checked.
-- Whether `Fiddle::Closure` behaves the same across the fiddle versions
-  Ruby 3.3 through 4.0 bundle (1.1.2 through 1.1.8) has not been checked.
-  Nothing depends on it yet: the engine's output callback is passed as NULL,
-  which the ABI documents as leaving output on stderr.
-- How Fiddle's `dlopen`-based loading searches for a DLL on Windows has not
+- How `ffi`'s `dlopen`-based loading searches for a DLL on Windows has not
   been checked.
 
 ## Answered
@@ -182,8 +167,8 @@ plausible nonsense.
 A drawn string arrives as a pointer and a length, is not NUL-terminated,
 and can hold interior NUL bytes, because the drawn alphabet can include
 U+0000. Read by length. Measured against 0.32.5: an alphabet pinned to
-U+0000 produces a three-byte draw that reads as `""` through
-`Fiddle::Pointer#to_s` and as three NUL bytes through `#to_str(len)`. Every
+U+0000 produces a three-byte draw that reads as `""` when taken up to the
+first NUL and as three NUL bytes when taken by its reported length. Every
 string observed reports `valid_encoding?` after `force_encoding(UTF-8)`.
 
 Prism recovers a draw's assignment target through a method chain, an

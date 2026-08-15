@@ -61,10 +61,12 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  # Fiddle opens libhegel and calls its C ABI. The constraint stays loose on
-  # purpose: fiddle publishes source-only gems, so a constraint that excludes
-  # the fiddle a Ruby ships with would make bundler build fiddle from source
-  # and put a compiler back in the install path. Ruby 3.3 ships 1.1.2, 3.4
-  # ships 1.1.6, and 4.0 ships 1.1.8.
-  spec.add_dependency "fiddle", "~> 1.1"
+  # The ffi gem opens libhegel and calls its C ABI (see docs/adr/0013). The
+  # floor is 1.17.4: ADR 0013's own measurement is what confirmed this
+  # version publishes precompiled binaries for every platform this gem
+  # targets, so an ordinary install still compiles nothing. The constraint
+  # stays pessimistic rather than exact, matching how this gemspec already
+  # treats every other runtime dependency; Gemfile.lock is what pins the
+  # exact version this project builds and tests against.
+  spec.add_dependency "ffi", "~> 1.17", ">= 1.17.4"
 end

@@ -70,7 +70,7 @@ Run `git diff main...HEAD` and read it. Look for:
 
 CLAUDE.md states these. This is where you confirm the diff honours them.
 
-- Does anything outside the libhegel binding module touch `Fiddle`?
+- Does anything outside the libhegel binding module name `FFI::`?
 - Does every native handle the diff allocates get freed in an `ensure`?
 - Do the control exceptions still descend from `Exception` rather than
   `StandardError`? Would a `rescue => e` in a user's test body swallow any of

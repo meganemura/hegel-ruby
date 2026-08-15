@@ -44,10 +44,7 @@ Work ran in three stages, and all three are done:
 3. **The advanced features** — the example database, targeted testing,
    stateful testing, phases, and health checks.
 
-What is left before the first release to RubyGems.org is a measurement rather
-than a feature: [ADR 0008](docs/adr/0008-revisit-the-binding-after-milestone-c-on-measurement.md)
-schedules a comparison of `fiddle` against the `ffi` gem now that the whole
-binding surface exists.
+The first release to RubyGems.org comes next.
 
 Building this repository needs the engine on hand. `rake libhegel:fetch`
 downloads the pinned build and checks it against its published SHA-256.
@@ -59,7 +56,7 @@ downloads the pinned build and checks it against its published SHA-256.
 | Gem name | `hegeltest` |
 | Require path | `require "hegel"` (`require "hegeltest"` also works) |
 | Namespace | `Hegel` |
-| Binding | `fiddle`, so installing the gem needs no compiler |
+| Binding | the `ffi` gem, which publishes a prebuilt binary for every platform above |
 | Ruby | 3.3, 3.4, and 4.0 |
 | Platforms | Linux amd64/arm64, macOS arm64, Windows amd64/arm64 |
 | Engine delivery | One prebuilt `libhegel` per platform-specific gem |

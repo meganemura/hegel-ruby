@@ -197,10 +197,12 @@ module Hegel
     # the same point), and it would make this default observably differ
     # from hegel-go's and hegel-java's.
     #
-    # +value+ is passed through as given, not #to_f'd: Fiddle's
-    # TYPE_DOUBLE argument marshals via NUM2DBL, which already accepts an
-    # Integer or a Float, so converting here would only add a second
-    # Ruby-side step ahead of the one Fiddle already performs.
+    # +value+ is passed through as given, not #to_f'd: hegel_target's
+    # double-typed argument already accepts an Integer or a Float exactly
+    # as given (checked directly against libhegel, not assumed from the
+    # binding library's documentation alone), so converting here would only
+    # add a second Ruby-side step ahead of the one the binding already
+    # performs.
     #
     # No argument validation here. hegel_target's own HEGEL_E_INVALID_ARG
     # messages -- a label recorded twice, a non-finite value -- are

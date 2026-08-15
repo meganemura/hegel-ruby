@@ -181,4 +181,4 @@ test because it reads as coverage:
 - [ ] Tests 1-4 written, test 5 considered
 - [ ] `bundle exec rake` passes (100% line and branch coverage)
 - [ ] `bundle exec rbs validate` passes
-- [ ] `git grep Fiddle lib/` still returns exactly `lib/hegel/lib_hegel/real.rb`
+- [ ] `git grep -l FFI:: lib/` still returns exactly `lib/hegel/lib_hegel/real.rb`
