@@ -102,7 +102,8 @@ module Hegel
       # HEGEL_OK result, distinct from an error via #run_start_code=.
       attr_writer :run_start_returns_nil
 
-      attr_reader :freed_contexts, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators
+      attr_reader :freed_contexts, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
+        :freed_pools
 
       # The value passed to each settings setter, one array per keyword, so
       # a test can confirm Hegel::Settings.apply calls the setter its table
@@ -121,6 +122,7 @@ module Hegel
         @freed_contexts = []
         @freed_test_cases = []
         @freed_string_generators = []
+        @freed_pools = []
 
         @settings_new_code = HEGEL_OK
         @settings_set_test_cases_code = HEGEL_OK
@@ -565,7 +567,12 @@ module Hegel
         @pool_generate_value
       end
 
-      def pool_free(_ctx, _pool)
+      # Records +pool+ (readable via #freed_pools), so a test can confirm
+      # Hegel::Runner freed every pool a test case opened, across each of
+      # its three test-case-freeing paths (a live case, a replayed failure,
+      # and reproduce_failure:).
+      def pool_free(_ctx, pool)
+        @freed_pools << pool
         nil
       end
 

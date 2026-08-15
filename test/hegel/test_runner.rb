@@ -922,6 +922,100 @@ class TestRunner < Minitest::Test
     assert_nil result
   end
 
+  # Hegel::TestCase#new_pool records the native handle it opens, and
+  # Hegel::Runner is supposed to free every one of them once the test case
+  # that opened it is done -- docs/adr/0011's ownership decision, at the
+  # generation-loop path (#run_case).
+  def test_run_case_frees_every_pool_the_test_case_opened
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 1
+
+    Hegel.test(impl: fake) { |tc| tc.new_pool }
+
+    assert_equal 1, fake.freed_pools.size
+  end
+
+  # A pool opened by a test case that never created one must call
+  # hegel_pool_free zero times, not skip a check that would have caught a
+  # spurious call -- proves #free_pools iterates an empty list rather than,
+  # say, freeing a leftover handle from a previous case.
+  def test_run_case_calls_no_pool_free_when_the_test_case_opened_no_pool
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 1
+
+    Hegel.test(impl: fake) { |_tc| }
+
+    assert_empty fake.freed_pools
+  end
+
+  # Two pools opened in the same test case must both be freed, not just the
+  # first or the last -- #free_pools iterates every recorded handle, not one.
+  def test_run_case_frees_two_pools_opened_in_the_same_test_case
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 1
+
+    Hegel.test(impl: fake) do |tc|
+      tc.new_pool
+      tc.new_pool
+    end
+
+    assert_equal 2, fake.freed_pools.size
+  end
+
+  # #with_test_case releases pools and the test-case handle in nested
+  # `ensure`s so one failing release cannot skip the other. Freeing pools
+  # first is the order docs/adr/0011 asks for, and a raise there would
+  # otherwise carry straight past hegel_test_case_free -- which
+  # hegel_context_free then refuses to work around, since it requires every
+  # handle taken from the context to be freed first. One skipped release
+  # would fail the context's own release at the end of the run.
+  def test_a_raise_while_freeing_pools_still_frees_the_test_case_handle
+    fake = Class.new(Hegel::LibHegel::Fake) do
+      def pool_free(_ctx, _pool)
+        raise Hegel::Error, "hegel: pool_free failed"
+      end
+    end.new
+    fake.test_case_count = 1
+
+    assert_raises(Hegel::Error) { Hegel.test(impl: fake) { |tc| tc.new_pool } }
+
+    refute_empty fake.freed_test_cases
+  end
+
+  # The replay path (#replay_failure) opens its own Hegel::TestCase from the
+  # reproduction blob, distinct from the one the live loop used -- so this
+  # counts 2 freed pools, one from #run_case's own live case (calls == 1)
+  # and one from the replay (calls == 2), not just the replay's.
+  def test_replay_failure_frees_every_pool_the_replayed_test_case_opened
+    fake = failing_fake_replaying_the_same_body
+    calls = 0
+    body = lambda do |tc|
+      calls += 1
+      tc.new_pool
+      raise "boom"
+    end
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, &body) }
+
+    assert_equal 2, calls
+    assert_equal 2, fake.freed_pools.size
+  end
+
+  # reproduce_failure: skips the run loop entirely (#reproduce), so this is
+  # the one path where a single body call is the whole story.
+  def test_reproduce_failure_frees_every_pool_the_reproduced_test_case_opened
+    fake = Hegel::LibHegel::Fake.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, reproduce_failure: "blob") do |tc|
+        tc.new_pool
+        raise "boom"
+      end
+    end
+
+    assert_equal 1, fake.freed_pools.size
+  end
+
   private
 
   # A Fake configured for a FAILED run with exactly one failure whose blob

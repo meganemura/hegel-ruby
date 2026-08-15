@@ -54,6 +54,7 @@ module Hegel
       @handle = handle
       @record = record
       @entries = record ? [] : nil
+      @pools = []
     end
 
     # The [:draw, name, value] / [:note, message] entries recorded so far, in
@@ -365,6 +366,53 @@ module Hegel
     # do_draw.
     def string_generator_free(generator)
       @impl.string_generator_free(@ctx, generator)
+    end
+
+    # hegel_new_pool: opens a native pool handle and records it in @pools, so
+    # #free_pools can release it once this test case is done. Recorded here,
+    # not by a second call a caller must remember to make, so a caller of
+    # Hegel::Stateful::Pool.new cannot forget it and leak the handle --
+    # docs/adr/0011 has the ownership decision behind this.
+    def new_pool
+      pool = @impl.new_pool(@ctx, @handle)
+      @pools << pool
+      pool
+    end
+
+    # hegel_pool_add: a fresh variable id from +pool+, for the caller to
+    # associate with the value it just generated. Hegel::Stateful::Pool#add's
+    # own primitive.
+    def pool_add(pool)
+      @impl.pool_add(@ctx, @handle, pool)
+    end
+
+    # hegel_pool_generate: the variable id libhegel chose from +pool+ (and
+    # can shrink which one it chose), +consume+ true removing it from the
+    # pool. Hegel::Stateful::Pool's two generators' own primitive. No
+    # emptiness check here: the header documents HEGEL_E_ASSUME as this
+    # call's own answer for an empty pool, and LibHegel.check! already
+    # translates that to Hegel::AssumeFailed, the same as every other
+    # assumption failure.
+    def pool_generate(pool, consume)
+      @impl.pool_generate(@ctx, @handle, pool, consume)
+    end
+
+    # hegel_pool_free. Not called directly by a caller of
+    # Hegel::Stateful::Pool -- only #free_pools below, which Hegel::Runner
+    # calls once this test case is done -- but kept its own wrapper the same
+    # as every other native call this class exposes.
+    def pool_free(pool)
+      @impl.pool_free(@ctx, pool)
+    end
+
+    # Releases every pool #new_pool opened on this test case. Hegel::Runner
+    # calls this exactly once, in the same place it frees the test-case
+    # handle itself, before that handle goes: docs/adr/0011 decides the test
+    # case is a pool's owner, not whichever rule happened to call
+    # Hegel::Stateful::Pool.new, since that code has no place of its own to
+    # free one.
+    def free_pools
+      @pools.each { |pool| pool_free(pool) }
     end
 
     # hegel_new_state_machine: opens the state-machine handle

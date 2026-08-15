@@ -332,4 +332,175 @@ class TestStateful < Minitest::Test
       end
     end
   end
+
+  # ---- Hegel::Stateful::Pool (real engine: docs/adr/0011 has the ownership
+  # decision behind this class's shape) ----
+
+  def test_pool_add_then_values_reusable_returns_the_added_value
+    Hegel.test(test_cases: 5, verbosity: :quiet) do |tc|
+      pool = Hegel::Stateful::Pool.new(tc)
+      raise "a fresh pool must be empty" unless pool.empty?
+
+      pool.add(42)
+      raise "a pool holding a value must not be empty" if pool.empty?
+
+      value = tc.draw(pool.values_reusable)
+      raise "expected 42, got #{value}" unless value == 42
+    end
+  end
+
+  # #values_reusable must leave its chosen value in the pool: two draws in a
+  # row against a pool holding one value both have to succeed, and #size
+  # must still read 1 afterward.
+  def test_values_reusable_does_not_remove_the_value_from_the_pool
+    Hegel.test(test_cases: 5, verbosity: :quiet) do |tc|
+      pool = Hegel::Stateful::Pool.new(tc)
+      pool.add(1)
+      tc.draw(pool.values_reusable)
+      tc.draw(pool.values_reusable)
+      raise "pool size changed: #{pool.size}" unless pool.size == 1
+    end
+  end
+
+  def test_values_consumed_removes_the_drawn_value_from_the_pool
+    Hegel.test(test_cases: 5, verbosity: :quiet) do |tc|
+      pool = Hegel::Stateful::Pool.new(tc)
+      pool.add(1)
+      pool.add(2)
+      tc.draw(pool.values_consumed)
+      raise "expected size 1, got #{pool.size}" unless pool.size == 1
+    end
+  end
+
+  # A pool draw outside a rule behaves like any other assume/reject call:
+  # HEGEL_E_ASSUME from an empty pool translates to Hegel::AssumeFailed,
+  # which Hegel::Runner.classify discards the whole case for. A call
+  # counter, not the drawn value, decides which cases add to the pool
+  # first (the same shape test_runner.rb's own
+  # test_assume_false_discards_the_case_and_counts_toward_discarded uses),
+  # so this cannot flake on libhegel's own randomness. The draw_integer
+  # call is required, not decoration: the real-engine-tests skill's own
+  # "The run stops early if a case has nothing to vary" notes that a case
+  # discarding having drawn nothing ends the run after one trial.
+  def test_drawing_from_an_empty_pool_outside_a_rule_raises_assume_failed_and_discards_the_case
+    output = StringIO.new
+    calls = 0
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        calls += 1
+        tc.draw_integer(0, 10)
+        pool = Hegel::Stateful::Pool.new(tc)
+        pool.add(1) if calls > 2
+        tc.draw(pool.values_consumed)
+        raise "boom"
+      end
+    end
+
+    assert_includes error.message, "boom"
+    assert_includes output.string, "(2 discarded)"
+  end
+
+  # Same machine shape as RejectingMachine above, with an empty pool draw in
+  # place of tc.assume(false) as the source of Hegel::AssumeFailed: proves
+  # Hegel::Stateful.apply_rule's rescue catches this one the same way,
+  # rejecting only the rule that drew it rather than the whole test case.
+  # "(0 discarded)" is the load-bearing assertion for the same reason it is
+  # there -- see that test's own comment.
+  class PoolRejectingMachine < Hegel::StateMachine
+    def initialize(tc, reject_counter)
+      @pool = Hegel::Stateful::Pool.new(tc)
+      @reject_counter = reject_counter
+      @attempts = 0
+    end
+
+    rule(:step) do |tc|
+      should_fail = @attempts.positive? && tc.draw_boolean
+      @attempts += 1
+      if should_fail
+        raise "always fails"
+      else
+        @reject_counter[0] += 1
+        tc.draw(@pool.values_consumed)
+      end
+    end
+  end
+
+  def test_drawing_from_an_empty_pool_inside_a_rule_rejects_only_that_rule_not_the_whole_test_case
+    output = StringIO.new
+    reject_counter = [0]
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(output: output) { |tc| Hegel::Stateful.run(PoolRejectingMachine.new(tc, reject_counter), tc) }
+    end
+
+    assert_includes error.message, "always fails"
+    assert_operator reject_counter[0], :>, 0,
+      "the empty-pool draw never ran, so this run does not test what it claims"
+    assert_includes output.string, "(0 discarded)"
+  end
+
+  # One pool, two rules: alloc adds a fresh handle, free draws one back out.
+  # #free below draws #values_reusable rather than #values_consumed, an
+  # injected bug that lets the same handle be freed twice -- the divergence
+  # from the model (@live) this shrink test targets.
+  class DoubleFreeMachine < Hegel::StateMachine
+    def initialize(tc)
+      @pool = Hegel::Stateful::Pool.new(tc)
+      @live = []
+    end
+
+    rule(:alloc) do |tc|
+      handle = tc.draw(integers(min_value: 0, max_value: 9))
+      @pool.add(handle)
+      @live << handle
+    end
+
+    rule(:free) do |tc|
+      handle = tc.draw(@pool.values_reusable)
+      raise "double free: #{handle}" unless @live.delete(handle)
+    end
+  end
+
+  # The minimal counterexample is exactly 3 steps: one alloc (so a handle
+  # exists), then two frees of it. #values_reusable's own not-removing
+  # behaviour is what lets the second free see the same handle again --
+  # if a value drawn from the pool were removed the way #values_consumed
+  # removes it, the second free would draw from an empty pool and reject
+  # that rule instead of reaching the bug, and this machine would never
+  # fail at all. A shrink that lands anywhere but 3 steps means that
+  # behaviour regressed, the same span-quality role
+  # test_stateful_run_shrinks_to_the_minimal_step_count_that_breaks_the_invariant
+  # plays above.
+  def test_stateful_pool_run_shrinks_to_the_minimal_alloc_then_double_free_sequence
+    output = StringIO.new
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(output: output) { |tc| Hegel::Stateful.run(DoubleFreeMachine.new(tc), tc) }
+    end
+
+    assert_includes error.message, "double free"
+    assert_includes output.string, "Step 1: alloc"
+    assert_includes output.string, "Step 2: free"
+    assert_includes output.string, "Step 3: free"
+    refute_includes output.string, "Step 4:"
+  end
+
+  # Pinned because Hegel::TestCase#draw is what pool_generate goes through
+  # (docs/adr/0011): the chosen value is recorded and named for the report
+  # the same way any other draw is.
+  def test_pool_draw_appears_in_the_failure_report
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        pool = Hegel::Stateful::Pool.new(tc)
+        pool.add(42)
+        value = tc.draw(pool.values_reusable, label: "handle")
+        raise "boom: #{value}"
+      end
+    end
+
+    assert_includes output.string, "handle = 42"
+  end
 end

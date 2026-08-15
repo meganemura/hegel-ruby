@@ -56,6 +56,11 @@ module Hegel
     def generate_date: (Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
     def generate_time: (Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
     def generate_datetime: (Array[Integer] min_date, Array[Integer] min_time, Array[Integer] max_date, Array[Integer] max_time) -> [Array[Integer], Array[Integer]]
+    def new_pool: () -> untyped
+    def pool_add: (untyped pool) -> Integer
+    def pool_generate: (untyped pool, bool consume) -> Integer
+    def pool_free: (untyped pool) -> nil
+    def free_pools: () -> void
     def new_state_machine: (Array[String] rule_names, Array[String] invariant_names) -> untyped
     def state_machine_next_rule: (untyped state_machine) -> Integer
     def state_machine_rule_rejected: (untyped state_machine) -> nil
@@ -267,6 +272,25 @@ module Hegel
     def self.drive: (StateMachine machine, Hash[String, Proc] rules, Array[String] rule_names, Hash[String, Proc] invariants, untyped state_machine, TestCase tc) -> void
     def self.apply_rule: (StateMachine machine, Proc block, Hash[String, Proc] invariants, untyped state_machine, TestCase tc) -> void
     def self.run_invariants: (StateMachine machine, Hash[String, Proc] invariants, TestCase tc) -> void
+
+    class Pool
+      def initialize: (TestCase tc) -> void
+      def size: () -> Integer
+      def empty?: () -> bool
+      def add: (untyped value) -> Pool
+      def values_reusable: () -> ValuesReusable
+      def values_consumed: () -> ValuesConsumed
+
+      class ValuesReusable < Generator
+        def initialize: (untyped pool, Hash[Integer, untyped] values) -> void
+        def do_draw: (untyped tc) -> untyped
+      end
+
+      class ValuesConsumed < Generator
+        def initialize: (untyped pool, Hash[Integer, untyped] values) -> void
+        def do_draw: (untyped tc) -> untyped
+      end
+    end
   end
 
   module Syntax
@@ -352,12 +376,13 @@ module Hegel
     def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stateful_step_count: Integer?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
     def self.run_and_finish: (untyped impl, untyped ctx, untyped settings, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats) { (TestCase) -> void } -> void
+    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> R } -> R
     def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats) { (TestCase) -> void } -> void
     def self.finish: (untyped impl, untyped ctx, untyped settings, untyped result, GenerationStats stats, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.replay: (untyped impl, untyped ctx, untyped settings, untyped result, GenerationStats stats, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
     def self.replay_failure: (untyped impl, untyped ctx, untyped settings, untyped failure, Integer index, GenerationStats stats) { (TestCase) -> void } -> [Exception, Report::Failure]
     def self.reproduce: (untyped impl, untyped ctx, untyped settings, String blob, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
-    def self.classify: (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
+    def self.classify: (TestCase test_case) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
     def self.origin_for: (Exception exception) -> String
     def self.flaky_message: () -> String
     def self.multiple_failures_message: (Integer count) -> String

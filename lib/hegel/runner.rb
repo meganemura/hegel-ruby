@@ -144,8 +144,8 @@ module Hegel
       ensure
         # hegel_run_free only marks an in-progress case complete; per the
         # header it does not free the test-case handle itself. That
-        # handle is this loop's own to release, which #run_case already
-        # does in its own `ensure` on every path, including a fatal
+        # handle is this loop's own to release, which #run_case does via
+        # #with_test_case's own `ensure` on every path, including a fatal
         # exception raised from inside #drive.
         impl.run_free(ctx, run)
       end
@@ -167,18 +167,43 @@ module Hegel
       end
     end
 
+    # Builds a Hegel::TestCase for +tc+ and yields it, then frees what it
+    # opened: every pool it recorded (Hegel::TestCase#free_pools), then the
+    # test-case handle itself, in that order, whether the block returns or
+    # raises. #run_case, #replay_failure, and #reproduce each need exactly
+    # this shape around their own call to #classify -- docs/adr/0011 decides
+    # a test case owns every pool built from it, and that pools free before
+    # the handle that owns them goes.
+    #
+    # The nested `ensure` is what keeps those two releases independent. A
+    # raise out of #free_pools would otherwise carry past the handle's own
+    # release, and hegel_context_free requires every handle taken from the
+    # context to be freed first, so one skipped release does not stop at one
+    # leak -- it fails the context's release too, at the end of a run that
+    # had already gone wrong enough to raise in here.
+    def with_test_case(impl, ctx, tc, record: false)
+      test_case = TestCase.new(impl, ctx, tc, record: record)
+      yield test_case
+    ensure
+      begin
+        test_case.free_pools
+      ensure
+        impl.test_case_free(ctx, tc)
+      end
+    end
+
     # Runs +block+ against one test-case handle, classifies the outcome,
     # counts it into +stats+, and reports it with hegel_mark_complete. A
     # fatal exception (#classify re-raises those before returning) skips
-    # both entirely and still reaches the `ensure` below, so the handle is
-    # freed either way; its owner is this loop, not hegel_run_free (see
-    # #run_and_finish's comment above).
+    # both entirely and still reaches #with_test_case's own `ensure`, so the
+    # handle is freed either way; its owner is this loop, not hegel_run_free
+    # (see #run_and_finish's comment above).
     def run_case(impl, ctx, tc, stats, &block)
-      status, origin = classify(impl, ctx, tc, &block)
-      stats.record(status, origin)
-      impl.mark_complete(ctx, tc, status, origin)
-    ensure
-      impl.test_case_free(ctx, tc)
+      with_test_case(impl, ctx, tc) do |test_case|
+        status, origin = classify(test_case, &block)
+        stats.record(status, origin)
+        impl.mark_complete(ctx, tc, status, origin)
+      end
     end
 
     # Reads the finished run's status and acts on it. PASSED returns nil,
@@ -257,8 +282,8 @@ module Hegel
       raise Hegel::Error, "hegel: failure #{index} has no reproduction blob" if blob.nil?
 
       tc = build_replay_case(impl, ctx, settings, blob)
-      begin
-        status, origin, exception, entries = classify(impl, ctx, tc, record: true, &block)
+      with_test_case(impl, ctx, tc, record: true) do |test_case|
+        status, origin, exception, entries = classify(test_case, &block)
         raise Hegel::Error, flaky_message unless status == LibHegel::HEGEL_STATUS_INTERESTING
 
         # The libhegel reference documents blob replay as ended by the
@@ -267,8 +292,6 @@ module Hegel
         impl.mark_complete(ctx, tc, status, origin)
         test_cases, discarded = stats.for(origin)
         [exception, Report::Failure.new(test_cases: test_cases, discarded: discarded, entries: entries, blob: blob)]
-      ensure
-        impl.test_case_free(ctx, tc)
       end
     end
 
@@ -299,36 +322,33 @@ module Hegel
 
     def reproduce(impl, ctx, settings, blob, quiet:, output:, &block)
       tc = build_replay_case(impl, ctx, settings, blob)
-      begin
-        status, origin, exception, entries = classify(impl, ctx, tc, record: true, &block)
+      with_test_case(impl, ctx, tc, record: true) do |test_case|
+        status, origin, exception, entries = classify(test_case, &block)
         raise Hegel::Error, flaky_message unless status == LibHegel::HEGEL_STATUS_INTERESTING
 
         impl.mark_complete(ctx, tc, status, origin)
         report = Report::Failure.new(test_cases: 1, discarded: 0, entries: entries, blob: blob)
         output.puts(Report.render([report])) unless quiet
         raise exception
-      ensure
-        impl.test_case_free(ctx, tc)
       end
     end
 
-    # Runs +block+ against +tc+ and classifies the outcome into the
-    # [hegel_status_t, origin, exception, entries] #run_case, #replay_failure,
-    # and #reproduce all need. +record+ is passed straight through to the
-    # Hegel::TestCase built for this call; +entries+ is only ever non-nil
-    # when it was true and the outcome was INTERESTING, since that is the
-    # only combination any caller here reads it for. Order matters: a fatal
-    # exception must be re-raised before it reaches the library's own
-    # control exceptions, which must themselves be told apart from an
-    # ordinary exception before the catch-all below.
+    # Runs +block+ against +test_case+ (a Hegel::TestCase #with_test_case
+    # already built, at whatever +record:+ it was given) and classifies the
+    # outcome into the [hegel_status_t, origin, exception, entries]
+    # #run_case, #replay_failure, and #reproduce all need. +entries+ is only
+    # ever non-nil when +test_case+ was built to record and the outcome was
+    # INTERESTING, since that is the only combination any caller here reads
+    # it for. Order matters: a fatal exception must be re-raised before it
+    # reaches the library's own control exceptions, which must themselves be
+    # told apart from an ordinary exception before the catch-all below.
     #
     # standard:disable Lint/RescueException -- `rescue Exception` is
     # deliberate: Minitest::Assertion and RSpec's ExpectationNotMetError both
     # descend from Exception, not StandardError, so a narrower rescue would
     # let a failing assertion pass through this loop uncaught instead of
     # being reported as a Hegel failure.
-    def classify(impl, ctx, tc, record: false, &block)
-      test_case = TestCase.new(impl, ctx, tc, record: record)
+    def classify(test_case, &block)
       block.call(test_case)
       [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil]
     rescue *Hegel::FATAL_EXCEPTIONS

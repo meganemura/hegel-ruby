@@ -2,6 +2,7 @@
 
 require_relative "errors"
 require_relative "lib_hegel"
+require_relative "stateful/pool"
 
 module Hegel
   # Runs one stateful (model-based) test: drives libhegel's own state-machine
