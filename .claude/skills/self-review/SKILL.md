@@ -36,6 +36,33 @@ Run `git diff main...HEAD` and read it. Look for:
   "no other implementation states it". A search tells you where something is
   and never tells you that you found all of it. Write the positive relation
   instead: name the file that does say the thing.
+- **Citations of documents that are not in the repository.** Run this, and
+  read every line it prints:
+
+  ```bash
+  git grep -nE "decision record|task'?s own|the spec\b|spec\.md|as specified|this batch|working note" -- lib test sig docs README.md CHANGELOG.md
+  ```
+
+  A comment reading "see the task's own decision record" is a broken link
+  for anyone who clones this repository, and it sits exactly where the
+  reason should be. The fix is never to reword the citation. Write the
+  reason in place, and keep the citation only when it names a path this
+  repository carries:
+
+  ```ruby
+  # This layer does not validate version itself (see the task's own    # no
+  # decision record).
+
+  # This layer does not validate version itself: hegel_generate_uuid    # yes
+  # rejects a value outside its documented 0..15 range, and
+  # LibHegel.check! translates that into this Hegel::Error. Checking it
+  # here as well would mean two messages for one mistake.
+  ```
+
+  The grep matters because reading for this does not catch it: nine of
+  these shipped across four batches while this section already asked the
+  question in prose. Most were one clause away from being complete
+  already, which is what makes them so easy to read past.
 - **New coverage exclusions.** Each one needs permission and a written reason.
   See the `coverage` skill.
 
@@ -52,8 +79,6 @@ CLAUDE.md states these. This is where you confirm the diff honours them.
 - Does every new generator validate at draw time rather than at build time?
 - Do the new validation messages read as public API, with a stable substring a
   test can assert against?
-- Does any committed file reference a working note, a task file, or a path that
-  a person who clones this repository does not have?
 
 ## For a new generator
 
