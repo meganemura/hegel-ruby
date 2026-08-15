@@ -1,21 +1,26 @@
 # frozen_string_literal: true
 
 require_relative "draw_name"
+require_relative "errors"
 require_relative "lib_hegel"
 
 module Hegel
   # Wraps one libhegel test-case handle: the native draw surface
   # (#generate_integer, #start_span, #new_collection, and so on) every
-  # Hegel::Generator#do_draw is built on, plus the two recording entry
-  # points a caller (or #draw) reaches for -- #draw_integer/#draw_boolean
-  # for the two primitive draws, #draw for a Hegel::Generator.
+  # Hegel::Generator#do_draw is built on, plus the recording entry points a
+  # caller (or #draw) reaches for -- #draw_integer/#draw_boolean for the two
+  # primitive draws, #draw for a Hegel::Generator, #note for a message, and
+  # #assume/#reject to discard the case outright.
   #
   # The native methods below intentionally do not record: a Hegel::Generator
   # composing several of them (Hegel::Generators::ArrayGenerator drawing one
   # element per loop iteration, say) must produce exactly one report entry
   # for the whole compound value, not one per native call it happens to
-  # make. Only #draw_integer, #draw_boolean, and #draw record, each exactly
-  # once for its own single value.
+  # make. Only #draw_integer, #draw_boolean, #draw, and #note record, each
+  # exactly once per call, tagged :draw or :note so a rendered report can
+  # tell the two apart while keeping the call order they share (see
+  # #record_draw and #note, and Hegel::Report.assign_names, which numbers
+  # only the :draw entries).
   class TestCase
     # #name_for's fallback when a draw has no better name (see below).
     DEFAULT_DRAW_NAME = "draw"
@@ -48,13 +53,17 @@ module Hegel
       @ctx = ctx
       @handle = handle
       @record = record
-      @draws = record ? [] : nil
+      @entries = record ? [] : nil
     end
 
-    # The (name, value) pairs recorded so far, or nil when this instance was
-    # not built to record. Hegel::Runner reads this once, after the block
-    # that owns this test case has run to completion or raised.
-    attr_reader :draws
+    # The [:draw, name, value] / [:note, message] entries recorded so far, in
+    # call order, or nil when this instance was not built to record.
+    # Hegel::Runner reads this once, after the block that owns this test
+    # case has run to completion or raised. One tagged list rather than a
+    # draws list and a separate notes list, so a note recorded between two
+    # draws stays between them in the report -- the same interleaving
+    # hegel-rust gets for free by sending both to one output callback.
+    attr_reader :entries
 
     # hegel_generate_integer: an integer in [min_value, max_value].
     def draw_integer(min_value, max_value, label: nil)
@@ -78,6 +87,65 @@ module Hegel
       value = generator.do_draw(self)
       record_draw(label, value)
       value
+    end
+
+    # Discards this test case (see #reject) unless +condition+ holds.
+    # +condition+ is read as Ruby truthiness, not restricted to true/false
+    # the way hegel-rust's TestCase::assume takes a bool: it lets a caller
+    # write assume(hash[:key]) directly instead of assume(!!hash[:key]).
+    def assume(condition)
+      reject unless condition
+    end
+
+    # Discards this test case unconditionally, with no reason attached (the
+    # same shape as hegel-rust's own TestCase::reject; distinct from
+    # #collection_reject, which rejects one drawn element rather than the
+    # whole case). Raises Hegel::AssumeFailed, which Hegel::Runner.classify
+    # already translates to HEGEL_STATUS_INVALID -- that translation is not
+    # this method's concern.
+    def reject
+      raise Hegel::AssumeFailed, "hegel: an assumption failed; this test case is discarded"
+    end
+
+    # Records +message+ (or, from the block form, its return value) for the
+    # eventual failure report, interleaved with draws in call order (see
+    # #record_draw and the :entries tag on #entries). Takes exactly one of
+    # +message+ or a block; hegel-rust's own TestCase::note takes only a
+    # message, so the block form is this binding's own addition, kept to
+    # the same "note" name and String content once evaluated.
+    #
+    # The block form exists to skip building the string on an iteration
+    # that will not record: Hegel::Runner.drive's own comment measured
+    # roughly 1000 iterations for a 20-test-case run that fails every time,
+    # and a stateful test's step loop calls #note once per step, so the
+    # avoided work is not incidental.
+    #
+    # Validates before the #@record check, not after: checking only on the
+    # recording iteration would let a caller's mistake reach only the final
+    # replay instead of surfacing on the very first call.
+    #
+    # +message+ (or the block's value) is kept as given, not #to_s'd here --
+    # the same reason #record_draw keeps a drawn value un-#inspect'd.
+    # Hegel::Report does that formatting once, at report assembly, not on
+    # every recording pass.
+    #
+    # Decided simplification, unlike hegel-rust: this does not surface a
+    # note on every iteration under a higher verbosity. Two reasons. First,
+    # this binding runs with libhegel's own output callback set to NULL
+    # (Hegel::LibHegel::Real#run_start passes it, and says why), so there
+    # is no engine-printed line for a per-iteration note to line up with.
+    # Second, printing on every
+    # iteration would reintroduce the per-case cost the block form above
+    # exists to avoid.
+    def note(message = nil)
+      has_message = !message.nil?
+      if has_message == block_given?
+        raise Hegel::Error, "hegel: note requires exactly one of a message or a block"
+      end
+
+      return unless @record
+
+      @entries << [:note, has_message ? message : yield]
     end
 
     # hegel_generate_integer, without recording. Hegel::Generators::
@@ -307,17 +375,17 @@ module Hegel
       string_generator_free(generator)
     end
 
-    # Records (name, value) for the eventual failure report. A no-op unless
-    # +record+ was true at #initialize: a run iterates the generation and
-    # shrink phases far more than once (Hegel::Runner.drive's own comment
-    # measured 1003 iterations for a 20-test-case run that always failed),
-    # so recording -- and later #inspect-ing -- every draw there would
-    # dominate a failing run's cost. Only the last, already-shrunk replay
-    # pays for it.
+    # Records a :draw entry (name, value) for the eventual failure report. A
+    # no-op unless +record+ was true at #initialize: a run iterates the
+    # generation and shrink phases far more than once (Hegel::Runner.drive's
+    # own comment measured 1003 iterations for a 20-test-case run that
+    # always failed), so recording -- and later #inspect-ing -- every draw
+    # there would dominate a failing run's cost. Only the last,
+    # already-shrunk replay pays for it.
     def record_draw(label, value)
       return unless @record
 
-      @draws << [name_for(label, DRAW_CALLER_DEPTH), value]
+      @entries << [:draw, name_for(label, DRAW_CALLER_DEPTH), value]
     end
 
     # The single place a draw's name is decided, tried in this order: the

@@ -19,10 +19,13 @@ module Hegel
     DRAW_CALLER_DEPTH: Integer
 
     def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool) -> void
-    def draws: () -> Array[[String, untyped]]?
+    def entries: () -> Array[[:draw, String, untyped] | [:note, untyped]]?
     def draw_integer: (Integer min_value, Integer max_value, ?label: String?) -> Integer
     def draw_boolean: (?Float p, ?label: String?) -> bool
     def draw: (Generator generator, ?label: String?) -> untyped
+    def assume: (boolish condition) -> void
+    def reject: () -> bot
+    def note: (?untyped? message) ?{ () -> untyped } -> void
     def generate_integer: (Integer min_value, Integer max_value) -> Integer
     def generate_integer_big: (Integer min_value, Integer max_value) -> Integer
     def generate_boolean: (?Float p) -> bool
@@ -288,14 +291,14 @@ module Hegel
 
   module Report
     class Failure
-      def initialize: (test_cases: Integer, discarded: Integer, draws: Array[[String, untyped]], blob: String) -> void
+      def initialize: (test_cases: Integer, discarded: Integer, entries: Array[[:draw, String, untyped] | [:note, untyped]], blob: String) -> void
       def test_cases: () -> Integer
       def discarded: () -> Integer
-      def draws: () -> Array[[String, untyped]]
+      def entries: () -> Array[[:draw, String, untyped] | [:note, untyped]]
       def blob: () -> String
     end
 
-    def self.assign_names: (Array[[String, untyped]] draws) -> Array[[String, untyped]]
+    def self.assign_names: (Array[[:draw, String, untyped] | [:note, untyped]] entries) -> Array[[:draw, String, untyped] | [:note, untyped]]
     def self.render_failure: (Failure failure) -> String
     def self.render: (Array[Failure] failures) -> String
   end
@@ -326,7 +329,7 @@ module Hegel
     def self.replay: (untyped impl, untyped ctx, untyped settings, untyped result, GenerationStats stats, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
     def self.replay_failure: (untyped impl, untyped ctx, untyped settings, untyped failure, Integer index, GenerationStats stats) { (TestCase) -> void } -> [Exception, Report::Failure]
     def self.reproduce: (untyped impl, untyped ctx, untyped settings, String blob, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
-    def self.classify: (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[String, untyped]]?]
+    def self.classify: (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
     def self.origin_for: (Exception exception) -> String
     def self.flaky_message: () -> String
   end

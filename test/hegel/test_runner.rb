@@ -315,6 +315,28 @@ class TestRunner < Minitest::Test
     assert_includes reproduce_output.string, "n = 501"
   end
 
+  # Hegel::Runner.reproduce records with record: true the same way
+  # #replay_failure does; a note must reach its report through that path
+  # too, not only through the live loop's own replay.
+  def test_reproduce_failure_replays_a_note_against_the_real_engine
+    output = StringIO.new
+    body = lambda do |tc|
+      n = tc.draw_integer(0, 1_000_000, label: "n")
+      tc.note("n was #{n}")
+      raise "too big: #{n}" if n > 500
+    end
+
+    assert_raises(RuntimeError) { Hegel.test(output: output, &body) }
+
+    blob = output.string[/reproduce_failure: "(.+)"/, 1]
+    refute_nil blob
+
+    reproduce_output = StringIO.new
+    assert_raises(RuntimeError) { Hegel.test(reproduce_failure: blob, output: reproduce_output, &body) }
+
+    assert_includes reproduce_output.string, "n was 501"
+  end
+
   # verbosity: :quiet must silence #reproduce's own report the same way it
   # silences #replay's (see test_quiet_verbosity_suppresses_the_report).
   def test_reproduce_failure_respects_quiet_verbosity
@@ -363,6 +385,139 @@ class TestRunner < Minitest::Test
     end
 
     assert_nil result
+  end
+
+  # tc.assume(false) discards the case the same way raising
+  # Hegel::AssumeFailed directly does (see the precedent test above), but
+  # through the public entry point, against the real engine. A call
+  # counter, not the drawn value, decides which cases discard, so
+  # libhegel's own randomness cannot make this test flaky: the origin only
+  # ever goes INTERESTING at call 3, and Hegel::Runner::GenerationStats
+  # snapshots its first appearance, so extra generation or shrink calls
+  # afterward (both keep raising, since the counter has already passed 2)
+  # cannot move the reported count.
+  #
+  # The draw is required, not decoration: measured against libhegel 0.32.5,
+  # a case that discards having drawn nothing carries no choices to vary,
+  # so the run treats it as fully determined and stops after that one
+  # trial (PASSED) instead of pulling another test case.
+  def test_assume_false_discards_the_case_and_counts_toward_discarded
+    output = StringIO.new
+    calls = 0
+    body = lambda do |tc|
+      calls += 1
+      tc.draw_integer(0, 10)
+      tc.assume(false) if calls <= 2
+      raise "boom"
+    end
+
+    assert_raises(RuntimeError) { Hegel.test(output: output, &body) }
+
+    assert_includes output.string, "Falsified after 3 test cases (2 discarded):"
+  end
+
+  # tc.reject discards unconditionally, the same shape as tc.assume(false)
+  # above (see its comment for why the draw is required).
+  def test_reject_discards_the_case_and_counts_toward_discarded
+    output = StringIO.new
+    calls = 0
+    body = lambda do |tc|
+      calls += 1
+      tc.draw_integer(0, 10)
+      tc.reject if calls <= 2
+      raise "boom"
+    end
+
+    assert_raises(RuntimeError) { Hegel.test(output: output, &body) }
+
+    assert_includes output.string, "Falsified after 3 test cases (2 discarded):"
+  end
+
+  # tc.assume(true) is a no-op: nothing is discarded, so an always-true
+  # property still passes, against the real engine.
+  def test_assume_true_does_not_discard_the_case
+    result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+      tc.assume(true)
+      tc.draw_integer(0, 10)
+    end
+
+    assert_nil result
+  end
+
+  # A note's message appears in the failure report interleaved with draws
+  # in call order, matching Hegel::TestCase's own class-level documentation
+  # example (a note, a draw, then a conditional note).
+  def test_note_appears_in_the_failure_report_interleaved_with_draws_in_call_order
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        tc.note("starting the queue")
+        n = tc.draw_integer(0, 1_000_000, label: "n")
+        tc.note("queue was empty") if n > 500
+        raise "too big: #{n}" if n > 500
+      end
+    end
+
+    assert_includes output.string, "starting the queue\n  n = 501\n  queue was empty"
+  end
+
+  # The block form is only evaluated on the one, already-shrunk replay that
+  # produces the report (see Hegel::TestCase#note): every other iteration
+  # of a failing run like this one -- roughly 1000, per Hegel::Runner.drive's
+  # own comment -- skips the block entirely, so the counter below reads 1.
+  def test_note_block_form_evaluates_exactly_once_on_the_final_replay
+    calls = 0
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(output: output) do |tc|
+        n = tc.draw_integer(0, 1_000_000, label: "n")
+        tc.note do
+          calls += 1
+          "n was #{n}"
+        end
+        raise "too big: #{n}" if n > 500
+      end
+    end
+
+    assert_equal 1, calls
+    assert_includes output.string, "n was 501"
+  end
+
+  # A failure can be reported with no draws at all, only notes.
+  def test_note_reports_a_failure_with_no_draws
+    fake = failing_fake_replaying_the_same_body
+    output = StringIO.new
+    body = lambda do |tc|
+      tc.note("only a note")
+      raise "boom"
+    end
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output, &body) }
+
+    assert_includes output.string, "  only a note"
+  end
+
+  # Argument validation runs before the #@record check, so a caller's
+  # mistake surfaces on every call, not only the one iteration that
+  # happens to record (see Hegel::TestCase#note). record: false here is
+  # that non-recording iteration, exercised directly.
+  def test_note_with_neither_message_nor_block_raises_even_when_not_recording
+    tc = Hegel::TestCase.new(nil, nil, nil, record: false)
+
+    error = assert_raises(Hegel::Error) { tc.note }
+
+    assert_includes error.message, "exactly one"
+  end
+
+  # The other invalid combination: both a message and a block.
+  def test_note_with_both_message_and_block_raises_even_when_not_recording
+    tc = Hegel::TestCase.new(nil, nil, nil, record: false)
+
+    error = assert_raises(Hegel::Error) { tc.note("x") { "y" } }
+
+    assert_includes error.message, "exactly one"
   end
 
   def test_hegel_test_reraises_the_bodys_exception_class_and_message

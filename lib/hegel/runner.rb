@@ -220,7 +220,7 @@ module Hegel
 
     # Rebuilds one failure's test case from its reproduction blob and runs
     # +block+ against it, through the same #classify used by the live loop,
-    # recording its draws for the report (see Hegel::TestCase). Returns
+    # recording its entries for the report (see Hegel::TestCase). Returns
     # [exception, Hegel::Report::Failure] on success.
     #
     # Flaky is "not INTERESTING", not "did not raise": #classify's other two
@@ -238,7 +238,7 @@ module Hegel
 
       tc = build_replay_case(impl, ctx, settings, blob)
       begin
-        status, origin, exception, draws = classify(impl, ctx, tc, record: true, &block)
+        status, origin, exception, entries = classify(impl, ctx, tc, record: true, &block)
         raise Hegel::Error, flaky_message unless status == LibHegel::HEGEL_STATUS_INTERESTING
 
         # The libhegel reference documents blob replay as ended by the
@@ -246,7 +246,7 @@ module Hegel
         # hegel_test_case_free, but not crashing is not the same as correct.
         impl.mark_complete(ctx, tc, status, origin)
         test_cases, discarded = stats.for(origin)
-        [exception, Report::Failure.new(test_cases: test_cases, discarded: discarded, draws: draws, blob: blob)]
+        [exception, Report::Failure.new(test_cases: test_cases, discarded: discarded, entries: entries, blob: blob)]
       ensure
         impl.test_case_free(ctx, tc)
       end
@@ -280,11 +280,11 @@ module Hegel
     def reproduce(impl, ctx, settings, blob, quiet:, output:, &block)
       tc = build_replay_case(impl, ctx, settings, blob)
       begin
-        status, origin, exception, draws = classify(impl, ctx, tc, record: true, &block)
+        status, origin, exception, entries = classify(impl, ctx, tc, record: true, &block)
         raise Hegel::Error, flaky_message unless status == LibHegel::HEGEL_STATUS_INTERESTING
 
         impl.mark_complete(ctx, tc, status, origin)
-        report = Report::Failure.new(test_cases: 1, discarded: 0, draws: draws, blob: blob)
+        report = Report::Failure.new(test_cases: 1, discarded: 0, entries: entries, blob: blob)
         output.puts(Report.render([report])) unless quiet
         raise exception
       ensure
@@ -293,11 +293,11 @@ module Hegel
     end
 
     # Runs +block+ against +tc+ and classifies the outcome into the
-    # [hegel_status_t, origin, exception, draws] #run_case, #replay_failure,
+    # [hegel_status_t, origin, exception, entries] #run_case, #replay_failure,
     # and #reproduce all need. +record+ is passed straight through to the
-    # Hegel::TestCase built for this call; +draws+ is only ever non-nil when
-    # it was true and the outcome was INTERESTING, since that is the only
-    # combination any caller here reads it for. Order matters: a fatal
+    # Hegel::TestCase built for this call; +entries+ is only ever non-nil
+    # when it was true and the outcome was INTERESTING, since that is the
+    # only combination any caller here reads it for. Order matters: a fatal
     # exception must be re-raised before it reaches the library's own
     # control exceptions, which must themselves be told apart from an
     # ordinary exception before the catch-all below.
@@ -318,7 +318,7 @@ module Hegel
     rescue Hegel::StopTest
       [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil]
     rescue Exception => e
-      [LibHegel::HEGEL_STATUS_INTERESTING, origin_for(e), e, test_case.draws]
+      [LibHegel::HEGEL_STATUS_INTERESTING, origin_for(e), e, test_case.entries]
     end
     # standard:enable Lint/RescueException
 
