@@ -10,7 +10,7 @@ What exists: library resolution (`Hegel::Locate`, the pinned
 `Hegel::LIBHEGEL_VERSION`, and the development-only `libhegel:fetch` Rake
 task), the libhegel binding (`Hegel::LibHegel`, with a real implementation
 over Fiddle and a fake for tests), the settings mapping, `Hegel::TestCase`
-with the engine's integer and boolean draws, and the run loop.
+wrapping the engine's whole draw surface, and the run loop.
 
 What exists beyond that: the failure report, which names drawn values by
 reading the caller's own source, interleaves them with whatever `tc.note`
@@ -22,9 +22,18 @@ can discard itself with `tc.assume` or `tc.reject`. A run can be shaped by
 [ADR 0009](adr/0009-turn-the-example-database-on-with-a-key.md) decides —
 the example database, through `database_key:` and `database:`.
 
-What does not exist yet: targeted testing and stateful testing, whose ABI
-calls are bound but which have no Ruby surface. Each section below says so
-wherever a boundary is planned rather than built.
+`tc.target` records an observation for the engine to search toward, and
+`Hegel::Stateful.run` drives a `Hegel::StateMachine`'s rules and invariants,
+drawing values an earlier rule produced back out of a
+`Hegel::Stateful::Pool`. [ADR 0010](adr/0010-declare-stateful-rules-with-a-class-macro.md)
+decides how a machine declares its rules and
+[ADR 0011](adr/0011-let-the-test-case-own-every-pool-drawn-from-it.md) who
+frees a pool.
+
+Every feature this binding set out to cover now has a Ruby surface. What
+remains open is not a feature but a measurement, and
+[ADR 0008](adr/0008-revisit-the-binding-after-milestone-c-on-measurement.md)
+schedules it.
 
 ## Where meaning comes from
 
@@ -47,19 +56,19 @@ libhegel runs in the same process as its caller. Nearly every function in
 itself instead. `hegel_context_last_error` returns a borrowed message
 pointer instead of a status code.
 
-Ruby will call this ABI through Fiddle. See
+Ruby calls this ABI through Fiddle. See
 [ADR 0001](adr/0001-bind-libhegel-through-fiddle.md).
 
 ## FFI confined to one module
 
-Every raw Fiddle call will live in `Hegel::LibHegel`. The rest of the
-library will call that module's wrappers, never Fiddle directly. This gives
+Every raw Fiddle call lives in `Hegel::LibHegel`. The rest of the
+library calls that module's wrappers, never Fiddle directly. This gives
 the library one seam where a test can substitute a fake implementation,
 exercising libhegel's error codes without loading the real engine.
 
 ## Run loop ownership
 
-The Ruby side will own the run loop. It starts a run, asks libhegel for
+The Ruby side owns the run loop. It starts a run, asks libhegel for
 each test case, calls the caller's test body, and reports the result back.
 A test body's own assertion failure must not cross the C boundary as if it
 were a crash.
@@ -77,8 +86,8 @@ reports what a given load order mixed into `Object`, so it answers a
 different question on a run that loaded `minitest/spec` than on one that
 did not.
 
-The run loop will `rescue Exception` and re-raise the library's own control
-exceptions first. Those control exceptions will themselves descend from
+The run loop `rescue`s `Exception` and re-raises the library's own control
+exceptions first. Those control exceptions themselves descend from
 `Exception`, not `StandardError`, so a test body's own `rescue => e` cannot
 swallow them mid-run. `Hegel::Error`, which reports ordinary library errors
 to a caller outside a run, stays a `StandardError`.
@@ -90,10 +99,31 @@ context as an argument, so the context must outlive every handle allocated
 from it. Ruby's garbage collector does not guarantee finalizer ordering
 between a context and its handles.
 
-The code that owns a run will release its handles in an `ensure` block,
+The code that owns a run releases its handles in an `ensure` block,
 freeing every other handle before the context. A finalizer may back up an
 `ensure` block that a raised exception skipped, but it must free nothing a
 prior `ensure` already freed.
+
+A pool is the one handle a caller's own code opens, inside a rule, where
+there is no `ensure` of its own to release it. `Hegel::TestCase` records
+every pool opened from it and `Hegel::Runner` releases them alongside the
+test-case handle, in nested `ensure`s so a failure releasing one cannot skip
+the other. See
+[ADR 0011](adr/0011-let-the-test-case-own-every-pool-drawn-from-it.md).
+
+## A rule's own control flow
+
+Inside a stateful rule, `tc.assume(false)` means something narrower than it
+does in a test body. `Hegel::Stateful` catches it, tells libhegel the rule
+was rejected so the attempt does not spend a step, and draws another rule;
+the test case continues. `Hegel::Runner.classify` never sees it, and no case
+is discarded.
+
+A rule is also the one place in this library where a process-ending
+exception can be raised inside an open span, which is why
+`Hegel::FATAL_EXCEPTIONS` lives beside the other control exceptions rather
+than beside the run loop: two `rescue Exception` sites need it now, and both
+have to let those four straight through before anything else.
 
 ## Generator validation happens at draw time
 
@@ -102,7 +132,7 @@ generators: every invalid combination of builder values must be caught at
 draw time. The check does not run when the generator is built. The same
 documentation treats a validation message as public API, asserted against
 by tests as a stable substring. `integers(min_value: 5, max_value: 1)`
-will therefore return a generator; the error will arrive from `tc.draw`.
+therefore returns a generator; the error arrives from `tc.draw`.
 
 ## Passing a struct by value
 

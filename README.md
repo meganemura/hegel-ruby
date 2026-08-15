@@ -31,20 +31,23 @@ same process. There is no server and no Python dependency.
 
 ## Status
 
-**Nothing is released yet, and the version stays at `0.0.0` until it is.** The
-walking skeleton runs: Hegel finds a counterexample, shrinks it, names the
-values it drew, and re-raises your own exception.
+**Nothing is released yet, and the version stays at `0.0.0` until it is.**
+Everything described below runs: Hegel finds a counterexample, shrinks it,
+names the values it drew, and re-raises your own exception.
 
-Work runs in three stages:
+Work ran in three stages, and all three are done:
 
-1. **The walking skeleton** — done. The libhegel binding, the run loop, failure
-   reports, and the `booleans`, `integers`, `floats`, `text`, and `arrays`
-   generators.
-2. **The full generator set** — the remaining generators and combinators.
-3. **The advanced features** — the example database, targeted testing, stateful
-   testing, phases, and health checks.
+1. **The walking skeleton** — the libhegel binding, the run loop, and failure
+   reports.
+2. **The full generator set** — twenty-five generators, composing through
+   `map` and `filter`.
+3. **The advanced features** — the example database, targeted testing,
+   stateful testing, phases, and health checks.
 
-The first release to RubyGems.org comes after stage 3.
+What is left before the first release to RubyGems.org is a measurement rather
+than a feature: [ADR 0008](docs/adr/0008-revisit-the-binding-after-milestone-c-on-measurement.md)
+schedules a comparison of `fiddle` against the `ffi` gem now that the whole
+binding surface exists.
 
 Building this repository needs the engine on hand. `rake libhegel:fetch`
 downloads the pinned build and checks it against its published SHA-256.
@@ -117,8 +120,11 @@ Including `Hegel::Syntax::Methods` makes the generators available without a
 prefix, the way FactoryBot makes `create` available. The same generators stay
 reachable as `Hegel::Generators.arrays(...)` without the include.
 
-Today's generators are `booleans`, `integers`, `floats`, `text`, and `arrays`,
-and each one composes through `map` and `filter`.
+The generators are `arrays`, `binary`, `booleans`, `characters`, `composite`,
+`dates`, `datetimes`, `deferred`, `domains`, `emails`, `floats`, `from_regex`,
+`hashes`, `integers`, `ip_addresses`, `just`, `one_of`, `optional`,
+`sampled_from`, `sets`, `text`, `times`, `tuples`, `urls`, and `uuids`. Each
+one composes through `map` and `filter`.
 
 ### Minitest
 
@@ -155,6 +161,67 @@ MySortTest#test_matches_the_builtin_sort [test/my_sort_test.rb:5]:
 Expected: [0, 0]
   Actual: [0]
 ```
+
+### Stateful testing
+
+Some bugs need a sequence of operations rather than one input. Declare the
+operations as rules on a `Hegel::StateMachine`, and Hegel picks which runs
+next, checks your invariants after each one, and shrinks a failure to the
+shortest sequence that still shows it:
+
+```ruby
+class StackMachine < Hegel::StateMachine
+  def initialize
+    @stack = BoundedStack.new(3)
+    @model = []
+  end
+
+  rule :push do |tc|
+    x = tc.draw(integers(min_value: 0, max_value: 9))
+    @stack.push(x)
+    @model.push(x) if @model.size < 3
+  end
+
+  rule :pop do |tc|
+    tc.assume(!@model.empty?)
+    raise "pop disagreed" unless @stack.pop == @model.pop
+  end
+
+  invariant :size_agrees do
+    raise "size disagreed" unless @stack.size == @model.size
+  end
+end
+
+Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
+```
+
+`tc.assume` inside a rule rejects that rule and lets Hegel choose another,
+rather than throwing the whole test case away. For a rule that has to act on
+something an earlier rule produced — freeing a handle that some `alloc`
+actually returned — put the value in a `Hegel::Stateful::Pool` and draw it
+back out.
+
+### Shaping a run
+
+`Hegel.test` takes keywords for the rest: `test_cases`, `seed`,
+`derandomize`, `verbosity`, `phases`, `suppress_health_check`,
+`report_multiple_failures`, and `stateful_step_count`. Each one left unset
+means the engine's own default.
+
+Two more turn on libhegel's example database, which stores a failing case and
+replays it first next time. `database_key` is the switch and `database`
+chooses the directory:
+
+```ruby
+Hegel.test(database_key: "my_sort matches the builtin sort") { |tc| ... }
+```
+
+Give each property its own key. See
+[ADR 0009](docs/adr/0009-turn-the-example-database-on-with-a-key.md) for why
+the key, rather than the directory, is what turns it on.
+
+Inside a test, `tc.note` records a message the failure report prints, and
+`tc.target` tells Hegel which inputs to search toward.
 
 ## Development
 
