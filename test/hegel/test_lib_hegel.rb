@@ -6,6 +6,7 @@ require "hegel/lib_hegel/real"
 require "support/fake_lib_hegel"
 require "stringio"
 require "fiddle/import"
+require "objspace"
 
 class TestLibHegel < Minitest::Test
   def test_stop_test_and_assume_failed_do_not_inherit_standard_error
@@ -1417,6 +1418,365 @@ class TestLibHegel < Minitest::Test
     assert_equal [13, 45, 6, 123_456], tc.generate_time([0, 0, 0, 0], [23, 59, 59, 999_999])
     assert_equal [[2020, 1, 1], [13, 45, 6, 123_456]],
       tc.generate_datetime([1, 1, 1], [0, 0, 0, 0], [9999, 12, 31], [23, 59, 59, 999_999])
+  end
+
+  # The five milestone-C settings setters, applied to one settings handle
+  # ahead of a real run. The database is disabled ("") so the run leaves
+  # nothing on disk.
+  def test_real_new_settings_setters_apply_successfully_in_one_run
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      assert_nil real.settings_set_phases(ctx, settings, Hegel::LibHegel::HEGEL_PHASE_ALL)
+      assert_nil real.settings_set_suppress_health_check(ctx, settings, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
+      assert_nil real.settings_set_report_multiple_failures(ctx, settings, true)
+      assert_nil real.settings_set_database_key(ctx, settings, "hegel-ruby-test-key")
+      assert_nil real.settings_set_stateful_step_count(ctx, settings, 5)
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      cases_seen = 0
+      loop do
+        tc = real.next_test_case(ctx, run)
+        break if tc.nil?
+
+        cases_seen += 1
+        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, tc)
+      end
+
+      real.run_free(ctx, run)
+      assert_operator cases_seen, :>, 0
+    end
+  end
+
+  # hegel_target has no effect unless HEGEL_PHASE_TARGET is enabled, which
+  # it is by default; this only confirms the call itself succeeds inside a
+  # live test case. The database is disabled ("") so the run leaves
+  # nothing on disk.
+  def test_real_target_records_an_observation_during_a_run
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      assert_nil real.target(ctx, tc, 1.0, "hegel-ruby-test-target")
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # hegel_pool_add / hegel_pool_generate: two additions, then one
+  # non-consuming and one consuming draw, each confirmed to return one of
+  # the ids #pool_add handed back -- the header's own "letting libhegel
+  # choose which previously added variable to reuse". The database is
+  # disabled ("") so the run leaves nothing on disk.
+  def test_real_pool_add_and_pool_generate_round_trip_variable_ids
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      pool = real.new_pool(ctx, tc)
+      added_ids = [real.pool_add(ctx, tc, pool), real.pool_add(ctx, tc, pool)]
+
+      assert_includes added_ids, real.pool_generate(ctx, tc, pool, false)
+      assert_includes added_ids, real.pool_generate(ctx, tc, pool, true)
+
+      real.pool_free(ctx, pool)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # hegel_pool_generate on a pool with no variables: the header documents
+  # HEGEL_E_ASSUME, and LibHegel.check! already translates that to
+  # Hegel::AssumeFailed with no extra code in #pool_generate -- this pins
+  # that translation against the real engine. The database is disabled
+  # ("") so the run leaves nothing on disk.
+  def test_real_pool_generate_on_an_empty_pool_raises_assume_failed
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      pool = real.new_pool(ctx, tc)
+      assert_raises(Hegel::AssumeFailed) { real.pool_generate(ctx, tc, pool, false) }
+      real.pool_free(ctx, pool)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INVALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # hegel_new_state_machine / hegel_state_machine_next_rule /
+  # hegel_state_machine_rule_rejected: drives the next_rule loop to
+  # HEGEL_STATE_MACHINE_DONE, rejecting the first returned rule once along
+  # the way (a rejected step does not count toward the step budget, per
+  # the header, so this still terminates). Each non-DONE index lands in
+  # [0, num_rules). The database is disabled ("") so the run leaves
+  # nothing on disk.
+  def test_real_state_machine_next_rule_loop_stays_within_rule_count_and_reaches_done
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+      real.settings_set_stateful_step_count(ctx, settings, 3)
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      state_machine = real.new_state_machine(ctx, tc, ["increment", "decrement"], ["invariant"])
+
+      rejected_once = false
+      loop do
+        rule_index = real.state_machine_next_rule(ctx, tc, state_machine)
+        break if rule_index == Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE
+
+        assert_includes(0...2, rule_index)
+
+        next if rejected_once
+
+        real.state_machine_rule_rejected(ctx, tc, state_machine)
+        rejected_once = true
+      end
+
+      real.state_machine_free(ctx, state_machine)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # hegel_new_state_machine's invariant_names accepts an empty array (the
+  # header's documented "no invariants" case), which #pack_name_array maps
+  # to NULL/0 -- this exercises that branch, distinct from
+  # test_real_state_machine_next_rule_loop_stays_within_rule_count_and_reaches_done's
+  # non-empty rule_names/invariant_names above. The database is disabled
+  # ("") so the run leaves nothing on disk.
+  def test_real_new_state_machine_accepts_an_empty_invariant_names_array
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [])
+      refute_nil state_machine
+      real.state_machine_free(ctx, state_machine)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # #pack_name_array returns its per-name Fiddle::Pointer array for the
+  # caller to hold, and that is only worth holding because a pointer built
+  # by Fiddle::Pointer.to_ptr references the String whose buffer it
+  # addresses. Ruby 3.3 through 4.0 ship fiddle 1.1.2 through 1.1.8, and a
+  # version that dropped that reference would let the GC reclaim a rule
+  # name between packing and the native call -- an intermittent crash, not
+  # a failing assertion. This asserts the reference directly instead.
+  def test_fiddle_pointer_to_ptr_references_the_string_it_addresses
+    name = +"a_rule_name"
+    pointer = Fiddle::Pointer.to_ptr(name)
+
+    reachable = ObjectSpace.reachable_objects_from(pointer)
+
+    assert_includes reachable, name
+  end
+
+  def test_real_pool_free_and_state_machine_free_are_no_ops_on_nil
+    real = Hegel::LibHegel::Real.new
+    assert_nil real.pool_free(nil, nil)
+    assert_nil real.state_machine_free(nil, nil)
+  end
+
+  def test_fake_new_settings_setters_and_target_succeed_by_default
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    assert_nil fake.settings_set_phases(ctx, Object.new, Hegel::LibHegel::HEGEL_PHASE_ALL)
+    assert_nil fake.settings_set_suppress_health_check(ctx, Object.new, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
+    assert_nil fake.settings_set_report_multiple_failures(ctx, Object.new, true)
+    assert_nil fake.settings_set_database_key(ctx, Object.new, "key")
+    assert_nil fake.settings_set_stateful_step_count(ctx, Object.new, 5)
+    assert_nil fake.target(ctx, Object.new, 1.0, "label")
+  end
+
+  def test_fake_new_settings_setters_and_target_translate_configured_error_codes
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    fake.settings_set_phases_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_set_phases(ctx, Object.new, 0) }
+
+    fake.settings_set_suppress_health_check_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_set_suppress_health_check(ctx, Object.new, 0) }
+
+    fake.settings_set_report_multiple_failures_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_set_report_multiple_failures(ctx, Object.new, true) }
+
+    fake.settings_set_database_key_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_set_database_key(ctx, Object.new, "key") }
+
+    fake.settings_set_stateful_step_count_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_set_stateful_step_count(ctx, Object.new, 0) }
+
+    fake.target_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.target(ctx, Object.new, 1.0, "label") }
+  end
+
+  def test_fake_new_pool_pool_add_and_pool_generate_return_configured_values_and_pool_free_is_a_no_op
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.pool_add_value = 7
+    fake.pool_generate_value = 7
+
+    pool = fake.new_pool(ctx, Object.new)
+    refute_nil pool
+    assert_equal 7, fake.pool_add(ctx, Object.new, pool)
+    assert_equal 7, fake.pool_generate(ctx, Object.new, pool, false)
+    assert_nil fake.pool_free(ctx, pool)
+  end
+
+  def test_fake_new_pool_pool_add_and_pool_generate_translate_configured_error_codes
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    fake.new_pool_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.new_pool(ctx, Object.new) }
+
+    fake.pool_add_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.pool_add(ctx, Object.new, Object.new) }
+
+    fake.pool_generate_code = Hegel::LibHegel::HEGEL_E_ASSUME
+    assert_raises(Hegel::AssumeFailed) { fake.pool_generate(ctx, Object.new, Object.new, false) }
+  end
+
+  def test_fake_new_state_machine_state_machine_next_rule_and_state_machine_rule_rejected_return_configured_values_and_state_machine_free_is_a_no_op
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.state_machine_next_rule_value = Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE
+
+    state_machine = fake.new_state_machine(ctx, Object.new, ["a"], [])
+    refute_nil state_machine
+    assert_equal Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE, fake.state_machine_next_rule(ctx, Object.new, state_machine)
+    assert_nil fake.state_machine_rule_rejected(ctx, Object.new, state_machine)
+    assert_nil fake.state_machine_free(ctx, state_machine)
+  end
+
+  def test_fake_new_state_machine_state_machine_next_rule_and_state_machine_rule_rejected_translate_configured_error_codes
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    fake.new_state_machine_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.new_state_machine(ctx, Object.new, ["a"], []) }
+
+    fake.state_machine_next_rule_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.state_machine_next_rule(ctx, Object.new, Object.new) }
+
+    fake.state_machine_rule_rejected_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.state_machine_rule_rejected(ctx, Object.new, Object.new) }
   end
 
   private

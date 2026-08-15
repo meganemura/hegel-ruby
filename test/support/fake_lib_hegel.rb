@@ -45,7 +45,16 @@ module Hegel
         :generate_float_code, :string_generator_text_code, :generate_string_code,
         :generate_bytes_code, :string_generator_regex_code, :string_generator_email_code,
         :string_generator_url_code, :string_generator_domain_code, :generate_ipv4_code, :generate_ipv6_code,
-        :generate_uuid_code, :generate_date_code, :generate_time_code, :generate_datetime_code
+        :generate_uuid_code, :generate_date_code, :generate_time_code, :generate_datetime_code,
+        :settings_set_phases_code, :settings_set_suppress_health_check_code,
+        :settings_set_report_multiple_failures_code, :settings_set_database_key_code,
+        :settings_set_stateful_step_count_code, :target_code,
+        :new_pool_code, :pool_add_code, :pool_generate_code,
+        :new_state_machine_code, :state_machine_next_rule_code, :state_machine_rule_rejected_code
+
+      # Values #pool_add / #pool_generate / #state_machine_next_rule hand
+      # back on success.
+      attr_writer :pool_add_value, :pool_generate_value, :state_machine_next_rule_value
 
       # Values #generate_boolean / #generate_integer / #generate_integer_big
       # hand back on success.
@@ -188,6 +197,24 @@ module Hegel
         @generate_time_value = [0, 0, 0, 0]
         @generate_datetime_code = HEGEL_OK
         @generate_datetime_value = [[1, 1, 1], [0, 0, 0, 0]]
+
+        @settings_set_phases_code = HEGEL_OK
+        @settings_set_suppress_health_check_code = HEGEL_OK
+        @settings_set_report_multiple_failures_code = HEGEL_OK
+        @settings_set_database_key_code = HEGEL_OK
+        @settings_set_stateful_step_count_code = HEGEL_OK
+
+        @target_code = HEGEL_OK
+
+        @new_pool_code = HEGEL_OK
+        @pool_add_code = HEGEL_OK
+        @pool_add_value = 0
+        @pool_generate_code = HEGEL_OK
+        @pool_generate_value = 0
+        @new_state_machine_code = HEGEL_OK
+        @state_machine_next_rule_code = HEGEL_OK
+        @state_machine_next_rule_value = 0
+        @state_machine_rule_rejected_code = HEGEL_OK
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -479,6 +506,74 @@ module Hegel
       def generate_datetime(ctx, _tc, _min_date, _min_time, _max_date, _max_time)
         LibHegel.check!(self, ctx, @generate_datetime_code)
         @generate_datetime_value
+      end
+
+      def settings_set_phases(ctx, _s, _phases)
+        LibHegel.check!(self, ctx, @settings_set_phases_code)
+        nil
+      end
+
+      def settings_set_suppress_health_check(ctx, _s, _checks)
+        LibHegel.check!(self, ctx, @settings_set_suppress_health_check_code)
+        nil
+      end
+
+      def settings_set_report_multiple_failures(ctx, _s, _yes)
+        LibHegel.check!(self, ctx, @settings_set_report_multiple_failures_code)
+        nil
+      end
+
+      def settings_set_database_key(ctx, _s, _key)
+        LibHegel.check!(self, ctx, @settings_set_database_key_code)
+        nil
+      end
+
+      def settings_set_stateful_step_count(ctx, _s, _n)
+        LibHegel.check!(self, ctx, @settings_set_stateful_step_count_code)
+        nil
+      end
+
+      def target(ctx, _tc, _value, _label)
+        LibHegel.check!(self, ctx, @target_code)
+        nil
+      end
+
+      def new_pool(ctx, _tc)
+        LibHegel.check!(self, ctx, @new_pool_code)
+        Object.new
+      end
+
+      def pool_add(ctx, _tc, _pool)
+        LibHegel.check!(self, ctx, @pool_add_code)
+        @pool_add_value
+      end
+
+      def pool_generate(ctx, _tc, _pool, _consume)
+        LibHegel.check!(self, ctx, @pool_generate_code)
+        @pool_generate_value
+      end
+
+      def pool_free(_ctx, _pool)
+        nil
+      end
+
+      def new_state_machine(ctx, _tc, _rule_names, _invariant_names)
+        LibHegel.check!(self, ctx, @new_state_machine_code)
+        Object.new
+      end
+
+      def state_machine_next_rule(ctx, _tc, _state_machine)
+        LibHegel.check!(self, ctx, @state_machine_next_rule_code)
+        @state_machine_next_rule_value
+      end
+
+      def state_machine_rule_rejected(ctx, _tc, _state_machine)
+        LibHegel.check!(self, ctx, @state_machine_rule_rejected_code)
+        nil
+      end
+
+      def state_machine_free(_ctx, _state_machine)
+        nil
       end
     end
   end

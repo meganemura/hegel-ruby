@@ -67,12 +67,32 @@ module Hegel
     HEGEL_VERBOSITY_VERBOSE = 2
     HEGEL_VERBOSITY_DEBUG = 3
 
+    # hegel_phase_t, named from hegel.h's enum of the same name. A bitwise
+    # OR of these is passed to hegel_settings_set_phases; the default is
+    # HEGEL_PHASE_ALL.
+    HEGEL_PHASE_EXPLICIT = 1
+    HEGEL_PHASE_REUSE = 2
+    HEGEL_PHASE_GENERATE = 4
+    HEGEL_PHASE_TARGET = 8
+    HEGEL_PHASE_SHRINK = 16
+    HEGEL_PHASE_ALL = 31
+
+    # hegel_health_check_t, named from hegel.h's enum of the same name. A
+    # bitwise OR of these is passed to
+    # hegel_settings_set_suppress_health_check; the default is all
+    # enabled.
+    HEGEL_HC_FILTER_TOO_MUCH = 1
+    HEGEL_HC_TOO_SLOW = 2
+    HEGEL_HC_TEST_CASES_TOO_LARGE = 4
+    HEGEL_HC_LARGE_INITIAL_TEST_CASE = 8
+
     # hegel_label_t, named from hegel.h's enum of the same name. Passed to
     # hegel_start_span to identify what kind of structure a span groups.
-    # Copied through HEGEL_LABEL_STATEFUL_RULE (value 31); the header's two
-    # values past it, HEGEL_LABEL_FRESH_ID and HEGEL_LABEL_SET_CHOICE,
-    # label spans opened by hegel_pool_add and hegel_pool_generate, the
-    # pool primitives this binding does not cover.
+    # Copied through HEGEL_LABEL_SET_CHOICE (value 33). The header
+    # describes the last two, HEGEL_LABEL_FRESH_ID and
+    # HEGEL_LABEL_SET_CHOICE, as spans the engine opens itself around a
+    # hegel_pool_add / hegel_pool_generate call; a caller never passes
+    # either to hegel_start_span.
     #
     # The header documents that "Libraries may use any stable u64 to
     # define their own spans" — so a caller building its own compound
@@ -109,6 +129,15 @@ module Hegel
     HEGEL_LABEL_BYTES = 29
     HEGEL_LABEL_STRING = 30
     HEGEL_LABEL_STATEFUL_RULE = 31
+    HEGEL_LABEL_FRESH_ID = 32
+    HEGEL_LABEL_SET_CHOICE = 33
+
+    # HEGEL_STATE_MACHINE_DONE, named from hegel.h's #define of the same
+    # name. hegel_state_machine_next_rule writes this to its
+    # out_rule_index parameter once the current test case's step budget
+    # is exhausted; see LibHegel::Real#state_machine_next_rule for why
+    # that raw sentinel is returned rather than translated to nil.
+    HEGEL_STATE_MACHINE_DONE = -1
 
     # hegel_new_collection's max_size accepts UINT64_MAX to mean "no upper
     # bound", in the header's own words. Ruby has no fixed-width integer
@@ -142,6 +171,11 @@ module Hegel
       string_generator_regex string_generator_email string_generator_url string_generator_domain
       generate_ipv4 generate_ipv6 generate_uuid
       generate_date generate_time generate_datetime
+      settings_set_phases settings_set_suppress_health_check settings_set_report_multiple_failures
+      settings_set_database_key settings_set_stateful_step_count
+      target
+      new_pool pool_add pool_generate pool_free
+      new_state_machine state_machine_next_rule state_machine_rule_rejected state_machine_free
     ].freeze
 
     module_function

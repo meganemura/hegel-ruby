@@ -378,6 +378,16 @@ module Hegel
     HEGEL_VERBOSITY_NORMAL: Integer
     HEGEL_VERBOSITY_VERBOSE: Integer
     HEGEL_VERBOSITY_DEBUG: Integer
+    HEGEL_PHASE_EXPLICIT: Integer
+    HEGEL_PHASE_REUSE: Integer
+    HEGEL_PHASE_GENERATE: Integer
+    HEGEL_PHASE_TARGET: Integer
+    HEGEL_PHASE_SHRINK: Integer
+    HEGEL_PHASE_ALL: Integer
+    HEGEL_HC_FILTER_TOO_MUCH: Integer
+    HEGEL_HC_TOO_SLOW: Integer
+    HEGEL_HC_TEST_CASES_TOO_LARGE: Integer
+    HEGEL_HC_LARGE_INITIAL_TEST_CASE: Integer
     HEGEL_LABEL_LIST: Integer
     HEGEL_LABEL_LIST_ELEMENT: Integer
     HEGEL_LABEL_SET: Integer
@@ -409,6 +419,9 @@ module Hegel
     HEGEL_LABEL_BYTES: Integer
     HEGEL_LABEL_STRING: Integer
     HEGEL_LABEL_STATEFUL_RULE: Integer
+    HEGEL_LABEL_FRESH_ID: Integer
+    HEGEL_LABEL_SET_CHOICE: Integer
+    HEGEL_STATE_MACHINE_DONE: Integer
     HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED: Integer
     HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED: Float
     METHODS: Array[Symbol]
@@ -432,11 +445,17 @@ module Hegel
       def settings_set_seed: (untyped ctx, untyped s, Integer seed, bool has_seed) -> nil
       def settings_set_derandomize: (untyped ctx, untyped s, bool derandomize) -> nil
       def settings_set_database: (untyped ctx, untyped s, String? database) -> nil
+      def settings_set_stateful_step_count: (untyped ctx, untyped s, Integer n) -> nil
+      def settings_set_report_multiple_failures: (untyped ctx, untyped s, bool yes) -> nil
+      def settings_set_database_key: (untyped ctx, untyped s, String? key) -> nil
+      def settings_set_phases: (untyped ctx, untyped s, Integer phases) -> nil
+      def settings_set_suppress_health_check: (untyped ctx, untyped s, Integer checks) -> nil
       def run_start: (untyped ctx, untyped settings) -> untyped
       def next_test_case: (untyped ctx, untyped run) -> untyped?
       def run_free: (untyped ctx, untyped run) -> nil
       def test_case_free: (untyped ctx, untyped tc) -> nil
       def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin) -> nil
+      def target: (untyped ctx, untyped tc, Float value, String label) -> nil
       def generate_boolean: (untyped ctx, untyped tc, Float p, bool forced, bool has_forced) -> bool
       def generate_integer: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
       def generate_integer_big: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
@@ -456,6 +475,14 @@ module Hegel
       def collection_more: (untyped ctx, untyped tc, untyped collection) -> bool
       def collection_reject: (untyped ctx, untyped tc, untyped collection, ?String? why) -> nil
       def collection_free: (untyped ctx, untyped collection) -> nil
+      def new_pool: (untyped ctx, untyped tc) -> untyped
+      def pool_add: (untyped ctx, untyped tc, untyped pool) -> Integer
+      def pool_generate: (untyped ctx, untyped tc, untyped pool, bool consume) -> Integer
+      def pool_free: (untyped ctx, untyped pool) -> nil
+      def new_state_machine: (untyped ctx, untyped tc, Array[String] rule_names, Array[String] invariant_names) -> untyped
+      def state_machine_next_rule: (untyped ctx, untyped tc, untyped state_machine) -> Integer
+      def state_machine_rule_rejected: (untyped ctx, untyped tc, untyped state_machine) -> nil
+      def state_machine_free: (untyped ctx, untyped state_machine) -> nil
       def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
       def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) -> untyped
       def string_generator_free: (untyped ctx, untyped generator) -> nil

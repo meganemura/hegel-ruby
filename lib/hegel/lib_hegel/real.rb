@@ -55,6 +55,31 @@ module Hegel
           [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
           Fiddle::TYPE_INT
         )
+        @settings_set_stateful_step_count_fn = bind(
+          "hegel_settings_set_stateful_step_count",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT64_T],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_report_multiple_failures_fn = bind(
+          "hegel_settings_set_report_multiple_failures",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_BOOL],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_database_key_fn = bind(
+          "hegel_settings_set_database_key",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_phases_fn = bind(
+          "hegel_settings_set_phases",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT32_T],
+          Fiddle::TYPE_INT
+        )
+        @settings_set_suppress_health_check_fn = bind(
+          "hegel_settings_set_suppress_health_check",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT32_T],
+          Fiddle::TYPE_INT
+        )
 
         @run_start_fn = bind(
           "hegel_run_start",
@@ -71,6 +96,11 @@ module Hegel
         @mark_complete_fn = bind(
           "hegel_mark_complete",
           [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT32_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @target_fn = bind(
+          "hegel_target",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_DOUBLE, Fiddle::TYPE_VOIDP],
           Fiddle::TYPE_INT
         )
 
@@ -163,6 +193,43 @@ module Hegel
           Fiddle::TYPE_INT
         )
         @collection_free_fn = bind("hegel_collection_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+
+        @new_pool_fn = bind(
+          "hegel_new_pool",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @pool_add_fn = bind(
+          "hegel_pool_add",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @pool_generate_fn = bind(
+          "hegel_pool_generate",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_BOOL, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @pool_free_fn = bind("hegel_pool_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+
+        @new_state_machine_fn = bind(
+          "hegel_new_state_machine",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP,
+            Fiddle::TYPE_SIZE_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @state_machine_next_rule_fn = bind(
+          "hegel_state_machine_next_rule",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @state_machine_rule_rejected_fn = bind(
+          "hegel_state_machine_rule_rejected",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @state_machine_free_fn = bind(
+          "hegel_state_machine_free", [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT
+        )
 
         @generate_float_fn = bind(
           "hegel_generate_float",
@@ -361,6 +428,43 @@ module Hegel
         nil
       end
 
+      def settings_set_stateful_step_count(ctx, s, n)
+        code = @settings_set_stateful_step_count_fn.call(ctx, s, n)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_report_multiple_failures(ctx, s, yes)
+        code = @settings_set_report_multiple_failures_fn.call(ctx, s, yes)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # +key+ may be nil, which the header documents as clearing the key
+      # (the default); a Ruby nil marshals to NULL for this TYPE_VOIDP
+      # argument, the same as #settings_set_database's own nilable
+      # database argument.
+      def settings_set_database_key(ctx, s, key)
+        code = @settings_set_database_key_fn.call(ctx, s, key)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # +phases+ is a bitwise OR of the HEGEL_PHASE_* constants.
+      def settings_set_phases(ctx, s, phases)
+        code = @settings_set_phases_fn.call(ctx, s, phases)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # +checks+ is a bitwise OR of the HEGEL_HC_* constants. Each call
+      # overwrites the previous suppressions, per the header.
+      def settings_set_suppress_health_check(ctx, s, checks)
+        code = @settings_set_suppress_health_check_fn.call(ctx, s, checks)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
       # +settings+ can be freed by the caller as soon as this call returns:
       # the header documents that hegel_run_start copies the settings it is
       # given rather than borrowing them. callback and user_data are always
@@ -406,6 +510,18 @@ module Hegel
       # supplies. A Ruby nil marshals to NULL for the TYPE_VOIDP argument.
       def mark_complete(ctx, tc, status, origin)
         code = @mark_complete_fn.call(ctx, tc, status, origin)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Records a numeric observation under +label+ for libhegel's own
+      # hill-climbing between generation rounds. The header documents this
+      # as a no-op unless HEGEL_PHASE_TARGET is enabled (the default), and
+      # a label as recordable at most once per test case; neither is
+      # checked here, matching how this layer leaves every other
+      # argument-shape rule to the engine's own HEGEL_E_INVALID_ARG.
+      def target(ctx, tc, value, label)
+        code = @target_fn.call(ctx, tc, value, label)
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -626,6 +742,117 @@ module Hegel
       # as independent of the test case and run it was created under.
       def collection_free(ctx, collection)
         @collection_free_fn.call(ctx, collection)
+        nil
+      end
+
+      # Returns a caller-owned pool handle, released separately with
+      # #pool_free. A pool tracks a set of variable ids libhegel can draw
+      # from and shrink over -- mostly used for stateful testing, where a
+      # rule acts on a value a previous rule generated; the caller keeps
+      # its own mapping from variable id to that value, per the header.
+      def new_pool(ctx, tc)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        code = @new_pool_fn.call(ctx, tc, out)
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # Returns a fresh variable id for the caller to associate with the
+      # value it just generated. The header documents the id as drawn
+      # from +tc+'s stream and recorded by value, not by pool position, so
+      # it stays stable across shrinking: deleting an earlier addition
+      # never renumbers the survivors.
+      def pool_add(ctx, tc, pool)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT64_T, Fiddle::RUBY_FREE)
+        code = @pool_add_fn.call(ctx, tc, pool, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(Fiddle::SIZEOF_INT64_T).unpack1("q")
+      end
+
+      # Returns a variable id libhegel chose from +pool+ (and can shrink
+      # which one it chose). +consume+ true removes the drawn variable
+      # from the pool; false leaves it. LibHegel.check! already translates
+      # HEGEL_E_ASSUME -- what the header documents this call returning
+      # when +pool+ holds no variables -- to Hegel::AssumeFailed, the same
+      # translation every other assumption failure gets, so no extra code
+      # is needed here for that case; pinned by
+      # test_real_pool_generate_on_an_empty_pool_raises_assume_failed in
+      # test/hegel/test_lib_hegel.rb.
+      def pool_generate(ctx, tc, pool, consume)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT64_T, Fiddle::RUBY_FREE)
+        code = @pool_generate_fn.call(ctx, tc, pool, consume, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(Fiddle::SIZEOF_INT64_T).unpack1("q")
+      end
+
+      # No-op when +pool+ is nil, matching hegel_pool_free's documented
+      # no-op-on-NULL contract; not translated, for the same reason as
+      # #context_free.
+      def pool_free(ctx, pool)
+        @pool_free_fn.call(ctx, pool)
+        nil
+      end
+
+      # Returns a caller-owned state-machine handle, released separately
+      # with #state_machine_free. +rule_names+ and +invariant_names+ are
+      # each an Array of Ruby Strings, packed into the const char *const *
+      # arguments hegel_new_state_machine expects by #pack_name_array; see
+      # that method's own comment for how and why. Validating
+      # +rule_names+ as non-empty (the header's own requirement) is left
+      # to the caller, the same division of labor #new_collection leaves
+      # to the caller for its own min_size/max_size ordering.
+      def new_state_machine(ctx, tc, rule_names, invariant_names)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP, Fiddle::RUBY_FREE)
+        # _rule_pointers / _invariant_pointers are unread past the call
+        # below, the same shape #generate_integer_big's own
+        # min_value_ptr/max_value_ptr already have; keeping them as local
+        # variables here, not discarded inside #pack_name_array, is what
+        # keeps them -- and the Strings they point into -- live through
+        # the call. The leading underscore tells the linter that on
+        # purpose, the same way it would for a block argument the block
+        # never reads.
+        rule_names_ptr, _rule_pointers = pack_name_array(rule_names)
+        invariant_names_ptr, _invariant_pointers = pack_name_array(invariant_names)
+
+        code = @new_state_machine_fn.call(
+          ctx, tc, rule_names_ptr, rule_names.size, invariant_names_ptr, invariant_names.size, out
+        )
+        LibHegel.check!(self, ctx, code)
+        out.ptr
+      end
+
+      # Returns the index (in 0...num_rules) of the next stateful-testing
+      # rule to run, or HEGEL_STATE_MACHINE_DONE (-1) once +state_machine+'s
+      # step budget is exhausted -- returned as the raw sentinel value, not
+      # translated to nil. Unlike #next_test_case's out-parameter, which is
+      # NULL (no value) at the equivalent boundary, the header documents
+      # this out-parameter as holding a real value, -1, at that point; a
+      # caller comparing against HEGEL_STATE_MACHINE_DONE is the layer that
+      # should decide what that value means, the same way #run_result_status
+      # hands back its raw HEGEL_RUN_STATUS_* value unexamined.
+      def state_machine_next_rule(ctx, tc, state_machine)
+        out = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT64_T, Fiddle::RUBY_FREE)
+        code = @state_machine_next_rule_fn.call(ctx, tc, state_machine, out)
+        LibHegel.check!(self, ctx, code)
+        out.to_str(Fiddle::SIZEOF_INT64_T).unpack1("q")
+      end
+
+      # Reports the rule most recently returned by #state_machine_next_rule
+      # as rejected (an assumption failed before it completed), so it does
+      # not count toward the step budget. Raises HEGEL_E_INVALID_ARG (via
+      # LibHegel.check!, translated to Hegel::Error) when no rule is
+      # outstanding, per the header.
+      def state_machine_rule_rejected(ctx, tc, state_machine)
+        code = @state_machine_rule_rejected_fn.call(ctx, tc, state_machine)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # No-op when +state_machine+ is nil, matching
+      # hegel_state_machine_free's documented no-op-on-NULL contract; not
+      # translated, for the same reason as #context_free.
+      def state_machine_free(ctx, state_machine)
+        @state_machine_free_fn.call(ctx, state_machine)
         nil
       end
 
@@ -893,6 +1120,43 @@ module Hegel
         ptr = Fiddle::Pointer.malloc(bytes.bytesize, Fiddle::RUBY_FREE)
         ptr[0, bytes.bytesize] = bytes
         ptr
+      end
+
+      # Packs +names+ (an Array of Ruby Strings) into a const char *const *
+      # for #new_state_machine's rule_names/invariant_names arguments: one
+      # address per name, in a single buffer, addresses read via
+      # Fiddle::Pointer.to_ptr(name) and packed with "J" (Fiddle's pack
+      # code for uintptr_t). Each String is already NUL-terminated in its
+      # own underlying buffer -- Ruby keeps that true of every String, for
+      # exactly this kind of C interop -- so no separate NUL-terminated
+      # copy is built here.
+      #
+      # Returns [pointer, kept_alive]. The memory those addresses point at
+      # belongs to the Strings, and the packed buffer is a copy of the
+      # addresses alone, so something has to hold the Strings until the
+      # native call reads them. Two things do. The caller's own +names+
+      # argument is a live local for the length of that call, and each
+      # Fiddle::Pointer that Fiddle::Pointer.to_ptr returns holds a
+      # reference to the String it was built from -- measured on fiddle
+      # 1.1.8 via ObjectSpace.reachable_objects_from, and pinned by a test
+      # in test/hegel/test_lib_hegel.rb, because the whole point of
+      # +kept_alive+ rests on it and a fiddle that stopped doing it would
+      # otherwise surface as an occasional crash rather than a failure.
+      #
+      # Empty +names+ maps to [nil, []] -- NULL and (by the caller passing
+      # names.size, 0) the header's own contract for invariant_names' "no
+      # invariants" case. #new_state_machine reuses this same packing for
+      # rule_names too, whose own documented non-empty requirement this
+      # method does not enforce; that validation belongs one layer up, in
+      # a caller that can raise Hegel::Error with a message naming the
+      # factory method, not in a method whose only job is packing an
+      # Array into a buffer.
+      def pack_name_array(names)
+        return [nil, []] if names.empty?
+
+        pointers = names.map { |name| Fiddle::Pointer.to_ptr(name) }
+        addresses = pointers.map(&:to_i).pack("J*")
+        [bytes_to_pointer(addresses), pointers]
       end
 
       def bind(symbol, arg_types, ret_type)
