@@ -5,6 +5,21 @@ require "hegel/runner"
 require "support/fake_lib_hegel"
 require "stringio"
 require "tmpdir"
+require "fileutils"
+
+# A tiny object with its own Minitest::Assertions, used to raise an
+# assertion failure from an exact, known line in this file rather than from
+# somewhere inside Hegel.test's own run loop. #assertions is required by
+# Minitest::Assertions#assert; a plain Object lacks it.
+class OriginProbe
+  include Minitest::Assertions
+
+  attr_accessor :assertions
+
+  def initialize
+    @assertions = 0
+  end
+end
 
 class TestRunner < Minitest::Test
   # A run that leaves ./.hegel behind means Hegel::Settings.apply_database's
@@ -319,6 +334,32 @@ class TestRunner < Minitest::Test
         raise "boom-zero"
       else
         raise "boom-one"
+      end
+    end
+
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 10, report_multiple_failures: true, verbosity: :quiet, output: StringIO.new, &body)
+    end
+
+    assert_includes error.message, "2 distinct failures"
+  end
+
+  # The bug docs/adr/0012 fixes, proven end to end against the real engine:
+  # assert_equal raises from inside minitest itself, at the same line
+  # (minitest/assertions.rb:176) no matter which of the caller's own lines
+  # called it. Before that ADR's fix, Hegel::Runner.origin_for built the
+  # origin from that shared minitest line, so both branches below grouped as
+  # one bug and libhegel reported a single failure -- Minitest::Assertion
+  # itself, unwrapped, rather than Hegel::Error. After the fix, the origin
+  # comes from this test's own two `assert_equal` lines, which differ, so
+  # the two branches are two distinct failures.
+  def test_two_assertion_failures_from_different_lines_report_as_two_distinct_failures
+    body = lambda do |tc|
+      n = tc.draw_integer(0, 1, label: "n")
+      if n.zero?
+        assert_equal 0, 1
+      else
+        assert_equal 0, 2
       end
     end
 
@@ -658,6 +699,112 @@ class TestRunner < Minitest::Test
   def test_origin_for_falls_back_to_the_unknown_constant_without_a_backtrace_location
     never_raised = RuntimeError.new("no backtrace yet")
     assert_equal Hegel::Runner::UNKNOWN_ORIGIN, Hegel::Runner.origin_for(never_raised)
+  end
+
+  # The bug docs/adr/0012 fixes, isolated to Hegel::Runner.origin_for
+  # directly: Minitest::Assertions#assert raises from the same line inside
+  # minitest (minitest/assertions.rb:176) for both calls below, but the
+  # origin must still tell them apart, because they come from different
+  # lines in the caller's own code -- this test file.
+  def test_origin_for_returns_distinct_origins_for_assertions_failing_on_different_lines
+    probe = OriginProbe.new
+
+    first_error = assert_raises(Minitest::Assertion) { probe.assert_equal(0, 1) }
+    second_error = assert_raises(Minitest::Assertion) { probe.assert_equal(0, 2) }
+
+    first_origin = Hegel::Runner.origin_for(first_error)
+    second_origin = Hegel::Runner.origin_for(second_error)
+
+    refute_equal first_origin, second_origin
+    assert_includes first_origin, File.basename(__FILE__)
+    assert_includes second_origin, File.basename(__FILE__)
+  end
+
+  # rspec-expectations is not in the Gemfile (adding it needs the user's own
+  # confirmation), so this proves the property RSpec's own raise from inside
+  # rspec-support would exercise without RSpec itself: a real file written
+  # under an installed gem's own "gems/" directory, then raised from. Doing
+  # this with a real file, rather than reusing minitest's own frames, proves
+  # the rule is general -- any installed gem -- not merely "happens to work
+  # for minitest", which is the risk docs/adr/0012 names directly (a list of
+  # framework names is "wrong by omission the day someone uses a framework
+  # nobody added").
+  def test_origin_for_skips_a_frame_under_an_installed_gem_directory
+    fixture_dir = File.join(Gem.path.first, "gems", "hegel-origin-fixture-#{Process.pid}")
+    fixture_path = File.join(fixture_dir, "raiser.rb")
+    FileUtils.mkdir_p(fixture_dir)
+    File.write(fixture_path, "def raise_from_hegel_origin_fixture\n  raise \"boom from an installed gem\"\nend\n")
+
+    begin
+      load fixture_path
+      error = assert_raises(RuntimeError) { raise_from_hegel_origin_fixture }
+      # Confirms the fixture actually raises from the gem directory before
+      # asking origin_for to skip it -- otherwise a false pass would prove
+      # nothing.
+      assert_equal fixture_path, error.backtrace_locations.first.path
+
+      origin = Hegel::Runner.origin_for(error)
+
+      refute_includes origin, fixture_dir
+      assert_includes origin, File.basename(__FILE__)
+    ensure
+      FileUtils.rm_rf(fixture_dir)
+    end
+  end
+
+  # #origin_for must skip this library's own frame the same way it skips a
+  # gem's: Hegel::TestCase#note raises from lib/hegel/test_case.rb, one
+  # frame below the call this test makes directly.
+  def test_origin_for_skips_this_librarys_own_frame
+    tc = Hegel::TestCase.new(nil, nil, nil, record: false)
+
+    error = assert_raises(Hegel::Error) { tc.note }
+
+    origin = Hegel::Runner.origin_for(error)
+
+    refute_includes origin, File.join("lib", "hegel", "test_case.rb")
+    assert_includes origin, File.basename(__FILE__)
+  end
+
+  # When every frame belongs to this library, an installed gem, or the
+  # standard library, #origin_for falls back to the first frame rather than
+  # UNKNOWN_ORIGIN -- a coarse origin still groups failures consistently,
+  # where no origin at all would lose the failure's identity entirely (see
+  # docs/adr/0012). Trims a real assertion failure's own backtrace down to
+  # just its infrastructure frames (minitest itself already supplies more
+  # than one) to build a case with no caller frame at all.
+  def test_origin_for_falls_back_to_the_first_frame_when_every_frame_is_infrastructure
+    probe = OriginProbe.new
+    error = assert_raises(Minitest::Assertion) { probe.assert_equal(0, 1) }
+    infrastructure_frames = error.backtrace_locations.select { |location| Hegel::Runner.infrastructure?(location.path) }
+    refute_empty infrastructure_frames
+    error.set_backtrace(infrastructure_frames)
+
+    origin = Hegel::Runner.origin_for(error)
+
+    first = infrastructure_frames.first
+    assert_equal "Raised at #{first.path}:#{first.lineno}", origin
+  end
+
+  # #infrastructure? is an OR of three checks; each of the four tests below
+  # drives one combination of true/false through it so every branch is
+  # covered directly, rather than relying on origin_for's own tests (above)
+  # to happen to exercise all three by accident.
+  def test_infrastructure_recognizes_this_librarys_own_directory
+    assert Hegel::Runner.infrastructure?(File.join(Hegel::Runner::LIBRARY_DIR, "runner.rb"))
+  end
+
+  def test_infrastructure_recognizes_an_installed_gem_directory
+    path = File.join(Hegel::Runner::INSTALLED_GEM_DIRS.first, "some-gem-1.0.0", "lib", "some_gem.rb")
+    assert Hegel::Runner.infrastructure?(path)
+  end
+
+  def test_infrastructure_recognizes_the_standard_library_directory
+    assert Hegel::Runner.infrastructure?(File.join(Hegel::Runner::STDLIB_DIR, "set.rb"))
+  end
+
+  def test_infrastructure_returns_false_for_a_path_outside_every_known_directory
+    refute Hegel::Runner.infrastructure?(__FILE__)
   end
 
   def test_hegel_test_raises_hegel_error_when_the_run_errors

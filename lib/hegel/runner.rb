@@ -18,6 +18,39 @@ module Hegel
     # location.
     UNKNOWN_ORIGIN = "Raised at <unknown>"
 
+    # #infrastructure? treats a backtrace path as this library's own when it
+    # falls under this directory. It is lib/, one above runner.rb's own
+    # __dir__, so that hegel.rb and hegeltest.rb count too: Hegel.test lives
+    # in hegel.rb, and its frame sits below every frame a property body
+    # raises through. A property defined inside some other gem — a shared
+    # test-helper gem calling Hegel.test on its caller's behalf — would
+    # otherwise leave hegel.rb as the first frame belonging to nobody, and
+    # name this library as the origin of the caller's own bug.
+    #
+    # A trailing separator makes the prefix match a directory boundary
+    # rather than a string prefix, so a sibling directory that merely
+    # starts with the same characters (lib/hegelx/) cannot match.
+    LIBRARY_DIR = File.expand_path("..", __dir__) + File::SEPARATOR
+
+    # Every directory an installed gem's own files live under. Gem.path lists
+    # each root RubyGems searches (the default gem home plus $GEM_PATH), and
+    # each root keeps installed gems under a "gems/" subdirectory -- the
+    # structure a test framework such as minitest or rspec-expectations is
+    # installed into. A caller's own code loaded via a Gemfile `path:` or
+    # `git:` entry lives in the working copy instead, so this rule cannot
+    # mistake it for a framework's own frame (see docs/adr/0012). Read once,
+    # when this file is first required: under Bundler, that require happens
+    # after Bundler has already set the gem paths this process uses, so the
+    # list this constant freezes is the one every later frame is checked
+    # against.
+    INSTALLED_GEM_DIRS = Gem.path.map { |path| File.join(path, "gems") + File::SEPARATOR }.freeze
+
+    # Ruby's own standard library, e.g. the minitest release Ruby itself
+    # bundles rather than one RubyGems installed -- a second way a test
+    # framework's own frame can appear that INSTALLED_GEM_DIRS alone would
+    # not catch.
+    STDLIB_DIR = RbConfig::CONFIG["rubylibdir"] + File::SEPARATOR
+
     # hegel_run_result_error's fallback: the header documents a NULL message
     # as possible for an ERROR run, and Hegel::Error still needs *some*
     # message text in that case.
@@ -369,9 +402,32 @@ module Hegel
     # run (e.g. a NoMethodError on one nil and a TypeError on another), and
     # hegel_mark_complete's header is explicit that origin is what groups
     # failures for shrinking.
+    #
+    # The first frame is not always the right one: an assertion library
+    # raises from inside itself, so exception.backtrace_locations.first is a
+    # line in minitest or rspec-support, identical for every failing
+    # assertion in a suite regardless of which line the caller wrote (see
+    # docs/adr/0012). #infrastructure? skips such frames in favor of the
+    # first one that belongs to the caller's own code. When every frame is
+    # infrastructure, the first frame is used after all: a coarse origin
+    # still groups failures consistently, where no origin at all would lose
+    # the failure's identity entirely.
     def origin_for(exception)
-      location = exception.backtrace_locations&.first
+      locations = exception.backtrace_locations
+      location = locations&.find { |candidate| !infrastructure?(candidate.path) } || locations&.first
       location ? "Raised at #{location.path}:#{location.lineno}" : UNKNOWN_ORIGIN
+    end
+
+    # True when +path+ belongs to this library, an installed gem, or Ruby's
+    # own standard library, rather than to the caller whose test #origin_for
+    # is trying to identify. Location, not framework name, is what this
+    # checks: a list of framework names would need an entry per framework and
+    # would be silently wrong the day someone uses one nobody added, the same
+    # way the bug docs/adr/0012 fixes was silently wrong before it.
+    def infrastructure?(path)
+      path.start_with?(LIBRARY_DIR) ||
+        INSTALLED_GEM_DIRS.any? { |dir| path.start_with?(dir) } ||
+        path.start_with?(STDLIB_DIR)
     end
 
     # Mirrors the intent of hegel-rust's FLAKY_DIAGNOSTIC in English, not its

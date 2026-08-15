@@ -366,6 +366,9 @@ module Hegel
 
     UNKNOWN_ORIGIN: String
     UNKNOWN_RUN_ERROR_MESSAGE: String
+    LIBRARY_DIR: String
+    INSTALLED_GEM_DIRS: Array[String]
+    STDLIB_DIR: String
 
     class GenerationStats
       def initialize: () -> void
@@ -384,6 +387,7 @@ module Hegel
     def self.reproduce: (untyped impl, untyped ctx, untyped settings, String blob, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
     def self.classify: (TestCase test_case) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
     def self.origin_for: (Exception exception) -> String
+    def self.infrastructure?: (String path) -> bool
     def self.flaky_message: () -> String
     def self.multiple_failures_message: (Integer count) -> String
   end

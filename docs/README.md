@@ -18,6 +18,7 @@ An index of the design records for `hegel-ruby`.
 - [0009 — Turn the example database on with a key](adr/0009-turn-the-example-database-on-with-a-key.md)
 - [0010 — Declare stateful rules with a class macro](adr/0010-declare-stateful-rules-with-a-class-macro.md)
 - [0011 — Let the test case own every pool drawn from it](adr/0011-let-the-test-case-own-every-pool-drawn-from-it.md)
+- [0012 — Build a failure origin from the caller's own frame](adr/0012-build-a-failure-origin-from-the-callers-own-frame.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.
