@@ -10,11 +10,20 @@ Catch what a reviewer would flag, before they have to.
 ## Run the checks
 
 ```bash
-bundle exec rake   # tests and linter
+bundle exec rake                          # tests and linter
+mise exec ruby@3.3.12 -- bundle exec rake # the oldest supported Ruby
 ```
 
 Fix every failure before going on. Run them again even when they passed an hour
 ago, because the code has changed since.
+
+The second command matters when the diff touches a test. This gem supports
+Ruby 3.3 through 4.0, and a test written against a newer Ruby's API passes
+here and errors there — `Exception#set_backtrace` takes
+`Thread::Backtrace::Location` objects from 3.4 on and raises `TypeError` on
+3.3. That shape does not announce itself as a version problem: the errored
+test takes its branch's coverage with it, so CI reports a coverage shortfall
+on one Ruby and says nothing about why.
 
 ## Read the diff
 
