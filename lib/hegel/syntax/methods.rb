@@ -132,6 +132,24 @@ module Hegel
       def uuids(version: nil)
         Generators::UuidsGenerator.new(version: version)
       end
+
+      # A proleptic Gregorian calendar Date in [min_value, max_value],
+      # defaulting to year 1 through year 9999.
+      def dates(min_value: nil, max_value: nil)
+        Generators::DatesGenerator.new(min_value: min_value, max_value: max_value)
+      end
+
+      # A time of day String, "HH:MM:SS.ffffff", in [min_value, max_value]
+      # (also "HH:MM:SS.ffffff" Strings), defaulting to the full day.
+      def times(min_value: nil, max_value: nil)
+        Generators::TimesGenerator.new(min_value: min_value, max_value: max_value)
+      end
+
+      # A naive (no timezone) Time in [min_value, max_value], defaulting to
+      # year 1 through year 9999 (see Generators::DatetimesGenerator).
+      def datetimes(min_value: nil, max_value: nil)
+        Generators::DatetimesGenerator.new(min_value: min_value, max_value: max_value)
+      end
     end
   end
 

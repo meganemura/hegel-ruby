@@ -233,6 +233,46 @@ module Hegel
           Fiddle::TYPE_INT
         )
 
+        # hegel_generate_date / hegel_generate_time each take one struct by
+        # value (hegel_date_t / hegel_time_t, 8 bytes of integers apiece);
+        # hegel_generate_datetime takes two (hegel_datetime_t, a
+        # hegel_date_t followed by a hegel_time_t, 16 bytes). Fiddle::Function
+        # has no struct-by-value argument type -- Fiddle::CStruct and an
+        # array of types both raise TypeError (measured on fiddle 1.1.8) --
+        # so each is declared TYPE_UINT64_T instead: an 8-byte struct of
+        # plain integers is exactly what arm64, System V, and Win64 all pass
+        # in one general-purpose register, the same register a uint64
+        # argument uses, so the packed bits produce the identical call.
+        # #pack_date/#pack_time (and their inverses) below own that bit
+        # layout, pinned against an independent computation in
+        # test/hegel/test_lib_hegel.rb's own layout test; a size or offset
+        # mismatch between the two is what that test exists to catch. See
+        # docs/architecture.md, "Passing a struct by value".
+        #
+        # hegel_datetime_t's 16 bytes is where arm64/System V and Win64
+        # diverge: the first two still pass it in two registers, which two
+        # uint64 arguments reproduce (measured here, arm64-darwin), while
+        # Win64 passes anything over 8 bytes by reference instead. Only the
+        # two-register form is exercised on this host; CI's windows-latest
+        # job is what confirms or refutes it for Win64, and a failure there
+        # is a real finding, not a flake.
+        @generate_date_fn = bind(
+          "hegel_generate_date",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @generate_time_fn = bind(
+          "hegel_generate_time",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+        @generate_datetime_fn = bind(
+          "hegel_generate_datetime",
+          [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VOIDP, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_UINT64_T, Fiddle::TYPE_UINT64_T,
+            Fiddle::TYPE_UINT64_T, Fiddle::TYPE_VOIDP],
+          Fiddle::TYPE_INT
+        )
+
         LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
       end
 
@@ -791,6 +831,57 @@ module Hegel
         out.to_str(16)
       end
 
+      # hegel_generate_date. +min_value+/+max_value+ are each a
+      # [year, month, day] Array, packed by #pack_date into the uint64
+      # #@generate_date_fn's struct-by-value argument actually is (see the
+      # comment above that bind call). Returns a [year, month, day] Array,
+      # the field-level shape Hegel::Generators::DatesGenerator builds its
+      # own Date from -- the same division of labor #generate_ipv4/
+      # #generate_uuid already follow, returning raw values for a generator
+      # one layer up to turn into the caller-facing type. This layer does
+      # not validate year/month/day itself: measured against libhegel
+      # 0.32.5, an invalid date (month 13, say) already comes back
+      # HEGEL_E_INVALID_ARG, translated by LibHegel.check! below, even
+      # though the header's Returns line for this call names only
+      # HEGEL_OK/HEGEL_E_STOP_TEST -- the same gap #run_result_failure's own
+      # comment already notes for a different call.
+      def generate_date(ctx, tc, min_value, max_value)
+        out = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
+        code = @generate_date_fn.call(ctx, tc, pack_date(min_value), pack_date(max_value), out)
+        LibHegel.check!(self, ctx, code)
+        unpack_date(out.to_str(8))
+      end
+
+      # hegel_generate_time. +min_value+/+max_value+ are each an
+      # [hour, minute, second, microsecond] Array; same packing, return
+      # shape, and validation division of labor as #generate_date above,
+      # for Hegel::Generators::TimesGenerator.
+      def generate_time(ctx, tc, min_value, max_value)
+        out = Fiddle::Pointer.malloc(8, Fiddle::RUBY_FREE)
+        code = @generate_time_fn.call(ctx, tc, pack_time(min_value), pack_time(max_value), out)
+        LibHegel.check!(self, ctx, code)
+        unpack_time(out.to_str(8))
+      end
+
+      # hegel_generate_datetime. +min_date+/+max_date+ are each a
+      # [year, month, day] Array; +min_time+/+max_time+ are each an
+      # [hour, minute, second, microsecond] Array -- hegel_datetime_t is a
+      # hegel_date_t followed by a hegel_time_t (see the comment above
+      # #@generate_datetime_fn's bind call for the two-register packing
+      # this call needs on top of #generate_date/#generate_time's own
+      # one-register form). Returns a
+      # [[year, month, day], [hour, minute, second, microsecond]] pair, for
+      # Hegel::Generators::DatetimesGenerator to build its own Time from.
+      def generate_datetime(ctx, tc, min_date, min_time, max_date, max_time)
+        out = Fiddle::Pointer.malloc(16, Fiddle::RUBY_FREE)
+        code = @generate_datetime_fn.call(
+          ctx, tc, pack_date(min_date), pack_time(min_time), pack_date(max_date), pack_time(max_time), out
+        )
+        LibHegel.check!(self, ctx, code)
+        bytes = out.to_str(16)
+        [unpack_date(bytes[0, 8]), unpack_time(bytes[8, 8])]
+      end
+
       private
 
       # Copies +bytes+ into a freshly malloc'd buffer, for
@@ -806,6 +897,53 @@ module Hegel
 
       def bind(symbol, arg_types, ret_type)
         Fiddle::Function.new(@handle[symbol], arg_types, ret_type)
+      end
+
+      # hegel_date_t: { int32_t year; uint8_t month; uint8_t day; }. The
+      # compiler pads this to 8 bytes to keep the struct's own 4-byte
+      # alignment (from its int32_t member), leaving 2 unused bytes after
+      # +day+ -- this packs only the 6 bytes the struct actually reads, and
+      # leaves the padding bits zero, which is safe because nothing reads
+      # padding. year's bit range is masked to 32 bits first so a negative
+      # Ruby Integer contributes its two's-complement low 32 bits, the same
+      # bits an int32_t holding that value would have. Offsets (year 0,
+      # month 4, day 5) are asserted independently of this bit math in
+      # test/hegel/test_lib_hegel.rb's own layout test.
+      def pack_date(date)
+        year, month, day = date
+        (year & 0xFFFFFFFF) | (month << 32) | (day << 40)
+      end
+
+      # The inverse of #pack_date, reading the 8-byte out-parameter
+      # #generate_date fills in. "l" (lowercase) unpacks a signed 32-bit
+      # int, matching hegel_date_t's own int32_t year -- unlike
+      # #generate_integer's out-parameter (an 8-byte int64_t, unpacked
+      # "q"), this one is 4 bytes.
+      def unpack_date(bytes)
+        year = bytes[0, 4].unpack1("l")
+        month = bytes.getbyte(4)
+        day = bytes.getbyte(5)
+        [year, month, day]
+      end
+
+      # hegel_time_t: { uint8_t hour, minute, second; uint32_t
+      # microsecond; }. Padded to 8 bytes the same way hegel_date_t is (2
+      # unused bytes after +second+, to align +microsecond+ to 4 bytes);
+      # see #pack_date's own comment. Offsets (hour 0, minute 1, second 2,
+      # microsecond 4) are asserted the same way #pack_date's are.
+      def pack_time(time)
+        hour, minute, second, microsecond = time
+        hour | (minute << 8) | (second << 16) | (microsecond << 32)
+      end
+
+      # The inverse of #pack_time. "L" (uppercase) unpacks an unsigned
+      # 32-bit int, matching hegel_time_t's own uint32_t microsecond.
+      def unpack_time(bytes)
+        hour = bytes.getbyte(0)
+        minute = bytes.getbyte(1)
+        second = bytes.getbyte(2)
+        microsecond = bytes[4, 4].unpack1("L")
+        [hour, minute, second, microsecond]
       end
 
       # Copies +out+'s const char* out-parameter into a Ruby String, or

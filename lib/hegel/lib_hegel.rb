@@ -141,6 +141,7 @@ module Hegel
       generate_bytes generate_bytes_result_free
       string_generator_regex string_generator_email string_generator_url string_generator_domain
       generate_ipv4 generate_ipv6 generate_uuid
+      generate_date generate_time generate_datetime
     ].freeze
 
     module_function

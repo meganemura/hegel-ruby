@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "support/conformance"
+require "date"
 require "ipaddr"
 require "stringio"
 require "timeout"
@@ -630,6 +631,146 @@ class TestGenerators < Minitest::Test
     assert_kind_of Hegel::Generator, generator
     error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
     assert_includes error.message, "HEGEL_E_INVALID_ARG"
+  end
+
+  # ---- dates ----
+
+  def test_dates_draws_against_the_real_engine
+    assert_all_examples(dates) { |v| v.is_a?(Date) }
+  end
+
+  def test_dates_min_value_bounds_the_draw
+    bound = Date.new(2020, 1, 1)
+    assert_all_examples(dates(min_value: bound)) { |v| v >= bound }
+  end
+
+  def test_dates_max_value_bounds_the_draw
+    bound = Date.new(2020, 12, 31)
+    assert_all_examples(dates(max_value: bound)) { |v| v <= bound }
+  end
+
+  def test_dates_min_value_greater_than_max_value_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(dates(min_value: Date.new(2020, 1, 2), max_value: Date.new(2020, 1, 1))) }
+    end
+
+    assert_includes error.message, "max_value < min_value"
+  end
+
+  # min_value == max_value pins LibHegel::Real#pack_date/#unpack_date's own
+  # byte convention against the engine's own interpretation, not just this
+  # binding's encode/decode as each other's inverse (see the skill's own
+  # note on why a round trip alone cannot catch a self-consistent but wrong
+  # byte convention). Both ends of the conventional full range: year 1
+  # month 1 day 1, and year 9999 month 12 day 31 -- the latter alone
+  # already has three distinct field values, so it also catches a
+  # month/day swap (a swap would try month 31, an invalid month, and raise
+  # instead of returning the expected Date).
+  def test_dates_min_value_equals_max_value_returns_that_date
+    [Date.new(1, 1, 1), Date.new(9999, 12, 31)].each do |date|
+      value = nil
+      Hegel.test(test_cases: 1, verbosity: :quiet) { |tc| value = tc.draw(dates(min_value: date, max_value: date)) }
+      assert_equal date, value
+    end
+  end
+
+  # ---- times ----
+
+  def test_times_draws_against_the_real_engine
+    assert_all_examples(times) { |v| v.is_a?(String) && v.match?(/\A\d{2}:\d{2}:\d{2}\.\d{6}\z/) }
+  end
+
+  def test_times_min_value_bounds_the_draw
+    assert_all_examples(times(min_value: "12:00:00.000000")) { |v| v >= "12:00:00.000000" }
+  end
+
+  def test_times_max_value_bounds_the_draw
+    assert_all_examples(times(max_value: "12:00:00.000000")) { |v| v <= "12:00:00.000000" }
+  end
+
+  def test_times_min_value_greater_than_max_value_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(times(min_value: "12:00:00.000001", max_value: "12:00:00.000000")) }
+    end
+
+    assert_includes error.message, "max_value < min_value"
+  end
+
+  # A min_value/max_value that is not a String matching "HH:MM:SS.ffffff"
+  # raises at draw time, not at construction: 123 (not a String at all)
+  # and "1:2:3.4" (a String, but the wrong shape) exercise the two
+  # branches TimesGenerator#parse's own `value.is_a?(String) &&
+  # FORMAT.match(value)` check has.
+  def test_times_min_value_not_a_valid_time_string_raises_at_draw_time
+    [123, "1:2:3.4"].each do |bad|
+      generator = times(min_value: bad)
+
+      assert_kind_of Hegel::Generator, generator
+      error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+      assert_includes error.message, "must be \"HH:MM:SS.ffffff\""
+    end
+  end
+
+  # min_value == max_value pins LibHegel::Real#pack_time/#unpack_time's own
+  # byte convention against the engine's own interpretation. The boundary
+  # values (00:00:00.000000, 23:59:59.999999) are swap-symmetric in
+  # minute/second (00 vs 00, 59 vs 59), so a minute<->second packing bug
+  # would still pass them; 13:45:06.123456, where every field is distinct,
+  # is what catches that.
+  def test_times_min_value_equals_max_value_returns_that_time
+    ["00:00:00.000000", "23:59:59.999999", "13:45:06.123456"].each do |time|
+      value = nil
+      Hegel.test(test_cases: 1, verbosity: :quiet) { |tc| value = tc.draw(times(min_value: time, max_value: time)) }
+      assert_equal time, value
+    end
+  end
+
+  # ---- datetimes ----
+
+  def test_datetimes_draws_against_the_real_engine
+    assert_all_examples(datetimes) { |v| v.is_a?(Time) }
+  end
+
+  def test_datetimes_min_value_bounds_the_draw
+    bound = Time.utc(2020, 1, 1)
+    assert_all_examples(datetimes(min_value: bound)) { |v| v >= bound }
+  end
+
+  def test_datetimes_max_value_bounds_the_draw
+    bound = Time.utc(2020, 12, 31, 23, 59, 59, 999_999)
+    assert_all_examples(datetimes(max_value: bound)) { |v| v <= bound }
+  end
+
+  def test_datetimes_min_value_greater_than_max_value_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) do |tc|
+        tc.draw(datetimes(min_value: Time.utc(2020, 1, 2), max_value: Time.utc(2020, 1, 1)))
+      end
+    end
+
+    assert_includes error.message, "max_value < min_value"
+  end
+
+  # min_value == max_value pins LibHegel::Real#generate_datetime's own
+  # struct packing (hegel_date_t followed by hegel_time_t) against the
+  # engine's own interpretation. Both ends of the conventional full range,
+  # plus one value where every date and time field is distinct
+  # (2024-03-17T13:45:06.123456), the same reasoning
+  # test_dates_min_value_equals_max_value_returns_that_date and
+  # test_times_min_value_equals_max_value_returns_that_time give for their
+  # own boundary-only blind spots.
+  def test_datetimes_min_value_equals_max_value_returns_that_datetime
+    [
+      Time.utc(1, 1, 1, 0, 0, 0, 0),
+      Time.utc(9999, 12, 31, 23, 59, 59, 999_999),
+      Time.utc(2024, 3, 17, 13, 45, 6, 123_456)
+    ].each do |datetime|
+      value = nil
+      Hegel.test(test_cases: 1, verbosity: :quiet) do |tc|
+        value = tc.draw(datetimes(min_value: datetime, max_value: datetime))
+      end
+      assert_equal datetime, value
+    end
   end
 
   # ---- mixin ----

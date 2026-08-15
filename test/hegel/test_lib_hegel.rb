@@ -5,6 +5,7 @@ require "hegel/lib_hegel"
 require "hegel/lib_hegel/real"
 require "support/fake_lib_hegel"
 require "stringio"
+require "fiddle/import"
 
 class TestLibHegel < Minitest::Test
   def test_stop_test_and_assume_failed_do_not_inherit_standard_error
@@ -1302,5 +1303,133 @@ class TestLibHegel < Minitest::Test
     generators.each { |generator| refute_nil generator }
     generators.each { |generator| assert_nil tc.string_generator_free(generator) }
     assert_equal generators, fake.freed_string_generators
+  end
+
+  # hegel_date_t / hegel_time_t / hegel_datetime_t's own byte layout, which
+  # LibHegel::Real#pack_date/#pack_time/#unpack_date/#unpack_time hardcode
+  # as bit shifts (see docs/architecture.md, "Passing a struct by value").
+  # Packing a struct into uint64 register(s) only reproduces the native
+  # ABI's own call when the byte size and each field's offset match what
+  # the compiled struct actually uses; a mismatch would not fail to draw --
+  # it would draw a plausible-looking wrong value forever, since encoding
+  # and decoding both apply the same wrong assumption to themselves,
+  # consistently. This test computes size/offset independently, via
+  # Fiddle's own C-ABI alignment rules applied to the three fields hegel.h
+  # documents for each struct, rather than re-reading the bit-shift
+  # constants in real.rb -- a mismatch between the two is what this test
+  # exists to catch. Fiddle is confined to real.rb inside lib/ (see the
+  # skill's own "git grep Fiddle lib/" checklist item, scoped to lib/, not
+  # test/), so this reaches for it directly rather than through Real's
+  # private packing methods.
+  def test_hegel_date_time_and_datetime_struct_layout
+    date_t = build_c_struct(["int32_t year", "uint8_t month", "uint8_t day"])
+    time_t = build_c_struct(["uint8_t hour", "uint8_t minute", "uint8_t second", "uint32_t microsecond"])
+    datetime_t = Fiddle::CStructBuilder.create(Fiddle::CStruct, [date_t, time_t], ["date", "time"])
+
+    assert_equal 8, date_t.size
+    assert_equal 0, date_t.offsetof("year")
+    assert_equal 4, date_t.offsetof("month")
+    assert_equal 5, date_t.offsetof("day")
+
+    assert_equal 8, time_t.size
+    assert_equal 0, time_t.offsetof("hour")
+    assert_equal 1, time_t.offsetof("minute")
+    assert_equal 2, time_t.offsetof("second")
+    assert_equal 4, time_t.offsetof("microsecond")
+
+    assert_equal 16, datetime_t.size
+    assert_equal 0, datetime_t.offsetof("date")
+    assert_equal 8, datetime_t.offsetof("time")
+  end
+
+  # hegel_generate_date / hegel_generate_time / hegel_generate_datetime each
+  # take a struct by value, packed into uint64 register(s) by
+  # LibHegel::Real#generate_date/#generate_time/#generate_datetime (see
+  # docs/architecture.md, "Passing a struct by value"). min_value ==
+  # max_value pins that packing against the engine's own interpretation,
+  # not just this binding's own pack/unpack as each other's inverse (a
+  # round trip alone cannot catch a self-consistent but wrong byte
+  # convention -- see the skill's own note on why a degenerate draw against
+  # the real engine is required). Exercises both ends of the conventional
+  # full range, and one value with every field distinct (13:45:06.123456,
+  # and that time embedded in a datetime): the boundary values alone are
+  # swap-symmetric in minute/second (00 vs 00, 59 vs 59), so a
+  # minute<->second packing bug would still pass them; a value with no two
+  # fields sharing a digit is what catches that. The database is disabled
+  # ("") so the run leaves nothing on disk.
+  def test_real_generate_date_time_and_datetime_at_degenerate_bounds_pins_the_struct_packing
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      assert_equal [1, 1, 1], real.generate_date(ctx, tc, [1, 1, 1], [1, 1, 1])
+      assert_equal [9999, 12, 31], real.generate_date(ctx, tc, [9999, 12, 31], [9999, 12, 31])
+
+      assert_equal [0, 0, 0, 0], real.generate_time(ctx, tc, [0, 0, 0, 0], [0, 0, 0, 0])
+      assert_equal [23, 59, 59, 999_999], real.generate_time(ctx, tc, [23, 59, 59, 999_999], [23, 59, 59, 999_999])
+      assert_equal [13, 45, 6, 123_456], real.generate_time(ctx, tc, [13, 45, 6, 123_456], [13, 45, 6, 123_456])
+
+      min_dt = [[1, 1, 1], [0, 0, 0, 0]]
+      max_dt = [[9999, 12, 31], [23, 59, 59, 999_999]]
+      distinct_dt = [[2024, 3, 17], [13, 45, 6, 123_456]]
+      assert_equal min_dt, real.generate_datetime(ctx, tc, *min_dt, *min_dt)
+      assert_equal max_dt, real.generate_datetime(ctx, tc, *max_dt, *max_dt)
+      assert_equal distinct_dt, real.generate_datetime(ctx, tc, *distinct_dt, *distinct_dt)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # Hegel::TestCase's own wrappers for hegel_generate_date/_time/_datetime,
+  # the same "bound is not the same as callable" thin-delegation check
+  # test_test_case_generate_bytes_generate_ipv4_generate_ipv6_generate_uuid_and_generate_integer_big_delegate_to_impl
+  # already runs for the other native calls this file binds.
+  def test_test_case_generate_date_generate_time_and_generate_datetime_delegate_to_impl
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.generate_date_value = [2020, 1, 1]
+    fake.generate_time_value = [13, 45, 6, 123_456]
+    fake.generate_datetime_value = [[2020, 1, 1], [13, 45, 6, 123_456]]
+    tc = Hegel::TestCase.new(fake, ctx, Object.new)
+
+    assert_equal [2020, 1, 1], tc.generate_date([1, 1, 1], [9999, 12, 31])
+    assert_equal [13, 45, 6, 123_456], tc.generate_time([0, 0, 0, 0], [23, 59, 59, 999_999])
+    assert_equal [[2020, 1, 1], [13, 45, 6, 123_456]],
+      tc.generate_datetime([1, 1, 1], [0, 0, 0, 0], [9999, 12, 31], [23, 59, 59, 999_999])
+  end
+
+  private
+
+  # A fresh Fiddle::Importer-backed struct class for +fields+ (C type
+  # declarations, e.g. "int32_t year"), so
+  # test_hegel_date_time_and_datetime_struct_layout can ask Fiddle itself
+  # for the size and per-field offset its own C-ABI alignment rules
+  # produce, independent of any hardcoded number in this file or in
+  # real.rb.
+  def build_c_struct(fields)
+    importer = Module.new
+    importer.extend(Fiddle::Importer)
+    importer.struct(fields)
   end
 end

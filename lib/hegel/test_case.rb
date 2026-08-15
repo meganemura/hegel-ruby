@@ -265,6 +265,30 @@ module Hegel
       @impl.string_generator_free(@ctx, generator)
     end
 
+    # hegel_generate_date, without recording. Hegel::Generators::
+    # DatesGenerator's own primitive. +min_value+/+max_value+ are each a
+    # [year, month, day] Array; the return value is the same shape.
+    def generate_date(min_value, max_value)
+      @impl.generate_date(@ctx, @handle, min_value, max_value)
+    end
+
+    # hegel_generate_time, without recording. Hegel::Generators::
+    # TimesGenerator's own primitive. +min_value+/+max_value+ are each an
+    # [hour, minute, second, microsecond] Array; the return value is the
+    # same shape.
+    def generate_time(min_value, max_value)
+      @impl.generate_time(@ctx, @handle, min_value, max_value)
+    end
+
+    # hegel_generate_datetime, without recording. Hegel::Generators::
+    # DatetimesGenerator's own primitive. +min_date+/+max_date+ are each a
+    # [year, month, day] Array, +min_time+/+max_time+ each an
+    # [hour, minute, second, microsecond] Array; the return value is a
+    # [[year, month, day], [hour, minute, second, microsecond]] pair.
+    def generate_datetime(min_date, min_time, max_date, max_time)
+      @impl.generate_datetime(@ctx, @handle, min_date, min_time, max_date, max_time)
+    end
+
     private
 
     # Runs the block with +generator+, freeing it via #string_generator_free

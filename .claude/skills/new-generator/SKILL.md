@@ -143,6 +143,20 @@ test because it reads as coverage:
   draw call checks its test-case handle before anything else, so a bare
   context with no live test case answers `HEGEL_E_INVALID_HANDLE` whatever
   else is wrong with the call.
+- **A packed struct needs two independent tests, and boundary values are
+  not enough for the second.** One test computes the size and offsets from
+  the field declarations, independently of the bit shifts in `real.rb`, and
+  catches the two drifting apart. The other draws a degenerate `min == max`
+  against the real engine and catches the packing disagreeing with the
+  native side, which the first cannot see because no header ships with the
+  gem. Give the second one a value whose fields all differ —
+  `13:45:06.123456`, not `00:00:00` or `23:59:59` — because a boundary
+  value is symmetric under swapping minute and second, and a shift that
+  transposes them passes.
+- **A stdlib type does not resolve in `sig/hegel.rbs`.** The completion
+  check is bare `rbs -I sig validate` with no `-r`, so `Date` and `IPAddr`
+  fail to resolve while `Time` and `String`, being core, do not. Declare a
+  stdlib-typed return as `untyped`.
 
 ## Final checklist
 

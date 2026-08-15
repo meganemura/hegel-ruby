@@ -48,6 +48,9 @@ module Hegel
     def string_generator_url: () -> untyped
     def string_generator_domain: (Integer max_length) -> untyped
     def string_generator_free: (untyped generator) -> nil
+    def generate_date: (Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
+    def generate_time: (Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
+    def generate_datetime: (Array[Integer] min_date, Array[Integer] min_time, Array[Integer] max_date, Array[Integer] max_time) -> [Array[Integer], Array[Integer]]
   end
 
   class Generator
@@ -191,6 +194,35 @@ module Hegel
       def do_draw: (untyped tc) -> String
     end
 
+    class DatesGenerator < Generator
+      MIN_DATE: untyped
+      MAX_DATE: untyped
+
+      def initialize: (min_value: untyped, max_value: untyped) -> void
+      def do_draw: (untyped tc) -> untyped
+    end
+
+    class TimesGenerator < Generator
+      MIDNIGHT: String
+      LAST_MICROSECOND: String
+      FORMAT: Regexp
+
+      def initialize: (min_value: String?, max_value: String?) -> void
+      def do_draw: (untyped tc) -> String
+
+      private
+
+      def parse: (untyped value, String name) -> Array[Integer]
+    end
+
+    class DatetimesGenerator < Generator
+      MIN_DATETIME: Time
+      MAX_DATETIME: Time
+
+      def initialize: (min_value: Time?, max_value: Time?) -> void
+      def do_draw: (untyped tc) -> Time
+    end
+
     extend Syntax::Methods
   end
 
@@ -216,6 +248,9 @@ module Hegel
       def domains: (?max_length: Integer) -> Generators::DomainsGenerator
       def ip_addresses: (?v4: bool, ?v6: bool) -> Generators::IpAddressesGenerator
       def uuids: (?version: Integer?) -> Generators::UuidsGenerator
+      def dates: (?min_value: untyped, ?max_value: untyped) -> Generators::DatesGenerator
+      def times: (?min_value: String?, ?max_value: String?) -> Generators::TimesGenerator
+      def datetimes: (?min_value: Time?, ?max_value: Time?) -> Generators::DatetimesGenerator
     end
   end
 
@@ -412,6 +447,9 @@ module Hegel
       def generate_ipv4: (untyped ctx, untyped tc) -> String
       def generate_ipv6: (untyped ctx, untyped tc) -> String
       def generate_uuid: (untyped ctx, untyped tc, Integer version, bool has_version) -> String
+      def generate_date: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
+      def generate_time: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
+      def generate_datetime: (untyped ctx, untyped tc, Array[Integer] min_date, Array[Integer] min_time, Array[Integer] max_date, Array[Integer] max_time) -> [Array[Integer], Array[Integer]]
     end
   end
 end

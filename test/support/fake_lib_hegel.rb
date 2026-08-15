@@ -45,7 +45,7 @@ module Hegel
         :generate_float_code, :string_generator_text_code, :generate_string_code,
         :generate_bytes_code, :string_generator_regex_code, :string_generator_email_code,
         :string_generator_url_code, :string_generator_domain_code, :generate_ipv4_code, :generate_ipv6_code,
-        :generate_uuid_code
+        :generate_uuid_code, :generate_date_code, :generate_time_code, :generate_datetime_code
 
       # Values #generate_boolean / #generate_integer / #generate_integer_big
       # hand back on success.
@@ -60,6 +60,10 @@ module Hegel
       # Values #generate_bytes / #generate_ipv4 / #generate_ipv6 / #generate_uuid hand back
       # on success.
       attr_writer :generate_bytes_value, :generate_ipv4_value, :generate_ipv6_value, :generate_uuid_value
+
+      # Values #generate_date / #generate_time / #generate_datetime hand
+      # back on success.
+      attr_writer :generate_date_value, :generate_time_value, :generate_datetime_value
 
       # Number of times #collection_more answers true before it answers
       # false, mirroring #test_case_count / @cases_served below so a loop
@@ -177,6 +181,13 @@ module Hegel
         @generate_ipv6_value = ("\x00" * 16).b
         @generate_uuid_code = HEGEL_OK
         @generate_uuid_value = ("\x00" * 16).b
+
+        @generate_date_code = HEGEL_OK
+        @generate_date_value = [1, 1, 1]
+        @generate_time_code = HEGEL_OK
+        @generate_time_value = [0, 0, 0, 0]
+        @generate_datetime_code = HEGEL_OK
+        @generate_datetime_value = [[1, 1, 1], [0, 0, 0, 0]]
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -453,6 +464,21 @@ module Hegel
       def generate_uuid(ctx, _tc, _version, _has_version)
         LibHegel.check!(self, ctx, @generate_uuid_code)
         @generate_uuid_value
+      end
+
+      def generate_date(ctx, _tc, _min_value, _max_value)
+        LibHegel.check!(self, ctx, @generate_date_code)
+        @generate_date_value
+      end
+
+      def generate_time(ctx, _tc, _min_value, _max_value)
+        LibHegel.check!(self, ctx, @generate_time_code)
+        @generate_time_value
+      end
+
+      def generate_datetime(ctx, _tc, _min_date, _min_time, _max_date, _max_time)
+        LibHegel.check!(self, ctx, @generate_datetime_code)
+        @generate_datetime_value
       end
     end
   end

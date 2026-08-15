@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "date"
 require "ipaddr"
 require_relative "errors"
 require_relative "generator"
@@ -591,6 +592,147 @@ module Hegel
         raw = tc.generate_uuid(@version || 0, has_version)
         hex = raw.unpack1("H*")
         "#{hex[0, 8]}-#{hex[8, 4]}-#{hex[12, 4]}-#{hex[16, 4]}-#{hex[20, 12]}"
+      end
+    end
+
+    # Hegel::Syntax::Methods#dates. A proleptic Gregorian calendar Date in
+    # [min_value, max_value], defaulting to the conventional full range
+    # (year 1 through year 9999) when either bound is omitted -- hegel-rust's
+    # own src/test_case.rs names this full_ranges::MIN_DATE/MAX_DATE, "what
+    # Hypothesis's dates() spans".
+    #
+    # Opens no span: hegel_generate_date makes exactly one native call to
+    # produce its own value, and the header's own comment on
+    # HEGEL_LABEL_REGEX ("callers normally never open this span themselves.
+    # Likewise for the other engine-side compound draws below") covers
+    # HEGEL_LABEL_DATE too, since it sits below REGEX in that same list --
+    # the same one-native-call, no-span-of-our-own reasoning UuidsGenerator's
+    # own comment already gives for HEGEL_LABEL_UUID.
+    class DatesGenerator < Generator
+      MIN_DATE = Date.new(1, 1, 1)
+      MAX_DATE = Date.new(9999, 12, 31)
+
+      def initialize(min_value:, max_value:)
+        super()
+        @min_value = min_value
+        @max_value = max_value
+      end
+
+      def do_draw(tc)
+        min_value = @min_value || MIN_DATE
+        max_value = @max_value || MAX_DATE
+        raise Hegel::Error, "dates: max_value < min_value" if max_value < min_value
+
+        year, month, day = tc.generate_date(
+          [min_value.year, min_value.month, min_value.day], [max_value.year, max_value.month, max_value.day]
+        )
+        Date.new(year, month, day)
+      end
+    end
+
+    # Hegel::Syntax::Methods#times. A time of day String, "HH:MM:SS.ffffff",
+    # in [min_value, max_value] (also "HH:MM:SS.ffffff" Strings), defaulting
+    # to the conventional full day (00:00:00.000000 through 23:59:59.999999
+    # -- hegel-rust's own full_ranges::MIDNIGHT/LAST_MICROSECOND) when either
+    # bound is omitted.
+    #
+    # Returns a String, not a Time: Ruby's stdlib has no type for a bare
+    # time of day (hour/minute/second/microsecond, with no date), and
+    # building one from Time would attach an arbitrary date component to a
+    # value that has none -- printing, comparing, or inspecting it would
+    # read as though that date meant something, when it is only ever a
+    # placeholder this generator invented to satisfy Time's own
+    # constructor. min_value/max_value share that same String
+    # representation, both for symmetry with the return value and because
+    # it is the only representation available on the input side either.
+    #
+    # Opens no span, for the same reason DatesGenerator does not (one
+    # native call, HEGEL_LABEL_TIME sits below HEGEL_LABEL_REGEX in the same
+    # header list).
+    class TimesGenerator < Generator
+      MIDNIGHT = "00:00:00.000000"
+      LAST_MICROSECOND = "23:59:59.999999"
+
+      # Matches exactly what #do_draw's own format("%02d:%02d:%02d.%06d",
+      # ...) produces, so parsing and formatting agree on the same shape.
+      FORMAT = /\A(\d{2}):(\d{2}):(\d{2})\.(\d{6})\z/
+
+      def initialize(min_value:, max_value:)
+        super()
+        @min_value = min_value
+        @max_value = max_value
+      end
+
+      def do_draw(tc)
+        min_parts = parse(@min_value || MIDNIGHT, "min_value")
+        max_parts = parse(@max_value || LAST_MICROSECOND, "max_value")
+        raise Hegel::Error, "times: max_value < min_value" if (max_parts <=> min_parts).negative?
+
+        hour, minute, second, microsecond = tc.generate_time(min_parts, max_parts)
+        format("%02d:%02d:%02d.%06d", hour, minute, second, microsecond)
+      end
+
+      private
+
+      # +value+'s hour/minute/second/microsecond as an Array of Integers,
+      # or raises if it is not a String matching FORMAT. This layer does
+      # not range-check the parsed fields (an hour of 99, say): measured
+      # against libhegel 0.32.5, hegel_generate_time already returns
+      # HEGEL_E_INVALID_ARG for an invalid time, translated by
+      # LibHegel.check! once #do_draw calls tc.generate_time, the same
+      # division of labor DomainsGenerator follows for its own
+      # out-of-range max_length.
+      def parse(value, name)
+        match = value.is_a?(String) && FORMAT.match(value)
+        raise Hegel::Error, "times: #{name} must be \"HH:MM:SS.ffffff\", got #{value.inspect}" unless match
+
+        match.captures.map(&:to_i)
+      end
+    end
+
+    # Hegel::Syntax::Methods#datetimes. A naive (no timezone) Time in
+    # [min_value, max_value], defaulting to the conventional full range
+    # (0001-01-01T00:00:00.000000 through 9999-12-31T23:59:59.999999 --
+    # hegel-rust's own full_ranges::MIN_DATETIME/MAX_DATETIME) when either
+    # bound is omitted.
+    #
+    # Built with Time.utc, not Time.new/Time.local: the drawn value has no
+    # timezone of its own (hegel.h calls hegel_datetime_t "a date plus a
+    # time of day, no timezone"), and UTC is the one zone every machine
+    # running this gem's own tests agrees on, so a drawn value's own
+    # year/month/day/hour/min/sec/usec read back exactly the fields that
+    # were drawn, not shifted by whatever zone the process happens to run
+    # in. min_value/max_value are read the same way: #do_draw takes
+    # whatever zone the caller's own Time is already in at face value
+    # (its own #year/#month/#day/#hour/#min/#sec/#usec), rather than
+    # converting to UTC first, so a caller who wants a specific wall-clock
+    # bound does not have to convert it themselves.
+    #
+    # Opens no span, for the same reason DatesGenerator does not (one
+    # native call, HEGEL_LABEL_DATETIME sits below HEGEL_LABEL_REGEX in the
+    # same header list).
+    class DatetimesGenerator < Generator
+      MIN_DATETIME = Time.utc(1, 1, 1, 0, 0, 0, 0)
+      MAX_DATETIME = Time.utc(9999, 12, 31, 23, 59, 59, 999_999)
+
+      def initialize(min_value:, max_value:)
+        super()
+        @min_value = min_value
+        @max_value = max_value
+      end
+
+      def do_draw(tc)
+        min_value = @min_value || MIN_DATETIME
+        max_value = @max_value || MAX_DATETIME
+        raise Hegel::Error, "datetimes: max_value < min_value" if max_value < min_value
+
+        date, time = tc.generate_datetime(
+          [min_value.year, min_value.month, min_value.day],
+          [min_value.hour, min_value.min, min_value.sec, min_value.usec],
+          [max_value.year, max_value.month, max_value.day],
+          [max_value.hour, max_value.min, max_value.sec, max_value.usec]
+        )
+        Time.utc(*date, *time)
       end
     end
   end
