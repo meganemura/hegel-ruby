@@ -26,5 +26,5 @@ here for the Ruby-specific API.
 
 Before writing a Ruby property-based test, load
 `references/ruby/reference.md` for the exact API: `Hegel.test`, settings,
-`TestCase` methods, every generator and its options, the combinator methods,
-and Ruby-specific gotchas.
+`TestCase` methods, every generator and its options, stateful testing with
+`Hegel::StateMachine`, the combinator methods, and Ruby-specific gotchas.

@@ -4,9 +4,10 @@
 
 - [Setup](#setup)
 - [Test Structure](#test-structure) — `Hegel.test`, its block, return value, failure behavior
-- [Settings](#settings) — `test_cases:` `seed:` `derandomize:` `verbosity:` `output:` `reproduce_failure:`
-- [TestCase Methods](#testcase-methods) — `draw`, `draw_integer`, `draw_boolean`
+- [Settings](#settings) — `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stateful_step_count:` `output:` `reproduce_failure:`
+- [TestCase Methods](#testcase-methods) — `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`
 - [Generator Reference](#generator-reference) — `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
+- [Stateful Testing](#stateful-testing) — `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods) — `.map`, `.filter`
 - [Gotchas](#gotchas)
 
@@ -129,12 +130,72 @@ end
 | `seed` | `Integer` or `nil` | `nil` (libhegel picks its own) | Fixed RNG seed; pair with `derandomize: true` for a reproducible sequence |
 | `derandomize` | `true`/`false` or `nil` | `nil` (libhegel's own default) | Derive the seed deterministically from the test itself, instead of drawing a random one |
 | `verbosity` | `Symbol` or `nil` | `nil` (libhegel's own default) | `:quiet`, `:normal`, `:verbose`, or `:debug` |
+| `database` | `String` or `nil` | `nil` | The example database's directory; means something only alongside `database_key:` |
+| `database_key` | `String` or `nil` | `nil` | Turns the example database on, scoped to this key |
+| `phases` | `Array` of `Symbol` or `nil` | `nil` (libhegel's own default: every phase) | Which run phases to enable: `:explicit`, `:reuse`, `:generate`, `:target`, `:shrink` |
+| `suppress_health_check` | `Array` of `Symbol` or `nil` | `nil` (no suppression) | Which health checks to turn off: `:filter_too_much`, `:too_slow`, `:test_cases_too_large`, `:large_initial_test_case` |
+| `report_multiple_failures` | `true`/`false` | `false` | `true` summarizes every distinct failure into one `Hegel::Error` instead of re-raising a single failure's own exception |
+| `stateful_step_count` | `Integer` or `nil` | `nil` (libhegel's own default: 50) | Steps per test case a `Hegel::Stateful.run` call applies, for a stateful test |
 | `output` | `IO` | `$stderr` | Where a failure report is written |
 | `reproduce_failure` | `String` or `nil` | `nil` | Replays the single case the blob encodes, instead of running a full property |
 
-`nil` means the same thing for `test_cases`, `seed`, `derandomize`, and
-`verbosity`: do not call the matching libhegel setter, and let the engine's
-own default apply.
+`nil` means the same thing for `test_cases`, `seed`, `derandomize`,
+`verbosity`, `phases`, `suppress_health_check`, and `stateful_step_count`: do
+not call the matching libhegel setter, and let the engine's own default
+apply. `database`/`database_key` and `report_multiple_failures` each follow
+their own rule instead, covered below.
+
+`database_key:` is the switch that turns libhegel's example database on;
+`database:` only chooses where it writes, and means nothing without a key.
+Passing `database:` alone raises `Hegel::Error` at run time:
+
+```ruby
+Hegel.test(database: "/tmp/wherever") { |tc| tc.draw(integers) }
+# raises Hegel::Error, "hegel: database: needs database_key: to scope what
+# it stores and replays; pass database_key: too, or drop database: and pass
+# neither."
+```
+
+Give `database_key:` a value unique to the property under test. Two
+`Hegel.test` calls that share a key share one replay scope, so an unrelated
+property can read or overwrite what this one stored. Left at their shared
+default (`nil`, `nil`), a run stores nothing.
+
+`phases:` and `suppress_health_check:` each take an `Array` of `Symbol`, and
+each raises `Hegel::Error` at run time for an empty one — an empty `Array`
+has no established meaning against libhegel, unlike dropping the keyword
+entirely:
+
+```ruby
+Hegel.test(phases: []) { |tc| tc.draw(integers) }
+# raises Hegel::Error, "hegel: phases expects one or more of [:explicit,
+# :reuse, :generate, :target, :shrink], got an empty Array"
+```
+
+`report_multiple_failures:` defaults to `false`, which is not libhegel's own
+default (`true`). With the default `false`, a run stops at its first failing
+example and re-raises that failure's own exception, class and backtrace
+intact, so a host framework reports it as its own. `report_multiple_failures:
+true` keeps generating afterwards to surface other distinct bugs, and then
+raises `Hegel::Error` naming the count instead of any one of the individual
+exceptions:
+
+```ruby
+Hegel.test(test_cases: 10, report_multiple_failures: true, verbosity: :quiet) do |tc|
+  n = tc.draw_integer(0, 1, label: "n")
+  if n.zero?
+    raise "boom-zero"
+  else
+    raise "boom-one"
+  end
+end
+# raises Hegel::Error, "Property-based test failed with 2 distinct failures."
+```
+
+`stateful_step_count:` bounds how many rules one `Hegel::Stateful.run` call
+applies per test case (see [Stateful Testing](#stateful-testing)); the
+engine documents its own default as 50, and requires the value be at least
+1.
 
 `seed:` and `derandomize: true` together make a run reproducible:
 
@@ -171,6 +232,10 @@ written to it.
 | `draw` | `draw(generator, label: nil)` | Draw a value from a `Hegel::Generator`; shown in the failure report under `label`, or a name recovered from the caller's own source line |
 | `draw_integer` | `draw_integer(min_value, max_value, label: nil)` | Draw an integer directly, without building an `integers` generator |
 | `draw_boolean` | `draw_boolean(p = 0.5, label: nil)` | Draw a boolean directly, without building a `booleans` generator |
+| `assume` | `assume(condition)` | Discard this test case (see `reject`) unless `condition` holds, read as Ruby truthiness |
+| `reject` | `reject` | Discard this test case unconditionally |
+| `note` | `note(message = nil, &block)` | Record `message` (or the block's return value) for the failure report, interleaved with draws in call order |
+| `target` | `target(value, label: "")` | Feed `value` to libhegel's own hill-climbing search between generation rounds |
 
 ```ruby
 result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
@@ -207,10 +272,75 @@ To reproduce this failure, pass the blob below to Hegel.test:
     reproduce_failure: "AAEAAAAACgEAAAAG"
 ```
 
-`assume` and `note` — `TestCase` methods other Hegel bindings expose — are
-not available yet; they arrive in milestone C. Today, `.filter` (see
-[Combinator Methods](#combinator-methods)) discards a test case when its
-predicate does not hold.
+`assume` discards a test case (the same way `reject` does) unless its
+condition holds, read as ordinary Ruby truthiness rather than restricted to
+`true`/`false`, so `tc.assume(hash[:key])` works directly:
+
+```ruby
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  n = tc.draw_integer(0, 10)
+  tc.assume(n.even?)
+  raise "not even" unless n.even?
+end
+result # => nil
+```
+
+`.filter` (see [Combinator Methods](#combinator-methods)) discards a test
+case the same way, scoped to one generator's own draw rather than the whole
+body; `assume`/`reject` discard from anywhere in the block.
+
+`note` records a message for the eventual failure report, interleaved with
+draws in the order both were called. Pass a message directly, or a block —
+the block form is evaluated only on the one, already-shrunk replay that
+produces the report, so it is the cheaper choice when building the message
+itself costs something. Passing both, or neither, raises `Hegel::Error`:
+
+```ruby
+output = StringIO.new
+begin
+  Hegel.test(output: output, seed: 1, derandomize: true) do |tc|
+    tc.note("starting the queue")
+    n = tc.draw_integer(0, 1_000_000, label: "n")
+    tc.note("queue was empty") if n > 500
+    raise "too big: #{n}" if n > 500
+  end
+rescue => e
+  e.message # => "too big: 501"
+end
+output.string
+```
+
+```
+Falsified after 2 test cases (0 discarded):
+
+  starting the queue
+  n = 501
+  queue was empty
+
+To reproduce this failure, pass the blob below to Hegel.test:
+    reproduce_failure: "AAEAAAAACgIAAAD1AQ=="
+```
+
+`target` feeds `value` to libhegel's own hill-climbing search between
+generation rounds, under `label` (default `""`); it does not appear in the
+failure report. The same `label` used twice on one test case raises
+`Hegel::Error`, and so does a non-finite `value` (`Float::NAN` or
+`Float::INFINITY`):
+
+```ruby
+Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  n = tc.draw_integer(0, 1000)
+  m = tc.draw_integer(0, 1000)
+  tc.target(n + m, label: "score")
+end
+```
+
+```ruby
+Hegel.test(test_cases: 5, verbosity: :quiet) { |tc| tc.target(1, label: "score"); tc.target(2, label: "score") }
+# raises Hegel::Error, "HEGEL_E_INVALID_ARG (-5): tc.target(2, label=\"score\")
+# would overwrite previous tc.target(_, label=\"score\"); each label can be
+# observed at most once per test case"
+```
 
 ## Generator Reference
 
@@ -777,6 +907,171 @@ Drawing from it before `#set` raises `Hegel::Error` at draw time:
 `"deferred: draw called before set"`. Calling `#set` a second time raises
 immediately (not at draw time): `"deferred: set called more than once"`.
 
+## Stateful Testing
+
+A stateful test compares a real object against a simplified model of it,
+across a sequence of actions libhegel chooses and shrinks the same way it
+shrinks any other test case. Declare the actions on a `Hegel::StateMachine`
+subclass, then drive one instance of it from inside an ordinary `Hegel.test`
+block: `Hegel.test { |tc| Hegel::Stateful.run(machine, tc) }` (see
+[A worked example](#a-worked-example) below for a complete one).
+
+### Declaring a machine
+
+`rule(name, &block)` and `invariant(name, &block)` are class-level
+declarations. `block` runs via `instance_exec` against the machine instance
+under test, and is handed the running `Hegel::TestCase` as its one argument
+(ignored if the block takes none) — so it reads and writes the machine's own
+instance variables directly, and calls a generator method (`integers`,
+`arrays`, and so on) bare, the same way a `Hegel.test` block's own
+surrounding class can once it includes `Hegel::Syntax::Methods`;
+`Hegel::StateMachine` already includes that module itself.
+
+An invariant runs once before the first rule, and again after every rule
+application that completes without its own assumption failing.
+
+A rule or invariant reports a failure the same way any other test-case body
+does: raise. This library brings no assertion methods of its own —
+`include Minitest::Assertions` (or `RSpec::Matchers`, or plain `raise`) into
+the machine class to use one. `Minitest::Assertions#assert` counts against
+an `assertions` accessor it does not define itself, so a class that includes
+it also needs to supply one, initialized to `0`:
+
+```ruby
+class AssertingMachine < Hegel::StateMachine
+  include Minitest::Assertions
+  attr_accessor :assertions
+
+  def initialize
+    @assertions = 0
+  end
+
+  rule(:step) { |_tc| assert_equal 1, 1 }
+end
+```
+
+Declaring the same rule or invariant name twice on one class raises
+`Hegel::Error`; a subclass declaring a name its superclass already declared
+replaces that one instead, keeping its original position in the declared
+order. A class with no rule declared at all raises `Hegel::Error`, before
+`Hegel::Stateful.run` makes any libhegel call:
+
+```ruby
+class NoRulesMachine < Hegel::StateMachine
+  invariant(:always) {}
+end
+
+# nil stands in for a running Hegel::TestCase here: the check above raises
+# before Hegel::Stateful.run reads its second argument at all.
+Hegel::Stateful.run(NoRulesMachine.new, nil)
+# raises Hegel::Error, "hegel: NoRulesMachine has no rules; declare at least
+# one with `rule`"
+```
+
+A test case with more than one declared rule enables only a random subset of
+them, and picks each step from that subset — so a machine with two rules can
+run a case where one of them never appears at all.
+
+Inside a rule, `tc.assume(false)` means something narrower than it does
+everywhere else in this library: it discards only that one rule application
+(the loop moves on and tries another rule), not the whole test case, unlike
+every other `assume` call — at the top of a `Hegel.test` block, or inside a
+generator's own draw.
+
+### A worked example
+
+`@real` below never enforces its own capacity — the bug a model capped at 2
+items is built to catch:
+
+```ruby
+class BoundedStackModel < Hegel::StateMachine
+  CAPACITY = 2
+
+  def initialize
+    @real = []
+    @model_size = 0
+  end
+
+  rule(:push) do |tc|
+    tc.draw(integers(min_value: 0, max_value: 9))
+    @real.push(0) # bug: never checks capacity
+    @model_size += 1 if @model_size < CAPACITY
+  end
+
+  invariant(:size_matches_capacity) do
+    unless @real.size == @model_size
+      raise "stack has #{@real.size} items, model expects #{@model_size}"
+    end
+  end
+end
+
+output = StringIO.new
+begin
+  Hegel.test(output: output, seed: 1, derandomize: true) do |tc|
+    Hegel::Stateful.run(BoundedStackModel.new, tc)
+  end
+rescue RuntimeError => e
+  e.message # => "stack has 3 items, model expects 2"
+end
+output.string
+```
+
+```
+Falsified after 1 test case (0 discarded):
+
+  Initial invariant check.
+  Step 1: push
+  draw_1 = 0
+  Step 2: push
+  draw_2 = 0
+  Step 3: push
+  draw_3 = 0
+
+To reproduce this failure, pass the blob below to Hegel.test:
+    reproduce_failure: "AXiclcaxDQAACMMwd0Xi/3dh4QCGKG6E2tzywQAOIgBh"
+```
+
+The shrunk report names each step by its rule (`Step 1: push`), and shrinks
+the number of steps down to the minimum that still breaks the invariant —
+here, exactly 3 pushes, one past capacity.
+
+### `Hegel::Stateful::Pool`
+
+A pool lets one rule's generated value be drawn again by a later rule — an
+allocator's handle, say, freed by a rule that has to name the same handle
+`alloc` produced. Build one from the running test case, typically in the
+machine's own constructor:
+
+```ruby
+pool = Hegel::Stateful::Pool.new(tc)
+```
+
+- `#add(value)` records `value` under a fresh id, and returns `self`.
+- `#values_reusable` is a `Hegel::Generator` over the pool's values that
+  leaves the chosen value in place, so it can be drawn again.
+- `#values_consumed` is a `Hegel::Generator` over the pool's values that
+  removes the chosen value, so it is never drawn again.
+- `#size` and `#empty?` read the pool's own count directly.
+
+```ruby
+Hegel.test(test_cases: 5, verbosity: :quiet) do |tc|
+  pool = Hegel::Stateful::Pool.new(tc)
+  raise "a fresh pool must be empty" unless pool.empty?
+
+  pool.add(42)
+  raise "a pool holding a value must not be empty" if pool.empty?
+
+  value = tc.draw(pool.values_reusable)
+  raise "expected 42, got #{value}" unless value == 42
+end
+```
+
+Drawing from an empty pool raises `Hegel::AssumeFailed`: outside a rule, that
+discards the whole test case, the same as any other failed assumption;
+inside a rule, it discards only that rule, the same narrower meaning
+`tc.assume(false)` has there. A caller never frees a pool — the test case
+that built it owns it, and frees it once that test case is done.
+
 ## Combinator Methods
 
 Every `Hegel::Generator` — including every generator above — has `.map`
@@ -820,11 +1115,18 @@ end
 ```
 
 raises `Hegel::Error`, message starting `"FailedHealthCheck: FilterTooMuch —
-it looks like this test is filtering out too many inputs."` Suppressing
-individual health checks (`suppress_health_check:` in other Hegel bindings)
-arrives in a later milestone; today, restructure the generator instead
-(prefer `.map` over `.filter`, or draw a value already in the shape you
-need).
+it looks like this test is filtering out too many inputs."` Pass
+`suppress_health_check: [:filter_too_much]` (see [Settings](#settings)) to
+turn that check off for a filter deliberately built to reject often, or
+restructure the generator instead (prefer `.map` over `.filter`, or draw a
+value already in the shape you need):
+
+```ruby
+result = Hegel.test(test_cases: 20, suppress_health_check: [:filter_too_much], verbosity: :quiet) do |tc|
+  tc.draw(integers.filter { |_n| false })
+end
+result # => nil
+```
 
 ## Gotchas
 
@@ -850,34 +1152,59 @@ need).
    only `tc.draw` on it raises `Hegel::Error`. Every generator in this
    binding follows the same rule, matching hegel-rust's own contract.
 
-4. **`tc.assume` and `tc.note` are not available yet.** They arrive in
-   milestone C. `.filter` discards a test case today when its predicate
-   does not hold.
-
-5. **`Hegel.test` returns `nil` on a pass and re-raises the failing case's
+4. **`Hegel.test` returns `nil` on a pass and re-raises the failing case's
    own exception on a failure**, class and backtrace intact — a host test
    framework (RSpec, Minitest) reports it as its own failure, not a
    Hegel-specific one.
+
+5. **Two failures raised from the same source line are one failure.** This
+   binding builds the origin libhegel groups by from where the exception
+   was raised — its path and line number — so libhegel shrinks them
+   together as a single bug. Two logically distinct bugs written on one
+   line share an origin:
+
+   ```ruby
+   # one origin: report_multiple_failures: true still reports 1 failure
+   n.zero? ? raise("boom-zero") : raise("boom-one")
+
+   # two origins: report_multiple_failures: true reports 2
+   if n.zero?
+     raise "boom-zero"
+   else
+     raise "boom-one"
+   end
+   ```
+
+   The exception's class is deliberately left out of the origin: the same
+   line raising a `NoMethodError` on one input and a `TypeError` on another
+   is still one bug.
 
 6. **`verbosity: :quiet` silences the failure report text itself**, not
    just libhegel's own progress output. Even when `output:` is given,
    nothing is written to it on a quiet run.
 
-7. **This binding always disables libhegel's example database.** There is
-   no `database:` setting to pass yet, and no `.hegel/` directory to manage
-   in a project that uses this gem; the example database arrives in
-   milestone C.
+7. **`database:` without `database_key:` raises `Hegel::Error` immediately**
+   — `database_key:` is the setting that turns the example database on,
+   and `database:` only chooses where it writes. Left at their shared
+   default (`nil`, `nil`), a run stores nothing and leaves no `.hegel/`
+   directory behind.
 
-8. **Targeted testing is not available yet.** It arrives in milestone C,
-   alongside the example database and stateful testing.
+8. **`tc.target` is a silent no-op, not an error, when the `:target` phase
+   is disabled.** Dropping `:target` from `phases:` (every other phase
+   kept) still lets every `tc.target` call succeed; it just stops
+   influencing generation.
 
-9. **Stateful testing is not available yet.** It arrives in milestone C.
+9. **Inside a stateful rule, `tc.assume(false)` discards only that one rule
+   application, not the whole test case.** See
+   [Stateful Testing](#stateful-testing). Every other `assume` call in this
+   binding — at the top of a `Hegel.test` block, or inside a generator's
+   own draw — discards the whole test case.
 
 10. **`datetimes` passes a 16-byte struct across the call into the native
-    engine, and that struct-passing is verified on arm64-darwin only.**
-    arm64 and System V (Linux) both pass a struct that size in two
-    registers, which this binding reproduces with two 64-bit arguments;
-    Win64 passes anything over eight bytes by reference instead, and that
-    divergent path is not yet confirmed. `dates` and `times` each pass an
-    8-byte struct, which every one of the three ABIs passes in a single
-    register, so neither carries this gap.
+   engine, and that struct-passing is verified on arm64-darwin only.**
+   arm64 and System V (Linux) both pass a struct that size in two
+   registers, which this binding reproduces with two 64-bit arguments;
+   Win64 passes anything over eight bytes by reference instead, and that
+   divergent path is not yet confirmed. `dates` and `times` each pass an
+   8-byte struct, which every one of the three ABIs passes in a single
+   register, so neither carries this gap.
