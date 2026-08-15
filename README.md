@@ -44,10 +44,14 @@ Work ran in three stages, and all three are done:
 3. **The advanced features**: the example database, targeted testing,
    stateful testing, phases, and health checks.
 
-**The gem is not installable yet.** A released gem is meant to carry a
-prebuilt `libhegel` for its platform, and that packaging is not built: what
-`rake build` produces today has no engine in it. Until it does, running any of
-this means cloning the repository and fetching the engine:
+**Nothing is published to RubyGems yet.** The packaging is built:
+`rake platform_gems:build` produces one gem per platform, each carrying the
+matching `libhegel` build. The arm64 macOS gem is verified to find that
+engine inside itself and run a property with no `HEGEL_LIBHEGEL_PATH` set.
+What is left is a release workflow, and an answer from upstream on
+redistributing their binaries ([hegeldev/hegel-rust#411]).
+
+So running this today means cloning the repository:
 
 ```bash
 bin/setup
@@ -55,7 +59,10 @@ bundle exec rake libhegel:fetch   # downloads the pinned build, checked against 
 bundle exec rake
 ```
 
-The test suite runs on arm64 macOS. It has not been run on Linux or Windows.
+CI runs the suite on Ruby 3.3, 3.4, and 4.0, across Linux x64 and arm64,
+macOS arm64, and Windows x64 and arm64.
+
+[hegeldev/hegel-rust#411]: https://github.com/hegeldev/hegel-rust/issues/411
 
 ## Design
 
