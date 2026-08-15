@@ -1,4 +1,4 @@
-# 0001 — Bind libhegel through Fiddle
+# 0001: Bind libhegel through Fiddle
 
 ## Status
 

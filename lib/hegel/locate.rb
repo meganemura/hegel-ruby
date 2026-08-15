@@ -8,7 +8,7 @@ module Hegel
   #
   # Resolution order:
   #
-  # 1. +HEGEL_LIBHEGEL_PATH+ — an explicit override, given as a file path or
+  # 1. +HEGEL_LIBHEGEL_PATH+: an explicit override, given as a file path or
   #    a directory that contains the library under one of the three
   #    basenames it is known to ship under (see find_override). This is
   #    checked first because hegel-go, hegel-typescript, hegel-java, and
@@ -22,11 +22,11 @@ module Hegel
   # rest; a rule that depends on a layout this repo's own checkout does not
   # have would be an untested, unreachable branch under 100% coverage.
   #
-  # Resolution knowledge is confined to this file — every other file calls
-  # only Locate.resolve — so a future change to the distribution method
-  # (bundled copy vs. runtime download) has one place to change. This module
-  # never touches the network; only the development-only `libhegel:fetch`
-  # rake task downloads anything.
+  # Resolution knowledge is confined to this file. Every other file calls
+  # only Locate.resolve. A future change to the distribution method
+  # (bundled copy vs. runtime download) therefore has one place to change.
+  # This module never touches the network; only the development-only
+  # `libhegel:fetch` rake task downloads anything.
   module Locate
     # Env var that overrides resolution with an explicit path.
     LIBRARY_PATH_ENV = "HEGEL_LIBHEGEL_PATH"

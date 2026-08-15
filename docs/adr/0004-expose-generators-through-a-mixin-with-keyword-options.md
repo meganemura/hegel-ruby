@@ -1,4 +1,4 @@
-# 0004 — Expose generators through a mixin, with keyword options
+# 0004: Expose generators through a mixin, with keyword options
 
 ## Status
 

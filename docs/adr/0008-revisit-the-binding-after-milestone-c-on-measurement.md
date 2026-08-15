@@ -1,4 +1,4 @@
-# 0008 — Revisit the binding after milestone C, on measurement
+# 0008: Revisit the binding after milestone C, on measurement
 
 ## Status
 
@@ -59,9 +59,9 @@ A difference that shows on that run decides it. A difference visible only in
 a tight loop around one native call does not: this gem's callers pay the
 former and never the latter.
 
-Milestone C is the trigger because it adds the last of the binding surface —
-the example database, targeted testing, stateful testing, pools — so a
-measurement taken before it would cover a fraction of the calls and a
+Milestone C is the trigger because it adds the last of the binding surface:
+the example database, targeted testing, stateful testing, and pools. A
+measurement taken before it would cover a fraction of the calls, and a
 rewrite after it would be smaller than one before.
 
 ## Consequences
@@ -71,8 +71,9 @@ technique carries the three struct-taking draws until then.
 
 A switch stays cheap because of the seam: `Hegel::LibHegel::Real` is the only
 file that names Fiddle, and a conformance test already holds both it and the
-Fake to one method list. The cost is that file, the gemspec, and this record's
-supersession — not the twenty-odd files built on top.
+Fake to one method list. The cost is confined to that file, the gemspec,
+and this record's supersession. The twenty-odd files built on top of the
+seam do not need to change.
 
 If the measurement favours `ffi`, adding it is still a dependency decision
 under this project's own rule, and the reason recorded here is the argument

@@ -15,7 +15,7 @@ module Hegel
   # implementation responds to all of them. LibHegel::Real drives the C ABI;
   # test/support/fake_lib_hegel.rb (not shipped in the gem) is a second,
   # configurable implementation, so the logic built on top of this boundary
-  # is testable without the native engine — the same split hegel-java makes
+  # is testable without the native engine. hegel-java makes the same split,
   # between its Libhegel interface, RealLibhegel, and FakeLibhegel.
   module LibHegel
     # hegel_result_t, named from hegel-c/include/hegel.h's enum of the same
@@ -95,7 +95,7 @@ module Hegel
     # either to hegel_start_span.
     #
     # The header documents that "Libraries may use any stable u64 to
-    # define their own spans" — so a caller building its own compound
+    # define their own spans." A caller building its own compound
     # generator on top of this boundary can pick any u64 that does not
     # collide with the reserved values below.
     HEGEL_LABEL_LIST = 1
@@ -199,8 +199,9 @@ module Hegel
     # Raises the exception +code+ translates to, or returns without effect
     # for HEGEL_OK. The message is read from +impl.context_last_error(ctx)+
     # immediately, since libhegel's own buffer for it is invalidated by the
-    # next call taking the same context — by the time a caller further up
-    # the stack could read it, it might already describe a different call.
+    # next call taking the same context. By the time a caller further up
+    # the stack could read it, the buffer might already describe a
+    # different call.
     def check!(impl, ctx, code)
       return if code == HEGEL_OK
 

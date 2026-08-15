@@ -3,12 +3,12 @@
 ## Table of Contents
 
 - [Setup](#setup)
-- [Test Structure](#test-structure) — `Hegel.test`, its block, return value, failure behavior
-- [Settings](#settings) — `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stateful_step_count:` `output:` `reproduce_failure:`
-- [TestCase Methods](#testcase-methods) — `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`
-- [Generator Reference](#generator-reference) — `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
-- [Stateful Testing](#stateful-testing) — `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
-- [Combinator Methods](#combinator-methods) — `.map`, `.filter`
+- [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
+- [Settings](#settings): `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stateful_step_count:` `output:` `reproduce_failure:`
+- [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`
+- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
+- [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
+- [Combinator Methods](#combinator-methods): `.map`, `.filter`
 - [Gotchas](#gotchas)
 
 ## Setup
@@ -69,7 +69,7 @@ result # => nil
 ```
 
 The block receives a `Hegel::TestCase` (`tc` above). Draw values from it,
-run the code under test, and signal a failure by raising — any uncaught
+run the code under test, and signal a failure by raising. Any uncaught
 exception inside the block is treated as a failing test case. Use whatever
 assertion mechanism the surrounding test framework already provides
 (RSpec's `expect`, Minitest's `assert_equal`, or a plain `raise`).
@@ -163,7 +163,7 @@ property can read or overwrite what this one stored. Left at their shared
 default (`nil`, `nil`), a run stores nothing.
 
 `phases:` and `suppress_health_check:` each take an `Array` of `Symbol`, and
-each raises `Hegel::Error` at run time for an empty one — an empty `Array`
+each raises `Hegel::Error` at run time for an empty one. An empty `Array`
 has no established meaning against libhegel, unlike dropping the keyword
 entirely:
 
@@ -223,7 +223,7 @@ Hegel.test(verbosity: :chatty) { |tc| tc.draw(integers) }
 ```
 
 `verbosity: :quiet` also silences the failure report itself, not just
-libhegel's own progress output — even when `output:` is given, nothing is
+libhegel's own progress output. Even when `output:` is given, nothing is
 written to it.
 
 ## TestCase Methods
@@ -291,8 +291,8 @@ case the same way, scoped to one generator's own draw rather than the whole
 body; `assume`/`reject` discard from anywhere in the block.
 
 `note` records a message for the eventual failure report, interleaved with
-draws in the order both were called. Pass a message directly, or a block —
-the block form is evaluated only on the one, already-shrunk replay that
+draws in the order both were called. Pass a message directly, or a block.
+The block form is evaluated only on the one, already-shrunk replay that
 produces the report, so it is the cheaper choice when building the message
 itself costs something. Passing both, or neither, raises `Hegel::Error`:
 
@@ -922,7 +922,7 @@ block: `Hegel.test { |tc| Hegel::Stateful.run(machine, tc) }` (see
 `rule(name, &block)` and `invariant(name, &block)` are class-level
 declarations. `block` runs via `instance_exec` against the machine instance
 under test, and is handed the running `Hegel::TestCase` as its one argument
-(ignored if the block takes none) — so it reads and writes the machine's own
+(ignored if the block takes none). So it reads and writes the machine's own
 instance variables directly, and calls a generator method (`integers`,
 `arrays`, and so on) bare, the same way a `Hegel.test` block's own
 surrounding class can once it includes `Hegel::Syntax::Methods`;
@@ -932,8 +932,8 @@ An invariant runs once before the first rule, and again after every rule
 application that completes without its own assumption failing.
 
 A rule or invariant reports a failure the same way any other test-case body
-does: raise. This library brings no assertion methods of its own —
-`include Minitest::Assertions` (or `RSpec::Matchers`, or plain `raise`) into
+does: raise. This library brings no assertion methods of its own. Include
+`Minitest::Assertions` (or `RSpec::Matchers`, or plain `raise`) into
 the machine class to use one. `Minitest::Assertions#assert` counts against
 an `assertions` accessor it does not define itself, so a class that includes
 it also needs to supply one, initialized to `0`:
@@ -970,19 +970,19 @@ Hegel::Stateful.run(NoRulesMachine.new, nil)
 ```
 
 A test case with more than one declared rule enables only a random subset of
-them, and picks each step from that subset — so a machine with two rules can
+them, and picks each step from that subset. So a machine with two rules can
 run a case where one of them never appears at all.
 
 Inside a rule, `tc.assume(false)` means something narrower than it does
 everywhere else in this library: it discards only that one rule application
 (the loop moves on and tries another rule), not the whole test case, unlike
-every other `assume` call — at the top of a `Hegel.test` block, or inside a
-generator's own draw.
+every other `assume` call, such as one at the top of a `Hegel.test` block,
+or inside a generator's own draw.
 
 ### A worked example
 
-`@real` below never enforces its own capacity — the bug a model capped at 2
-items is built to catch:
+`@real` below never enforces its own capacity. That is the bug a model
+capped at 2 items is built to catch:
 
 ```ruby
 class BoundedStackModel < Hegel::StateMachine
@@ -1033,15 +1033,15 @@ To reproduce this failure, pass the blob below to Hegel.test:
 ```
 
 The shrunk report names each step by its rule (`Step 1: push`), and shrinks
-the number of steps down to the minimum that still breaks the invariant —
-here, exactly 3 pushes, one past capacity.
+the number of steps down to the minimum that still breaks the invariant.
+Here, that is exactly 3 pushes, one past capacity.
 
 ### `Hegel::Stateful::Pool`
 
-A pool lets one rule's generated value be drawn again by a later rule — an
-allocator's handle, say, freed by a rule that has to name the same handle
-`alloc` produced. Build one from the running test case, typically in the
-machine's own constructor:
+A pool lets one rule's generated value be drawn again by a later rule,
+such as an allocator's handle freed by a rule that has to name the same
+handle `alloc` produced. Build one from the running test case, typically in
+the machine's own constructor:
 
 ```ruby
 pool = Hegel::Stateful::Pool.new(tc)
@@ -1070,12 +1070,12 @@ end
 Drawing from an empty pool raises `Hegel::AssumeFailed`: outside a rule, that
 discards the whole test case, the same as any other failed assumption;
 inside a rule, it discards only that rule, the same narrower meaning
-`tc.assume(false)` has there. A caller never frees a pool — the test case
+`tc.assume(false)` has there. A caller never frees a pool. The test case
 that built it owns it, and frees it once that test case is done.
 
 ## Combinator Methods
 
-Every `Hegel::Generator` — including every generator above — has `.map`
+Every `Hegel::Generator`, including every generator above, has `.map`
 and `.filter`, each returning a new `Hegel::Generator`.
 
 ### `.map(&block)`
@@ -1154,7 +1154,7 @@ result # => nil
    binding follows the same rule, matching hegel-rust's own contract.
 
 4. **`Hegel.test` returns `nil` on a pass and re-raises the failing case's
-   own exception on a failure**, class and backtrace intact — a host test
+   own exception on a failure**, class and backtrace intact. A host test
    framework (RSpec, Minitest) reports it as its own failure, not a
    Hegel-specific one.
 
@@ -1163,9 +1163,9 @@ result # => nil
    code: assertions count as failing where you wrote them, not inside
    `minitest` or `rspec-expectations` where the exception is raised. So
    two `assert_equal` failures on different lines are two bugs, and two
-   different failures reaching Hegel through one line are one bug —
-   whether that line is a ternary or the single `raise` inside a helper
-   you wrote. Split the line when two bugs need to stay apart:
+   different failures reaching Hegel through one line are one bug. That
+   holds whether the line is a ternary or the single `raise` inside a
+   helper you wrote. Split the line when two bugs need to stay apart:
 
    ```ruby
    # one bug: report_multiple_failures: true reports 1 failure
@@ -1187,11 +1187,11 @@ result # => nil
    just libhegel's own progress output. Even when `output:` is given,
    nothing is written to it on a quiet run.
 
-7. **`database:` without `database_key:` raises `Hegel::Error` immediately**
-   — `database_key:` is the setting that turns the example database on,
-   and `database:` only chooses where it writes. Left at their shared
-   default (`nil`, `nil`), a run stores nothing and leaves no `.hegel/`
-   directory behind.
+7. **`database:` without `database_key:` raises `Hegel::Error`
+   immediately.** `database_key:` is the setting that turns the example
+   database on, and `database:` only chooses where it writes. Left at
+   their shared default (`nil`, `nil`), a run stores nothing and leaves no
+   `.hegel/` directory behind.
 
 8. **`tc.target` is a silent no-op, not an error, when the `:target` phase
    is disabled.** Dropping `:target` from `phases:` (every other phase
@@ -1201,8 +1201,8 @@ result # => nil
 9. **Inside a stateful rule, `tc.assume(false)` discards only that one rule
    application, not the whole test case.** See
    [Stateful Testing](#stateful-testing). Every other `assume` call in this
-   binding — at the top of a `Hegel.test` block, or inside a generator's
-   own draw — discards the whole test case.
+   binding, such as one at the top of a `Hegel.test` block, or inside a
+   generator's own draw, discards the whole test case.
 
 10. **This binding has not been exercised on Windows or Linux yet.** It is
     developed and tested on arm64 macOS. The native calls go through the

@@ -1,4 +1,4 @@
-# 0012 — Build a failure origin from the caller's own frame
+# 0012: Build a failure origin from the caller's own frame
 
 ## Status
 
@@ -35,7 +35,7 @@ hegel-rust does not have this problem, and so offers no answer to copy: Rust's
 assertion macros expand at the call site, so a panic already carries the
 caller's own location. hegel-java does have it, and answers it in
 `Runner.originOf` by walking the stack for the first frame that is not
-infrastructure, where infrastructure is a list of class-name prefixes — its
+infrastructure, where infrastructure is a list of class-name prefixes: its
 own package, JUnit, opentest4j, and the JDK.
 
 ## Decision

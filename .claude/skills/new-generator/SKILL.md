@@ -50,8 +50,9 @@ to `lib/hegel/generators.rb`, four pieces:
    A generator that makes exactly one native call opens none, even when a
    label with its name sits in the `HEGEL_LABEL_*` table. The header calls
    those "emitted internally, like every per-draw label": the engine opens
-   them inside its own draw. `UuidsGenerator` is one such — a label exists,
-   and the generator opens no span. Presence in the table is not the test;
+   them inside its own draw. `UuidsGenerator` is one such case: a label
+   exists, and the generator opens no span. Presence in the table is not
+   the test;
    how many native calls the draw makes is.
 
    One that makes **none** opens none either. `DeferredGenerator` forwards
@@ -136,7 +137,7 @@ vacuous or fragile in specific shapes, and a vacuous test is worse than no
 test because it reads as coverage:
 
 - **A test that the result holds no duplicates proves nothing when the
-  result is a `Set` or a `Hash`'s keys** — the type forbids them however
+  result is a `Set` or a `Hash`'s keys.** The type forbids them however
   the generator behaves. Assert reachability instead: draw from a narrow
   but feasible domain with `min_size == max_size` and assert the result
   reaches that size. Deleting the reject branch then fails the test.
@@ -144,12 +145,13 @@ test because it reads as coverage:
   `#inspect` varies across the supported Rubies.** `Set[0]` on Ruby 4.0 is
   `#<Set: {0}>` on 3.3 and 3.4, and CI runs all three. Assert on a message
   the test itself built.
-- **A round trip cannot check a byte convention.** Where a draw needs a
-  Ruby-side encode/decode pair — `generate_integer_big` takes and returns
-  two's-complement little-endian — `decode(encode(n)) == n` passes just as
-  happily if both halves are big-endian. Pin the convention with a
-  degenerate draw against the real engine, `min == max` at a value only the
-  right byte order reproduces, and keep the round trip for the arithmetic.
+- **A round trip cannot check a byte convention.** A draw that needs a
+  Ruby-side encode/decode pair is one example: `generate_integer_big` takes
+  and returns two's-complement little-endian. There, `decode(encode(n)) ==
+  n` passes just as happily if both halves are big-endian. Pin the
+  convention with a degenerate draw against the real engine, `min == max`
+  at a value only the right byte order reproduces, and keep the round trip
+  for the arithmetic.
 - **To see an engine's argument-validation error, drive a real run.** A
   draw call checks its test-case handle before anything else, so a bare
   context with no live test case answers `HEGEL_E_INVALID_HANDLE` whatever
@@ -159,7 +161,7 @@ test because it reads as coverage:
   layout, so nothing here can drift from a hand-computed offset; what can
   still be wrong is the field list itself, transcribed from `hegel.h` by
   hand. A `min == max` draw catches that. Give it `13:45:06.123456`, not
-  `00:00:00` or `23:59:59` — a boundary value is symmetric under swapping
+  `00:00:00` or `23:59:59`. A boundary value is symmetric under swapping
   minute and second, so a transcription that transposes them would pass.
 - **A stdlib type does not resolve in `sig/hegel.rbs`.** The completion
   check is bare `rbs -I sig validate` with no `-r`, so `Date` and `IPAddr`

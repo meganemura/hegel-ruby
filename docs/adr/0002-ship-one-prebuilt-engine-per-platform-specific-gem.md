@@ -1,4 +1,4 @@
-# 0002 — Ship one prebuilt engine per platform-specific gem
+# 0002: Ship one prebuilt engine per platform-specific gem
 
 ## Status
 

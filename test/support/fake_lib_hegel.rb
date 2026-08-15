@@ -12,7 +12,7 @@ module Hegel
     # Every value an implementation hands back (the version string, the
     # context's last-error message, and the result code #version reports)
     # is a plain accessor here, so a test can set exactly the condition it
-    # wants to exercise — most usefully, an error code that drives
+    # wants to exercise. The most useful case is an error code that drives
     # LibHegel.check! down a path the real engine would rarely take.
     class Fake
       # The handle #run_result_failure hands back. Bundles the origin and

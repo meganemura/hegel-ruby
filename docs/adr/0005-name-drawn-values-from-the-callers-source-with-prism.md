@@ -1,4 +1,4 @@
-# 0005 — Name drawn values from the caller's source with Prism
+# 0005: Name drawn values from the caller's source with Prism
 
 ## Status
 

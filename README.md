@@ -37,11 +37,11 @@ names the values it drew, and re-raises your own exception.
 
 Work ran in three stages, and all three are done:
 
-1. **The walking skeleton** — the libhegel binding, the run loop, and failure
+1. **The walking skeleton**: the libhegel binding, the run loop, and failure
    reports.
-2. **The full generator set** — twenty-five generators, composing through
+2. **The full generator set**: twenty-five generators, composing through
    `map` and `filter`.
-3. **The advanced features** — the example database, targeted testing,
+3. **The advanced features**: the example database, targeted testing,
    stateful testing, phases, and health checks.
 
 **The gem is not installable yet.** A released gem is meant to carry a
@@ -67,7 +67,7 @@ The test suite runs on arm64 macOS. It has not been run on Linux or Windows.
 | Binding | the `ffi` gem, which publishes a prebuilt binary for every platform above |
 | Ruby | 3.3, 3.4, and 4.0 |
 | Platforms | Linux amd64/arm64, macOS arm64, Windows amd64/arm64 |
-| Engine delivery | One prebuilt `libhegel` per platform-specific gem — decided, not built yet |
+| Engine delivery | One prebuilt `libhegel` per platform-specific gem: decided, not built yet |
 
 `HEGEL_LIBHEGEL_PATH` will override the bundled engine with a local build.
 
@@ -202,9 +202,9 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 
 `tc.assume` inside a rule rejects that rule and lets Hegel choose another,
 rather than throwing the whole test case away. For a rule that has to act on
-something an earlier rule produced — freeing a handle that some `alloc`
-actually returned — put the value in a `Hegel::Stateful::Pool` and draw it
-back out.
+something an earlier rule produced, such as freeing a handle that some
+`alloc` actually returned, put the value in a `Hegel::Stateful::Pool` and
+draw it back out.
 
 ### Shaping a run
 

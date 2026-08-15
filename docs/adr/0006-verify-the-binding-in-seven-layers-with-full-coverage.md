@@ -1,4 +1,4 @@
-# 0006 — Verify the binding in seven layers, with full coverage
+# 0006: Verify the binding in seven layers, with full coverage
 
 ## Status
 

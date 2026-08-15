@@ -22,10 +22,11 @@ module Hegel
     # falls under this directory. It is lib/, one above runner.rb's own
     # __dir__, so that hegel.rb and hegeltest.rb count too: Hegel.test lives
     # in hegel.rb, and its frame sits below every frame a property body
-    # raises through. A property defined inside some other gem — a shared
-    # test-helper gem calling Hegel.test on its caller's behalf — would
-    # otherwise leave hegel.rb as the first frame belonging to nobody, and
-    # name this library as the origin of the caller's own bug.
+    # raises through. A property can be defined inside some other gem, such
+    # as a shared test-helper gem calling Hegel.test on its caller's
+    # behalf. That would otherwise leave hegel.rb as the first frame
+    # belonging to nobody, and name this library as the origin of the
+    # caller's own bug.
     #
     # A trailing separator makes the prefix match a directory boundary
     # rather than a string prefix, so a sibling directory that merely
@@ -309,8 +310,8 @@ module Hegel
     # at "the draw that overruns", so the body raises Hegel::StopTest and
     # #classify turns it into OVERRUN. Re-raising either as its original
     # class would leak a control exception meant only for code driving a
-    # test case into the host test framework — exactly what this
-    # classify-then-check step exists to prevent.
+    # test case into the host test framework. This classify-then-check
+    # step exists to prevent exactly that.
     def replay_failure(impl, ctx, settings, failure, index, stats, &block)
       blob = impl.failure_reproduction_blob(ctx, failure)
       raise Hegel::Error, "hegel: failure #{index} has no reproduction blob" if blob.nil?

@@ -1,4 +1,4 @@
-# 0009 — Turn the example database on with a key
+# 0009: Turn the example database on with a key
 
 ## Status
 
@@ -15,7 +15,8 @@ replays, and the engine turns the whole feature off by itself under CI.
 
 Until now every `Hegel.test` call passed `""`, because a run that left the
 default in place looked like it would write into a contributor's working
-copy and nowhere else — the hardest version of that mistake to notice.
+copy and nowhere else. That is the hardest version of that mistake to
+notice.
 
 Measurement against 0.32.5 shows the hazard is narrower than that. A run
 with the path left at its default and **no key set** wrote nothing at all:
@@ -35,7 +36,7 @@ there, and the measurement above is what supplies it.
 The two implementations that ship this feature both leave the path at the
 engine default and get a key from a name they already have: hegel-go passes
 Go's own `t.Name()`, and hegel-java passes the `name` its `Settings` carries.
-`Hegel.test` has no such name — it is a bare method call, not a named test —
+`Hegel.test` has no such name. It is a bare method call, not a named test,
 so Ruby has nothing to key a run by unless the caller supplies one.
 
 ## Decision
@@ -76,9 +77,9 @@ Hegel.test(database_key: "sorting is idempotent") { |tc| ... }
 
 That is more typing than hegel-go or hegel-java need, and the difference is
 the name those two already have. A future integration that knows the
-enclosing test's name — a Minitest or RSpec adapter — can supply the key from
-it and close the gap; nothing here forecloses that, because the keyword takes
-any String.
+enclosing test's name, such as a Minitest or RSpec adapter, can supply the
+key from it and close the gap. Nothing here forecloses that, because the
+keyword takes any String.
 
 Keying by hand also means two properties can collide by being given the same
 key, which a name derived from a test could not do. The header describes the

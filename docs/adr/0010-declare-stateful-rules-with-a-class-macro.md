@@ -1,4 +1,4 @@
-# 0010 — Declare stateful rules with a class macro
+# 0010: Declare stateful rules with a class macro
 
 ## Status
 
@@ -93,7 +93,8 @@ machine.
 
 The typo that prefix discovery swallows now raises: `rule :psuh` registers a
 rule named `psuh`, the engine picks it, and calling it fails on whatever the
-block does — visible either way, where a missing `rule_` prefix is not.
+block does. That failure is visible either way. A missing `rule_` prefix, by
+contrast, stays silent under prefix discovery.
 
 The machine still has to reach its framework's assertions itself, with
 `include Minitest::Assertions` or the RSpec equivalent, and that boilerplate
@@ -102,8 +103,9 @@ test framework as a dependency, and guessing which one is loaded would make
 the base class behave differently depending on load order. A rule can also
 just `raise`, which needs nothing, and the examples here do.
 
-Rules registered on a class rather than found on an instance means a machine
-built some other way — rules assembled at run time, or a machine that is not
-a class — has no supported path. Nothing here forecloses adding one; the
-engine only ever receives a list of names and a way to invoke each, which a
-later record can decide how else to supply.
+Rules registered on a class, rather than found on an instance, means a
+machine built some other way has no supported path. That other way could
+be rules assembled at run time, or a machine that is not a class. Nothing
+here forecloses adding one; the engine only ever receives a list of names
+and a way to invoke each, which a later record can decide how else to
+supply.

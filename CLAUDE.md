@@ -58,13 +58,13 @@ single line. Keep it that way, so the two entry points cannot drift.
 
 ## Layout
 
-- `lib/hegel.rb` — the entry point, and the namespace root
-- `lib/hegeltest.rb` — a shim that requires `hegel.rb`, so that Bundler's
+- `lib/hegel.rb`: the entry point, and the namespace root
+- `lib/hegeltest.rb`: a shim that requires `hegel.rb`, so that Bundler's
   automatic require works for a gem named `hegeltest`
-- `lib/hegel/` — the library
-- `sig/` — RBS signatures
-- `test/` — Minitest suite
-- `docs/` — architecture and decision records
+- `lib/hegel/`: the library
+- `sig/`: RBS signatures
+- `test/`: Minitest suite
+- `docs/`: architecture and decision records
 
 ## Architecture
 
@@ -107,16 +107,16 @@ panics alone; it is a Ruby-only hazard.
 takes VALID when the body returned, INVALID when a precondition rejected the
 case, OVERRUN when the engine ran out of choices, and INTERESTING when the
 body raised anything else. There is no separate "the test itself broke"
-outcome: every non-control exception is a counterexample. A run-level error —
-a failed health check, a nondeterministic body — is the engine's own verdict,
-read from `hegel_run_result_status` afterwards.
+outcome: every non-control exception is a counterexample. A run-level error,
+such as a failed health check or a nondeterministic body, is the engine's own
+verdict, read from `hegel_run_result_status` afterwards.
 
 **An origin string groups failures, so it must be stable.** `mark_complete`
 takes one alongside INTERESTING. The ABI documentation is explicit: "Two
 failures with identical origins are the same bug and get shrunk together. Each
 new origin is a new bug." Build it from the first backtrace frame that is the
-caller's own — skipping this library, installed gems, and the standard library
-— so that an assertion counts as failing where the caller wrote it rather than
+caller's own. Skip this library, installed gems, and the standard library, so
+that an assertion counts as failing where the caller wrote it rather than
 inside the framework that raised. See
 [ADR 0012](docs/adr/0012-build-a-failure-origin-from-the-callers-own-frame.md).
 
@@ -125,9 +125,9 @@ runs.** Shrinking draws more cases on top of it. Measured against libhegel
 0.32.5, a run configured for 20 test cases whose body always failed on a drawn
 integer yielded 1003 cases; the same run failing conditionally yielded 109.
 Two things follow. Drive the loop until `hegel_next_test_case` hands back
-nothing, never by counting. And keep per-case work cheap: anything expensive
-enough to notice — reading source to name a drawn value, formatting a
-backtrace — belongs in the single final replay rather than in every shrink
+nothing, never by counting. And keep per-case work cheap. Anything expensive
+enough to notice, such as reading source to name a drawn value or formatting
+a backtrace, belongs in the single final replay rather than in every shrink
 probe. hegel-rust reaches the same conclusion from the other side, calling
 backtrace capture "the dominant cost of failing-heavy property runs".
 
@@ -156,8 +156,8 @@ descriptive substring." Treat a change to one as a change to the interface.
 **A run without a `database_key` disables the example database explicitly.**
 `hegel_settings_set_database_key` is the switch; `hegel_settings_set_database`
 only chooses a directory, defaulting to `./.hegel/examples/`. Measured against
-0.32.5, a run with no key wrote nothing even with that default path in place —
-but that is a measurement, not a promise the header makes, and being wrong
+0.32.5, a run with no key wrote nothing even with that default path in place.
+That is a measurement, not a promise the header makes, and being wrong
 about it puts a directory in a contributor's working copy and nowhere else,
 which is the hardest version of this to notice. So an unkeyed run passes `""`.
 See [ADR 0009](docs/adr/0009-turn-the-example-database-on-with-a-key.md).
@@ -194,7 +194,7 @@ test set for each new generator.
 ### Testing against the real engine
 
 See the `real-engine-tests` skill. It collects what the engine does to a test
-regardless of what is drawn — why a case that discards without drawing ends
+regardless of what is drawn: why a case that discards without drawing ends
 the run, why counting iterations is wrong, and which mistakes make a test pass
 for a reason nobody intended.
 
@@ -205,23 +205,23 @@ for a reason nobody intended.
 answers there: what a call does, what an error code means, who owns what, what
 a span changes, how a value shrinks, what a generator option constrains.
 
-- `hegel-c/include/hegel.h` — the ABI
-- `src/ffi.rs` — the safe wrappers the ABI is meant to get, one per handle
-- `src/run_lifecycle.rs` — the per-test-case lifecycle
-- `tests/` — the behaviour a binding must reproduce, including
+- `hegel-c/include/hegel.h`: the ABI
+- `src/ffi.rs`: the safe wrappers the ABI is meant to get, one per handle
+- `src/run_lifecycle.rs`: the per-test-case lifecycle
+- `tests/`: the behaviour a binding must reproduce, including
   `tests/test_shrink_quality/`
-- `.agents/skills/` — that project's own procedures
+- `.agents/skills/`: that project's own procedures
 
 **The other implementations show how to do this in a language like Ruby.** They
 bind the same engine under constraints Rust does not have.
 
-- **hegel-java** — the closest match on mechanism. Its foreign-function binding
+- **hegel-java**: the closest match on mechanism. Its foreign-function binding
   occupies the same position as `ffi` does here, it manages native handles
   under a garbage collector, and JUnit 5 sits where RSpec and Minitest sit.
-- **hegel-typescript** — ships one prebuilt engine per platform-specific
+- **hegel-typescript**: ships one prebuilt engine per platform-specific
   package, which is the model this gem follows.
-- **hegel-go** — how a repository vendors prebuilt engines.
-- **hegel-cpp** — a short, direct reading of the C ABI.
+- **hegel-go**: how a repository vendors prebuilt engines.
+- **hegel-cpp**: a short, direct reading of the C ABI.
 
 When a mechanism reference and hegel-rust disagree about meaning, hegel-rust
 wins.

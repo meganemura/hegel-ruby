@@ -13,10 +13,10 @@ what is being drawn.
 
 ## The run stops early if a case has nothing to vary
 
-A test case that discards — `tc.assume(false)`, `tc.reject` — **having drawn
-nothing** carries no choices for the engine to vary, so the run is fully
-determined after that one trial and reports PASSED. It does not pull
-another case.
+A test case that discards, such as with `tc.assume(false)` or `tc.reject`,
+**having drawn nothing** carries no choices for the engine to vary, so the
+run is fully determined after that one trial and reports PASSED. It does
+not pull another case.
 
 Draw something before discarding, or the test asserts nothing:
 
@@ -58,8 +58,8 @@ for the run it inspects.
 ## Read `hegel_run_result` before `hegel_run_free`
 
 Reading it afterwards does not raise. It reports PASSED with zero
-failures — a wrong answer that looks like a real one, in a test whose
-assertions then pass for the wrong reason.
+failures. That is a wrong answer that looks like a real one, in a test
+whose assertions then pass for the wrong reason.
 
 ## Point the database at a tmpdir, never `Dir.chdir`
 
@@ -76,8 +76,8 @@ The suite must leave no `.hegel` anywhere. Check with
 Comparing "with the feature" against "without it" and asserting the first
 wins is a flaky test wearing a measurement's clothes. Targeting was
 measured this way over ten repetitions per arm: mean first-failure index
-40.4 with `hegel_target`, 40.0 without — no difference, on a property
-where targeting should have helped.
+40.4 with `hegel_target`, 40.0 without. That is no difference, on a
+property where targeting should have helped.
 
 Assert a deterministic endpoint instead, the way hegel-rust's
 `tests/test_targeting.rs` does: draw two integers in `0..1000`, target
@@ -100,8 +100,8 @@ internally, rather than two rules where one is the interesting one.
 `Hegel::Runner::GenerationStats` counts a case as discarded only when
 `Hegel::AssumeFailed` reaches `Hegel::Runner.classify`. So asserting the
 report says `(0 discarded)`, in a body whose only `assume`/`reject` calls
-are nested somewhere that is supposed to handle them itself — inside a
-stateful rule, say — proves none of them escaped.
+are nested somewhere that is supposed to handle them itself, such as
+inside a stateful rule, proves none of them escaped.
 
 That assertion holds structurally, not on average, which makes it worth
 reaching for whenever the question is "did this control exception get
@@ -111,4 +111,4 @@ caught at the right level".
 
 A misplaced span does not fail an assertion on the drawn value. It shows
 up as a counterexample larger than the minimal one. Assert on the shrunk
-value — see the `new-generator` skill's composition test.
+value. See the `new-generator` skill's composition test.

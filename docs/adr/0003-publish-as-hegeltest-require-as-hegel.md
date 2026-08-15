@@ -1,4 +1,4 @@
-# 0003 — Publish as hegeltest, require as hegel
+# 0003: Publish as hegeltest, require as hegel
 
 ## Status
 

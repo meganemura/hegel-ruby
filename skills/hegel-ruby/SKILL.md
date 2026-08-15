@@ -4,9 +4,9 @@ description: >
   Write property-based tests using Hegel in Ruby projects, with RSpec,
   Minitest, or any other test runner. Use this skill whenever the user asks
   to write tests, add test coverage, or improve testing for Ruby functions,
-  modules, or classes — especially when the code has properties like
-  round-trips, invariants, or contracts that hold across many inputs. Also
-  triggers on: "property-based tests", "PBT", "hegel", "generative tests",
+  modules, or classes. It applies especially when the code has properties
+  like round-trips, invariants, or contracts that hold across many inputs.
+  Also triggers on: "property-based tests", "PBT", "hegel", "generative tests",
   "randomized testing", "test with random inputs", "shrinking", or when
   existing tests use rantly, prop_check, rubycheck, pbt, or propr.
 ---

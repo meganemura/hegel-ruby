@@ -1,4 +1,4 @@
-# 0007 — Ship a thin Ruby skill, shaped for donation
+# 0007: Ship a thin Ruby skill, shaped for donation
 
 ## Status
 
@@ -15,7 +15,7 @@ corresponding reference from `references/<language>/reference.md`".
 
 That directory holds one subdirectory per language, and the front matter names
 the set: Rust, Go, C++, TypeScript, Java, and OCaml. Each language contributes
-two files. `reference.md` documents that language's API — setup, test
+two files. `reference.md` documents that language's API: setup, test
 structure, settings, `TestCase` methods, every generator, the combinator
 methods, composite generators, and gotchas. `porting.md` maps another
 property-testing library onto Hegel; the TypeScript one covers fast-check,

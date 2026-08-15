@@ -18,9 +18,10 @@ recorded, and prints a blob that `Hegel.test(reproduce_failure:)` replays.
 The generator layer covers twenty-five generators composing through `map`
 and `filter`, reachable bare through `Hegel::Syntax::Methods`. A test case
 can discard itself with `tc.assume` or `tc.reject`. A run can be shaped by
-`phases:`, `suppress_health_check:`, `report_multiple_failures:`, and — as
-[ADR 0009](adr/0009-turn-the-example-database-on-with-a-key.md) decides —
-the example database, through `database_key:` and `database:`.
+`phases:`, `suppress_health_check:`, `report_multiple_failures:`, and the
+example database, through `database_key:` and `database:`.
+[ADR 0009](adr/0009-turn-the-example-database-on-with-a-key.md) decides the
+database keywords.
 
 `tc.target` records an observation for the engine to search toward, and
 `Hegel::Stateful.run` drives a `Hegel::StateMachine`'s rules and invariants,
@@ -144,8 +145,8 @@ bound values.
 Each struct is declared as an `FFI::Struct` and passed with `.by_value`, so
 libffi classifies the argument from the same C-ABI rules the compiled
 library was built against. Nothing here computes a field offset or a size,
-and nothing here decides how a given ABI passes a struct of a given width —
-which matters most for the sixteen-byte `hegel_datetime_t`, where arm64 and
+and nothing here decides how a given ABI passes a struct of a given width.
+That matters most for the sixteen-byte `hegel_datetime_t`, where arm64 and
 System V use two registers and Win64 passes by reference.
 
 The layout is still worth a test, but a different one: the declaration is

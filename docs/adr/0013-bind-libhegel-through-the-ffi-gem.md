@@ -1,4 +1,4 @@
-# 0013 — Bind libhegel through the ffi gem
+# 0013: Bind libhegel through the ffi gem
 
 ## Status
 
@@ -11,9 +11,9 @@ scheduled for the end of milestone C.
 
 ADR 0001 chose Fiddle over the `ffi` gem, on two grounds: Fiddle ships with
 Ruby, so it adds no third-party runtime dependency, and neither one needs a
-compiler at install time. ADR 0008 then recorded three things building against
-Fiddle had since shown — no struct-by-value argument, an unexercised
-`Fiddle::Closure`, and no JRuby or TruffleRuby — and scheduled a measurement
+compiler at install time. ADR 0008 then recorded three things that building
+against Fiddle had since shown: no struct-by-value argument, an unexercised
+`Fiddle::Closure`, and no JRuby or TruffleRuby. It scheduled a measurement
 rather than deciding on them, because none of those is about speed, and speed
 is what a property-based testing library spends.
 
@@ -43,10 +43,10 @@ to 2.9x on whole-run wall clock is that.
 Two of ADR 0008's three non-speed items settled the same way. `FFI::Struct`
 with `.by_value` expresses `hegel_date_t`, `hegel_time_t`, and
 `hegel_datetime_t` directly, and a degenerate draw with every field distinct
-round-tripped exactly for all three — where the Fiddle binding packs those
-structs into integer registers by hand, and its sixteen-byte case has stayed
-unverified on Win64, since that ABI passes anything over eight bytes by
-reference. An `FFI::Function` connected to `hegel_run_start`'s output
+round-tripped exactly for all three. The Fiddle binding, by contrast, packs
+those structs into integer registers by hand, and its sixteen-byte case has
+stayed unverified on Win64, since that ABI passes anything over eight bytes
+by reference. An `FFI::Function` connected to `hegel_run_start`'s output
 callback, the run completed, and six lines of engine output arrived in Ruby;
 the Fiddle binding passes NULL there and has never exercised
 `Fiddle::Closure`.
@@ -57,7 +57,7 @@ packaging rather than something this project has run.
 
 Against all of that, `ffi` is a third-party runtime dependency. Two facts
 narrow the gap ADR 0001 saw. Fiddle became a bundled gem rather than a default
-one, so `hegeltest.gemspec` already declares `fiddle` as a dependency — the
+one, so `hegeltest.gemspec` already declares `fiddle` as a dependency. The
 change is which binding gem is declared, not whether one is. And `ffi` 1.17.4
 publishes precompiled binary gems for every platform this gem targets:
 `x86_64-linux-gnu`, `aarch64-linux-gnu`, both `-musl` variants, `arm64-darwin`,
@@ -90,7 +90,7 @@ divergence to confirm, because libffi classifies the argument.
 The `Fiddle::Closure` open question closes too, by no longer being about
 anything: nothing in this library uses Fiddle. Wiring the engine's output
 callback is now possible rather than merely plausible, though this record does
-not wire it — output stays on stderr until something asks for it.
+not wire it. Output stays on stderr until something asks for it.
 
 `ffi` reaches JRuby and TruffleRuby where Fiddle did not. That widening is
 untested here, and naming it in a release note before someone has run the
