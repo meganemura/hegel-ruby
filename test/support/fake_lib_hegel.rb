@@ -110,7 +110,8 @@ module Hegel
       # setter at all). #settings_seed_calls holds [seed, has_seed] pairs,
       # matching hegel_settings_set_seed's two value arguments.
       attr_reader :settings_test_cases_calls, :settings_verbosity_calls, :settings_seed_calls,
-        :settings_derandomize_calls, :settings_database_calls
+        :settings_derandomize_calls, :settings_database_calls, :settings_database_key_calls,
+        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls
 
       def initialize
         @version = Hegel::LIBHEGEL_VERSION
@@ -131,6 +132,10 @@ module Hegel
         @settings_seed_calls = []
         @settings_derandomize_calls = []
         @settings_database_calls = []
+        @settings_database_key_calls = []
+        @settings_phases_calls = []
+        @settings_suppress_health_check_calls = []
+        @settings_report_multiple_failures_calls = []
 
         @run_start_code = HEGEL_OK
         @run_start_returns_nil = false
@@ -508,22 +513,26 @@ module Hegel
         @generate_datetime_value
       end
 
-      def settings_set_phases(ctx, _s, _phases)
+      def settings_set_phases(ctx, _s, phases)
+        @settings_phases_calls << phases
         LibHegel.check!(self, ctx, @settings_set_phases_code)
         nil
       end
 
-      def settings_set_suppress_health_check(ctx, _s, _checks)
+      def settings_set_suppress_health_check(ctx, _s, checks)
+        @settings_suppress_health_check_calls << checks
         LibHegel.check!(self, ctx, @settings_set_suppress_health_check_code)
         nil
       end
 
-      def settings_set_report_multiple_failures(ctx, _s, _yes)
+      def settings_set_report_multiple_failures(ctx, _s, yes)
+        @settings_report_multiple_failures_calls << yes
         LibHegel.check!(self, ctx, @settings_set_report_multiple_failures_code)
         nil
       end
 
-      def settings_set_database_key(ctx, _s, _key)
+      def settings_set_database_key(ctx, _s, key)
+        @settings_database_key_calls << key
         LibHegel.check!(self, ctx, @settings_set_database_key_code)
         nil
       end

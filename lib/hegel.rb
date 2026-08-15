@@ -26,12 +26,31 @@ module Hegel
   # assertion failure rather than as a Hegel-specific one. Raises
   # Hegel::Error for a run-level failure instead of a property failure.
   #
-  # +test_cases+, +seed+, +derandomize+, and +verbosity+ all default to nil,
-  # which means the same thing for each of them: do not call the matching
-  # libhegel setter, and let the engine's own default apply instead. See
-  # Hegel::Settings for the keyword-to-setter mapping and the verbosity
-  # Symbols it accepts. +verbosity: :quiet+ also silences the failure report
+  # +test_cases+, +seed+, +derandomize+, +verbosity+, +phases+, and
+  # +suppress_health_check+ all default to nil, which means the same thing
+  # for each of them: do not call the matching libhegel setter, and let the
+  # engine's own default apply instead. See Hegel::Settings for the
+  # keyword-to-setter mapping, the verbosity Symbols it accepts, and the
+  # +phases+/+suppress_health_check+ Symbols each of those two accepts (as
+  # an Array; an empty Array raises Hegel::Error rather than silently
+  # meaning "none"). +verbosity: :quiet+ also silences the failure report
   # itself, not just libhegel's own progress output.
+  #
+  # +database+ and +database_key+ opt a run into libhegel's example
+  # database: +database_key+ is the switch, +database+ only means something
+  # alongside it. Left at their shared default (nil, nil), a run stores
+  # nothing, matching every Hegel.test call before these two keywords
+  # existed. Given a String, +database_key+ scopes what a run stores and
+  # replays -- make it unique to the property, since two properties sharing
+  # a key share one replay scope. +database+ then chooses the directory
+  # (libhegel's own default, ./.hegel/examples/ outside CI, if left nil
+  # alongside a key). Passing +database+ without +database_key+ raises
+  # Hegel::Error. See docs/adr/0009 for the decision and the measurements
+  # behind it.
+  #
+  # +report_multiple_failures+ defaults to false, not nil, unlike every
+  # keyword above: see Hegel::Runner.run's own comment for why departing
+  # from libhegel's own default (true) is itself the decision here.
   #
   # +output+ (default $stderr) is where a failure report is written; a
   # caller passes its own IO to capture that report instead (tests do).
@@ -45,10 +64,13 @@ module Hegel
   # real engine. Ordinary callers never pass it. Its default expression
   # (#default_impl) only runs when +impl+ is not given, so a test that does
   # pass one never opens the native library at all.
-  def test(test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, output: $stderr, reproduce_failure: nil,
-    impl: default_impl, &block)
+  def test(test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
+    phases: nil, suppress_health_check: nil, report_multiple_failures: false, output: $stderr,
+    reproduce_failure: nil, impl: default_impl, &block)
     Runner.run(impl: impl, test_cases: test_cases, seed: seed, derandomize: derandomize, verbosity: verbosity,
-      output: output, reproduce_failure: reproduce_failure, &block)
+      database: database, database_key: database_key, phases: phases, suppress_health_check: suppress_health_check,
+      report_multiple_failures: report_multiple_failures, output: output, reproduce_failure: reproduce_failure,
+      &block)
   end
 
   # The Hegel::LibHegel::Real instance #test uses by default, built once and

@@ -13,14 +13,18 @@ over Fiddle and a fake for tests), the settings mapping, `Hegel::TestCase`
 with the engine's integer and boolean draws, and the run loop.
 
 What exists beyond that: the failure report, which names drawn values by
-reading the caller's own source, and prints a blob that
-`Hegel.test(reproduce_failure:)` replays. The generator layer covers
-`booleans`, `integers`, `floats`, `text`, and `arrays`, composing through
-`map` and `filter`, reachable bare through `Hegel::Syntax::Methods`.
+reading the caller's own source, interleaves them with whatever `tc.note`
+recorded, and prints a blob that `Hegel.test(reproduce_failure:)` replays.
+The generator layer covers twenty-five generators composing through `map`
+and `filter`, reachable bare through `Hegel::Syntax::Methods`. A test case
+can discard itself with `tc.assume` or `tc.reject`. A run can be shaped by
+`phases:`, `suppress_health_check:`, `report_multiple_failures:`, and — as
+[ADR 0009](adr/0009-turn-the-example-database-on-with-a-key.md) decides —
+the example database, through `database_key:` and `database:`.
 
-What does not exist yet: the rest of the generator library, and the
-example database, targeted testing, and stateful testing. Each section
-below says so wherever a boundary is planned rather than built.
+What does not exist yet: targeted testing and stateful testing, whose ABI
+calls are bound but which have no Ruby surface. Each section below says so
+wherever a boundary is planned rather than built.
 
 ## Where meaning comes from
 

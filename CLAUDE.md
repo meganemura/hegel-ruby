@@ -150,13 +150,20 @@ the same thing in Ruby as it does everywhere else.
 messages are part of the public API: tests assert against them. Pick a stable,
 descriptive substring." Treat a change to one as a change to the interface.
 
-**Every run disables the example database explicitly, until the database is a
-feature this library supports.** `hegel_settings_new` defaults it to
-`./.hegel/examples/` and creates that directory on use. The engine turns it off
-by itself under CI, so a run that leaves the default in place would write into
-a contributor's working copy and nowhere else, which is the hardest version of
-this to notice. Pass an empty string to `hegel_settings_set_database` to
-disable it. Milestone C decides what the supported behaviour is.
+**A run without a `database_key` disables the example database explicitly.**
+`hegel_settings_set_database_key` is the switch; `hegel_settings_set_database`
+only chooses a directory, defaulting to `./.hegel/examples/`. Measured against
+0.32.5, a run with no key wrote nothing even with that default path in place —
+but that is a measurement, not a promise the header makes, and being wrong
+about it puts a directory in a contributor's working copy and nowhere else,
+which is the hardest version of this to notice. So an unkeyed run passes `""`.
+See [ADR 0009](docs/adr/0009-turn-the-example-database-on-with-a-key.md).
+
+**A test that opens a real run either leaves the database off or points it at
+a temporary directory.** The suite must leave no `.hegel` behind, and
+`Dir.mktmpdir` with an absolute path in `database:` gets there without
+`Dir.chdir`, which a test cannot do without changing what every other test
+sees.
 
 **The engine is single-threaded.** A context, a run, and a test case each
 belong to one thread at a time.

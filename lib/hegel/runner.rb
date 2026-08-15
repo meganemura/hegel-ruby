@@ -66,11 +66,29 @@ module Hegel
     module_function
 
     # Runs +block+ as a Hegel property against +impl+, applying +test_cases+,
-    # +seed+, +derandomize+, and +verbosity+ (see Hegel::Settings) to a fresh
-    # settings handle first. Returns nil on a passing run, re-raises the
-    # exception the smallest failing case's body raised on a failing run, and
-    # raises Hegel::Error for a run-level failure (ERROR status, or a replay
-    # that could not reproduce the recorded failure).
+    # +seed+, +derandomize+, +verbosity+, +database+, +database_key+,
+    # +phases+, +suppress_health_check+, and +report_multiple_failures+ (see
+    # Hegel::Settings) to a fresh settings handle first. Returns nil on a
+    # passing run, re-raises the exception the smallest failing case's body
+    # raised on a failing run, and raises Hegel::Error for a run-level
+    # failure (ERROR status, a replay that could not reproduce the recorded
+    # failure, or more than one distinct failure -- see #replay).
+    #
+    # +database+ and +database_key+ follow the table
+    # Hegel::Settings.apply_database documents; docs/adr/0009 has the
+    # decision and the measurements behind it.
+    #
+    # +report_multiple_failures+ defaults to false, not nil: hegel-c/src/
+    # settings.rs itself defaults to true, but hegel-rust's own Rust API
+    # (src/runner.rs) and hegel-java both default to false, and hegel-java
+    # states the reason -- re-raising one failure's own exception, unaltered,
+    # is far kinder to a debugger and a stack trace than a summary would be.
+    # That is this library's own central promise (#classify re-raises a
+    # body's exception with its class and backtrace intact), so the same
+    # reason applies here, and choosing to depart from the engine's own
+    # default is itself a decision worth stating explicitly with `false`
+    # rather than leaving it to a nil a reader could mistake for "no
+    # opinion".
     #
     # +reproduce_failure+, when given, wins over everything above except
     # +verbosity+: it skips the run loop entirely and replays a single case
@@ -91,18 +109,16 @@ module Hegel
     # failing run's replay calls hegel_test_case_from_blob against this same
     # settings handle, so it must outlive the FAILED-status replay below, not
     # just the loop above it.
-    def run(impl:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, output: $stderr,
+    def run(impl:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
+      phases: nil, suppress_health_check: nil, report_multiple_failures: false, output: $stderr,
       reproduce_failure: nil, &block)
       quiet = verbosity == :quiet
       LibHegel.with_context(impl) do |ctx|
         settings = impl.settings_new(ctx)
         begin
           Settings.apply(impl, ctx, settings, test_cases: test_cases, seed: seed, derandomize: derandomize,
-            verbosity: verbosity)
-          # Mandatory, not a keyword: hegel_settings_new defaults to writing
-          # ./.hegel/examples/ on use, and this library does not support the
-          # database yet (see CLAUDE.md). An empty string disables it.
-          impl.settings_set_database(ctx, settings, "")
+            verbosity: verbosity, database: database, database_key: database_key, phases: phases,
+            suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures)
 
           if reproduce_failure
             reproduce(impl, ctx, settings, reproduce_failure, quiet: quiet, output: output, &block)
@@ -193,15 +209,22 @@ module Hegel
     # Replays every recorded failure by running +block+ again against a test
     # case rebuilt from its reproduction blob, in the same way #run_case
     # classifies and completes a live one. Writes the report for every
-    # failure it collected to +output+ (unless +quiet+), then raises the
-    # last replay's kept exception unconditionally, with no nil guard:
+    # failure it collected to +output+ (unless +quiet+), then raises: one
+    # failure re-raises its own kept exception, unaltered; two or more raise
+    # Hegel::Error with #multiple_failures_message instead, since no single
+    # one of several kept exceptions is more the run's own verdict than
+    # another. hegel-rust's own src/run_lifecycle.rs (the
+    # HEGEL_RUN_STATUS_FAILED branch) makes the same choice: one panic
+    # re-raised as itself, several replaced by one panic carrying just the
+    # count.
+    #
     # #finish only reaches here on a FAILED run, and a FAILED run this
     # binding has actually seen always carries at least one failure to
-    # iterate below, so a guard would add a branch no test could reach
-    # without contriving a run this binding has never observed. The report
-    # is written before that raise, not after: a host framework that
-    # catches the re-raised exception would otherwise read its own output
-    # before this one, out of order.
+    # iterate below, so neither raise needs a zero-failures guard: that
+    # branch would need a run this binding has never observed to reach it.
+    # The report is written before either raise, not after: a host
+    # framework that catches the re-raised exception would otherwise read
+    # its own output before this one, out of order.
     def replay(impl, ctx, settings, result, stats, quiet:, output:, &block)
       kept_exception = nil
       failures = []
@@ -215,6 +238,8 @@ module Hegel
         end
       end
       output.puts(Report.render(failures)) unless quiet
+      raise Hegel::Error, multiple_failures_message(failures.size) if failures.size > 1
+
       raise kept_exception
     end
 
@@ -342,6 +367,22 @@ module Hegel
       "hegel: this failure did not reproduce against the same generated data. " \
         "The test body likely depends on state outside libhegel's control, " \
         "such as a global variable, wall-clock time, or an external source of randomness."
+    end
+
+    # #replay's own multi-failure raise, and Report.render's multi-failure
+    # heading, must stay the same sentence: a caller who greps the printed
+    # report for this text should find the same string in the exception it
+    # catches. Report.render builds that heading itself rather than calling
+    # this method, since Hegel::Report only ever formats data handed to it
+    # and does not know how a run ended (see its own class comment); the
+    # sentence is duplicated here as the coupling between the two, not
+    # factored into a shared helper neither module already depends on.
+    # Deliberately carries no "hegel: " prefix, unlike #flaky_message and
+    # the other messages this module composes itself (UNKNOWN_RUN_ERROR_
+    # MESSAGE, the unrecognized-status message, the no-reproduction-blob
+    # message), to stay that same sentence.
+    def multiple_failures_message(count)
+      "Property-based test failed with #{count} distinct failures."
     end
   end
 end

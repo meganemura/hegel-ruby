@@ -11,7 +11,7 @@ module Hegel
   class AssumeFailed < Exception
   end
 
-  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
+  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
   class TestCase
@@ -305,9 +305,15 @@ module Hegel
 
   module Settings
     VERBOSITY_CODES: Hash[Symbol, Integer]
+    PHASE_CODES: Hash[Symbol, Integer]
+    HEALTH_CHECK_CODES: Hash[Symbol, Integer]
 
-    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?) -> void
+    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool) -> void
     def self.apply_verbosity: (untyped impl, untyped ctx, untyped settings, Symbol verbosity) -> void
+    def self.apply_database: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?) -> void
+    def self.apply_phases: (untyped impl, untyped ctx, untyped settings, Array[Symbol] phases) -> void
+    def self.apply_suppress_health_check: (untyped impl, untyped ctx, untyped settings, Array[Symbol] checks) -> void
+    def self.mask_for: (Array[Symbol] values, Hash[Symbol, Integer] codes) -> Integer
   end
 
   module Runner
@@ -321,7 +327,7 @@ module Hegel
       def for: (String? origin) -> [Integer, Integer]
     end
 
-    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
+    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
     def self.run_and_finish: (untyped impl, untyped ctx, untyped settings, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats) { (TestCase) -> void } -> void
     def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats) { (TestCase) -> void } -> void
@@ -332,6 +338,7 @@ module Hegel
     def self.classify: (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
     def self.origin_for: (Exception exception) -> String
     def self.flaky_message: () -> String
+    def self.multiple_failures_message: (Integer count) -> String
   end
 
   module Locate

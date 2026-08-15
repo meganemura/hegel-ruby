@@ -4,12 +4,15 @@ require "test_helper"
 require "hegel/runner"
 require "support/fake_lib_hegel"
 require "stringio"
+require "tmpdir"
 
 class TestRunner < Minitest::Test
-  # A run that leaves ./.hegel behind means the mandatory database-disable
-  # step (Hegel::Runner.run calling hegel_settings_set_database with "")
-  # regressed; every test in this class, real-engine and Fake alike, must
-  # leave none.
+  # A run that leaves ./.hegel behind means Hegel::Settings.apply_database's
+  # nil/nil row (the default when a test here passes neither database:
+  # keyword) regressed and stopped calling hegel_settings_set_database with
+  # "". Every test in this class that does not pass database: itself, real-
+  # engine and Fake alike, must leave none; the database-round-trip tests
+  # below write into their own Dir.mktmpdir instead, never here.
   def teardown
     refute Dir.exist?(File.join(Dir.pwd, ".hegel")),
       "a run must not leave a .hegel directory behind"
@@ -264,7 +267,9 @@ class TestRunner < Minitest::Test
 
   # Two origins, both discovered live by #drive (so Hegel::Runner::
   # GenerationStats has a snapshot for each before #replay asks), get
-  # hegel-rust's own distinct-failures heading.
+  # hegel-rust's own distinct-failures heading, and #replay raises
+  # Hegel::Error carrying that exact same sentence rather than either
+  # failure's own exception (see #multiple_failures_message's comment).
   def test_report_shows_a_heading_when_there_are_multiple_distinct_failures
     fake = Hegel::LibHegel::Fake.new
     fake.test_case_count = 2
@@ -283,12 +288,65 @@ class TestRunner < Minitest::Test
     end
     output = StringIO.new
 
-    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output, &body) }
+    error = assert_raises(Hegel::Error) { Hegel.test(impl: fake, output: output, &body) }
 
+    assert_equal "Property-based test failed with 2 distinct failures.", error.message
     text = output.string
     assert_includes text, "Property-based test failed with 2 distinct failures."
     assert_includes text, "Falsified after 1 test case (0 discarded):"
     assert_includes text, "Falsified after 2 test cases (0 discarded):"
+  end
+
+  # Hegel.test defaults report_multiple_failures: to false and always calls
+  # the setter (never skips it the way a nil keyword would), so a caller who
+  # passes neither still gets an explicit false, not the engine's own true.
+  def test_report_multiple_failures_defaults_to_false_and_is_always_set
+    fake = Hegel::LibHegel::Fake.new
+
+    Hegel.test(impl: fake) { |_tc| }
+
+    assert_equal [false], fake.settings_report_multiple_failures_calls
+  end
+
+  # report_multiple_failures: true against the real engine: two distinct
+  # origins (two different raise lines) both fail, and #replay raises
+  # Hegel::Error summarizing the count rather than either origin's own
+  # exception.
+  def test_report_multiple_failures_true_summarizes_distinct_failures_against_the_real_engine
+    body = lambda do |tc|
+      n = tc.draw_integer(0, 1, label: "n")
+      if n.zero?
+        raise "boom-zero"
+      else
+        raise "boom-one"
+      end
+    end
+
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 10, report_multiple_failures: true, verbosity: :quiet, output: StringIO.new, &body)
+    end
+
+    assert_includes error.message, "2 distinct failures"
+  end
+
+  # The default (false), same body, same real engine: the run still finds
+  # both origins, but re-raises only the first origin's own exception class,
+  # not a summary -- the behaviour this task's decision (a) exists for.
+  def test_report_multiple_failures_false_reraises_the_bodys_own_exception_class
+    body = lambda do |tc|
+      n = tc.draw_integer(0, 1, label: "n")
+      if n.zero?
+        raise "boom-zero"
+      else
+        raise "boom-one"
+      end
+    end
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(test_cases: 10, verbosity: :quiet, output: StringIO.new, &body)
+    end
+
+    assert_match(/boom-(zero|one)/, error.message)
   end
 
   # The end-to-end proof this report is honest: a blob it printed, fed back
@@ -644,6 +702,130 @@ class TestRunner < Minitest::Test
     error = assert_raises(Hegel::Error) { Hegel.test(impl: fake) { |_tc| } }
 
     assert_includes error.message, "99"
+  end
+
+  # The nil/nil row of Hegel::Settings.apply_database's table, confirmed
+  # through the Fake rather than the filesystem: a run given neither
+  # database keyword passes "" to settings_set_database and never calls
+  # settings_set_database_key at all.
+  def test_database_keywords_left_nil_pass_an_empty_string_and_call_no_key_setter
+    fake = Hegel::LibHegel::Fake.new
+
+    Hegel.test(impl: fake) { |_tc| }
+
+    assert_equal [""], fake.settings_database_calls
+    assert_empty fake.settings_database_key_calls
+  end
+
+  # database_key: alone (the row a caller reaches without a database:
+  # directory) calls settings_set_database_key and never
+  # settings_set_database, so the engine's own default path applies.
+  def test_database_key_alone_calls_only_settings_set_database_key
+    fake = Hegel::LibHegel::Fake.new
+
+    Hegel.test(impl: fake, database_key: "a-property") { |_tc| }
+
+    assert_empty fake.settings_database_calls
+    assert_equal ["a-property"], fake.settings_database_key_calls
+  end
+
+  # database: without database_key: raises before the run starts, per
+  # docs/adr/0009's table -- caught here through the Fake, so no real run
+  # loop or file I/O is needed to prove it.
+  def test_database_without_database_key_raises_hegel_error
+    fake = Hegel::LibHegel::Fake.new
+
+    error = assert_raises(Hegel::Error) { Hegel.test(impl: fake, database: "/tmp/wherever") { |_tc| } }
+
+    assert_includes error.message, "hegel: "
+    assert_includes error.message, "database_key"
+  end
+
+  # The real round trip docs/adr/0009 measured: a keyed run against an
+  # absolute Dir.mktmpdir path (no Dir.chdir needed) writes into that
+  # directory, and a second run against the same path and key replays the
+  # stored failure. The body is called twice on that second run, not once:
+  # once live, as the run's only drawn test case (see the "Falsified after 1
+  # test case" assertion below, which is the ADR's own "first and only test
+  # case" claim read off the printed report), and once more during
+  # Hegel::Runner#replay_failure's own mandatory final replay, which every
+  # failure goes through regardless of the database to build its report
+  # entries and re-raise the body's own exception (see #replay's comment).
+  # Measured directly against libhegel 0.32.5 before writing this assertion,
+  # exactly matching what is asserted here.
+  def test_database_round_trip_replays_the_stored_failure_as_the_only_drawn_case_on_the_second_run
+    Dir.mktmpdir do |dir|
+      body = lambda do |tc|
+        tc.draw_integer(0, 10)
+        raise "boom"
+      end
+
+      assert_raises(RuntimeError) do
+        Hegel.test(test_cases: 10, database: dir, database_key: "round-trip", verbosity: :quiet,
+          output: StringIO.new, &body)
+      end
+      refute_empty Dir.children(dir), "the first run must have written into the database directory"
+
+      second_calls = 0
+      second_output = StringIO.new
+      counting_body = lambda do |tc|
+        second_calls += 1
+        body.call(tc)
+      end
+
+      assert_raises(RuntimeError) do
+        Hegel.test(test_cases: 10, database: dir, database_key: "round-trip", output: second_output,
+          &counting_body)
+      end
+
+      assert_equal 2, second_calls
+      assert_includes second_output.string, "Falsified after 1 test case (0 discarded):"
+    end
+  end
+
+  # Each keyword's own PHASE_CODES/HEALTH_CHECK_CODES bit-OR logic already
+  # has Fake coverage in test_settings.rb; these two confirm the same bits
+  # reach a real run without erroring, which a Fake cannot show.
+  #
+  # suppress_health_check: [:filter_too_much] against a property that
+  # rejects nearly every case: unsuppressed, libhegel's own FilterTooMuch
+  # health check turns the run into an ERROR (Hegel::Error) after 50
+  # rejections; suppressed, the same property runs to completion. test_cases
+  # is kept small (20) because Hegel::AssumeFailed / #reject cases do not
+  # count against that budget (see docs/adr's own measurement, 560 draws for
+  # this same shape), so a larger budget would only cost more wall time
+  # without exercising a different branch.
+  def test_suppress_health_check_filter_too_much_against_the_real_engine
+    body = lambda do |tc|
+      n = tc.draw_integer(0, 1_000_000)
+      tc.reject unless n.zero?
+    end
+
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 20, verbosity: :quiet, output: StringIO.new, &body)
+    end
+    assert_includes error.message, "FilterTooMuch"
+
+    result = Hegel.test(test_cases: 20, suppress_health_check: [:filter_too_much], verbosity: :quiet,
+      output: StringIO.new, &body)
+    assert_nil result
+  end
+
+  # phases: [:generate] against the real engine: the header documents a
+  # dropped phase as a no-op rather than an error (measured directly: a run
+  # missing HEGEL_PHASE_TARGET still returns HEGEL_OK from its first
+  # hegel_target call), so this only asserts the run completes -- not that
+  # shrinking narrowed the counterexample, since HEGEL_PHASE_SHRINK is one
+  # of the phases left out here.
+  def test_phases_generate_only_against_the_real_engine
+    error = assert_raises(RuntimeError) do
+      Hegel.test(test_cases: 10, phases: [:generate], verbosity: :quiet, output: StringIO.new) do |tc|
+        tc.draw_integer(0, 1_000_000)
+        raise "boom"
+      end
+    end
+
+    assert_equal "boom", error.message
   end
 
   private
