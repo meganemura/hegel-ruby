@@ -69,8 +69,10 @@ module Hegel
     # floats() (true when neither bound is set): this milestone exposes a
     # plain, always-off-by-default surface and leaves
     # smallest_nonzero_magnitude, and the allow_nan/allow_infinity/bounds
-    # interaction hegel-rust validates, unexposed (see the task's own
-    # decision record).
+    # interaction hegel-rust validates, unexposed. A caller who never asks
+    # for NaN never has to reason about it, and a keyword can be added to
+    # this list later without breaking anyone, where a default flipped from
+    # true to false would.
     class FloatGenerator < Generator
       # hegel_generate_float's width; Ruby has one Float type, the 64-bit
       # IEEE 754 double, so this is never anything else.
@@ -464,9 +466,11 @@ module Hegel
     #
     # alphabet is not exposed here: the header's third argument accepts a
     # text generator to constrain the wildcard/padding characters this
-    # regex can produce, but wiring that surface up is out of scope for
-    # this batch (see the task's own decision record); nil, the header's
-    # documented "no particular alphabet" default, is passed in its place.
+    # regex can produce. nil, the header's documented "no particular
+    # alphabet" default, is passed in its place: exposing it means deciding
+    # how a Ruby caller writes an alphabet that constrains a Python regex,
+    # and that question is worth answering on its own rather than in
+    # passing here.
     class FromRegexGenerator < Generator
       def initialize(pattern, fullmatch:)
         super()
@@ -564,10 +568,11 @@ module Hegel
     end
 
     # Hegel::Syntax::Methods#uuids. A UUID String in the standard 8-4-4-4-12
-    # hex form (matching SecureRandom.uuid's own format; Ruby's stdlib has
-    # no dedicated UUID type, and SecureRandom itself returns a String --
-    # see the task's own decision record for why this returns a String
-    # rather than adding a dependency for one). version: nil (the default)
+    # hex form, matching SecureRandom.uuid's own format. It returns a
+    # String because Ruby's stdlib has no dedicated UUID type and
+    # SecureRandom itself returns one; a richer type would mean a runtime
+    # dependency, which this gem does not take for a formatting choice.
+    # version: nil (the default)
     # draws uniform random bits except the nil UUID, per the header; an
     # explicit version forces the RFC 4122 version and variant nibbles.
     #

@@ -1203,11 +1203,11 @@ class TestLibHegel < Minitest::Test
     end
   end
 
-  # This layer does not validate version itself (see the task's own
-  # decision record); hegel_generate_uuid rejects a value outside its
-  # documented 0..15 range, and LibHegel.check! translates that
-  # HEGEL_E_INVALID_ARG into this Hegel::Error, the same division of labor
-  # #string_generator_domain follows for its own out-of-range max_length.
+  # This layer does not validate version itself: hegel_generate_uuid
+  # rejects a value outside its documented 0..15 range, and
+  # LibHegel.check! translates that HEGEL_E_INVALID_ARG into this
+  # Hegel::Error, the same division of labor #string_generator_domain
+  # follows for its own out-of-range max_length.
   # Unlike #string_generator_domain, this call draws (needs a live test
   # case, not just a context), so this opens a run the same way every
   # other draw test in this file does. The database is disabled ("") so

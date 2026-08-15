@@ -322,8 +322,8 @@ class TestGenerators < Minitest::Test
     assert_all_examples(tuples(integers, integers)) { |v| v.is_a?(Array) && v.size == 2 }
   end
 
-  # Zero generators is a valid arity, not an error (see the task's own
-  # decision record): the result is the empty tuple.
+  # Zero generators is a valid arity, not an error: the result is the
+  # empty tuple, which is what a tuple of nothing is.
   def test_tuples_with_no_generators_returns_an_empty_array
     assert_all_examples(tuples) { |v| v == [] }
   end
@@ -514,8 +514,8 @@ class TestGenerators < Minitest::Test
   # match, not equal one, so this checks for the pattern anywhere in the
   # result rather than anchoring it. "[a-z]{3}" is simple enough to mean
   # the same thing in Python re syntax (what the engine draws against) and
-  # Ruby's Regexp syntax (what this assertion checks with), per the task's
-  # own decision record.
+  # Ruby's Regexp syntax (what this assertion checks with), so the
+  # assertion cannot pass or fail on a difference between the two.
   def test_from_regex_draws_against_the_real_engine
     assert_all_examples(from_regex("[a-z]{3}")) { |v| v.match?(/[a-z]{3}/) }
   end
@@ -560,10 +560,11 @@ class TestGenerators < Minitest::Test
     assert_all_examples(domains(max_length: 20)) { |v| v.length <= 20 }
   end
 
-  # This layer does not validate max_length itself (see the task's own
-  # decision record); hegel_string_generator_domain rejects a value
-  # outside its documented 4..=255 range, and LibHegel.check! translates
-  # that HEGEL_E_INVALID_ARG into this Hegel::Error.
+  # This layer does not validate max_length itself:
+  # hegel_string_generator_domain rejects a value outside its documented
+  # 4..=255 range, and LibHegel.check! translates that
+  # HEGEL_E_INVALID_ARG into this Hegel::Error. Checking it here as well
+  # would mean two messages for one mistake, free to drift apart.
   def test_domains_max_length_out_of_range_raises_at_draw_time
     generator = domains(max_length: 3)
 
@@ -620,11 +621,11 @@ class TestGenerators < Minitest::Test
     assert_all_examples(uuids(version: 4)) { |v| v[14] == "4" }
   end
 
-  # This layer does not validate version itself (see the task's own
-  # decision record); hegel_generate_uuid rejects a value outside its
-  # documented 0..15 range, and LibHegel.check! translates that
-  # HEGEL_E_INVALID_ARG into this Hegel::Error, the same division of labor
-  # #domains follows for its own out-of-range max_length.
+  # This layer does not validate version itself: hegel_generate_uuid
+  # rejects a value outside its documented 0..15 range, and
+  # LibHegel.check! translates that HEGEL_E_INVALID_ARG into this
+  # Hegel::Error, the same division of labor #domains follows for its own
+  # out-of-range max_length.
   def test_uuids_version_out_of_range_raises_at_draw_time
     generator = uuids(version: 16)
 

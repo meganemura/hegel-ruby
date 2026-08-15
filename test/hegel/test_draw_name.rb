@@ -70,8 +70,8 @@ class TestDrawName < Minitest::Test
   # two #for calls for the same path must not change the second call's
   # answer, which it would if the second call re-read (and so failed to
   # read) the now-missing file. #reset_cache is what forces a fresh read
-  # afterward, exercising the cache-clearing seam the spec asks this module
-  # to provide for tests.
+  # afterward: it exists so one test's fixture file cannot answer another
+  # test's lookup, and this is where that seam is exercised.
   def test_parses_a_given_path_at_most_once
     Dir.mktmpdir do |dir|
       path = File.join(dir, "fixture.rb")
