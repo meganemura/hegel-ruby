@@ -13,9 +13,10 @@
 
 ## Setup
 
-Hegel for Ruby ships as the `hegeltest` gem. It has not reached RubyGems.org
-yet (the project is pre-release, at version `0.0.0`); until it does, point a
-Gemfile at the repository directly:
+Hegel for Ruby is packaged as the `hegeltest` gem, which has not reached
+RubyGems.org (the project is pre-release, at version `0.0.0`). Installing it
+from git works for the Ruby code, but a gem carries no `libhegel` engine yet,
+so a run also needs `HEGEL_LIBHEGEL_PATH` pointing at a local build:
 
 ```ruby
 # Gemfile

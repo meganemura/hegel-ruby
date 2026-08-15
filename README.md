@@ -44,10 +44,18 @@ Work ran in three stages, and all three are done:
 3. **The advanced features** — the example database, targeted testing,
    stateful testing, phases, and health checks.
 
-The first release to RubyGems.org comes next.
+**The gem is not installable yet.** A released gem is meant to carry a
+prebuilt `libhegel` for its platform, and that packaging is not built: what
+`rake build` produces today has no engine in it. Until it does, running any of
+this means cloning the repository and fetching the engine:
 
-Building this repository needs the engine on hand. `rake libhegel:fetch`
-downloads the pinned build and checks it against its published SHA-256.
+```bash
+bin/setup
+bundle exec rake libhegel:fetch   # downloads the pinned build, checked against its SHA-256
+bundle exec rake
+```
+
+The test suite runs on arm64 macOS. It has not been run on Linux or Windows.
 
 ## Design
 
@@ -59,7 +67,7 @@ downloads the pinned build and checks it against its published SHA-256.
 | Binding | the `ffi` gem, which publishes a prebuilt binary for every platform above |
 | Ruby | 3.3, 3.4, and 4.0 |
 | Platforms | Linux amd64/arm64, macOS arm64, Windows amd64/arm64 |
-| Engine delivery | One prebuilt `libhegel` per platform-specific gem |
+| Engine delivery | One prebuilt `libhegel` per platform-specific gem — decided, not built yet |
 
 `HEGEL_LIBHEGEL_PATH` will override the bundled engine with a local build.
 
