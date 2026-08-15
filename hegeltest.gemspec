@@ -49,12 +49,17 @@ Gem::Specification.new do |spec|
   # is this gem's own payload for whoever installs it, while
   # `.claude-plugin/` only points the Claude Code marketplace at this git
   # repository, which an installed gem is not.
+  # NOTICE-libhegel.txt is rejected here too: it carries libhegel's own MIT
+  # notice, which only means something once a platform gem bundles the
+  # binary it covers. lib/tasks/platform_gems.rake injects it into each of
+  # the five platform gems directly, so it never needs to reach this
+  # platform-independent ("ruby") gem's own file list.
   gemspec = File.basename(__FILE__)
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
         f.start_with?(*%w[bin/ Gemfile .gitignore test/ .github/ .standard.yml justfile .claude/ CLAUDE.md
-          .claude-plugin/])
+          .claude-plugin/ NOTICE-libhegel.txt])
     end
   end
   spec.bindir = "exe"

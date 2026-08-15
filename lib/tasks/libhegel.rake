@@ -58,6 +58,25 @@ module Hegel
       dest
     end
 
+    # Fetches every published platform's asset (see Hegel::Locate::ASSET_NAMES),
+    # not just the host's, into <root>/<version>/<asset>: this is what
+    # `rake libhegel:fetch_all` stages the five platform gems from. Repeats
+    # fetch_host_asset's steps per asset rather than delegating to it,
+    # because delegating would mean computing a host_cpu/host_os pair for
+    # each published platform just to have asset_name recompute the asset
+    # name it already is.
+    def fetch_all_assets(version: Hegel::LIBHEGEL_VERSION, root: DEFAULT_ROOT, downloader: method(:http_get))
+      base = "#{RELEASE_BASE}/v#{version}"
+      Hegel::Locate::ASSET_NAMES.values.map do |asset|
+        dest = File.join(root, version, asset)
+        next dest if File.file?(dest)
+
+        bytes = downloader.call("#{base}/#{asset}")
+        checksum_line = downloader.call("#{base}/#{asset}.sha256")
+        verify_and_install(bytes, expected_sha256(checksum_line), dest)
+      end
+    end
+
     # Minimal redirect-following GET: GitHub release assets serve a 302 to
     # the actual blob storage host. `getter` is injectable (defaulting to a
     # real Net::HTTP call) so the redirect/success/error branches are
@@ -83,5 +102,11 @@ namespace :libhegel do
   task :fetch do
     dest = Hegel::LibhegelFetch.fetch_host_asset
     puts "libhegel: #{dest}"
+  end
+
+  desc "Download the pinned libhegel build for every published platform into tmp/libhegel/<version>/, " \
+    "for `rake platform_gems:build` to package"
+  task :fetch_all do
+    Hegel::LibhegelFetch.fetch_all_assets.each { |dest| puts "libhegel: #{dest}" }
   end
 end
