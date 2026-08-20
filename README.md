@@ -31,8 +31,7 @@ same process. There is no server and no Python dependency.
 
 ## Status
 
-**The first release is prepared, and the version is `0.1.0`.** Everything
-described below runs: Hegel finds a counterexample, shrinks it,
+**Released as `hegeltest` 0.1.0.** Hegel finds a counterexample, shrinks it,
 names the values it drew, and re-raises your own exception.
 
 Work ran in three stages, and all three are done:
@@ -44,21 +43,17 @@ Work ran in three stages, and all three are done:
 3. **The advanced features**: the example database, targeted testing,
    stateful testing, phases, and health checks.
 
-**Nothing is published to RubyGems yet.** The packaging is built:
-`rake platform_gems:build` produces one gem per platform, each carrying the
-matching `libhegel` build. The arm64 macOS gem is verified to find that
-engine inside itself and run a property with no `HEGEL_LIBHEGEL_PATH` set.
-A `v*` tag publishes all six gems from CI. The Hegel maintainers permit a
-third-party project to redistribute their release binaries
-([hegeldev/hegel-rust#411]).
+Install it the way you install any gem:
 
-So running this today means cloning the repository:
-
-```bash
-bin/setup
-bundle exec rake libhegel:fetch   # downloads the pinned build, checked against its SHA-256
-bundle exec rake
+```ruby
+# Gemfile
+gem "hegeltest"
 ```
+
+Each platform gem carries the matching `libhegel` build, so an install
+compiles nothing and needs no engine on the side. The Hegel maintainers
+permit a third-party project to redistribute their release binaries
+([hegeldev/hegel-rust#411]).
 
 Every push to main runs the suite on Ruby 3.3, 3.4, and 4.0, across Linux x64
 and arm64, macOS arm64, and Windows x64 and arm64. Windows arm64 starts at
@@ -79,13 +74,13 @@ pull request runs Linux x64 alone.
 | Platforms | Linux amd64/arm64, macOS arm64, Windows amd64/arm64 |
 | Engine delivery | One prebuilt `libhegel` per platform-specific gem, built by `rake platform_gems:build` |
 
-`HEGEL_LIBHEGEL_PATH` will override the bundled engine with a local build.
+`HEGEL_LIBHEGEL_PATH` overrides the bundled engine with a local build.
 
 The gem name follows the Rust implementation, whose published crate is
 `hegeltest` and whose library is `hegel`. The name `hegel` on RubyGems.org
 stays free for whoever publishes an official Ruby implementation.
 
-macOS on Intel has no published `libhegel` artifact, so that platform will need
+macOS on Intel has no published `libhegel` artifact, so that platform needs
 `HEGEL_LIBHEGEL_PATH` and a local build.
 
 ## Quickstart
@@ -241,9 +236,10 @@ Inside a test, `tc.note` records a message the failure report prints, and
 ## Development
 
 ```bash
-bin/setup          # install dependencies
-bundle exec rake   # run the tests and the linter
-bin/console        # open an interactive prompt
+bin/setup                        # install dependencies
+bundle exec rake libhegel:fetch  # download the pinned engine, checked against its SHA-256
+bundle exec rake                 # run the tests and the linter
+bin/console                      # open an interactive prompt
 ```
 
 `just` recipes call the same Rake tasks, so `just test` and `just lint` work

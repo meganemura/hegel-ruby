@@ -13,15 +13,17 @@
 
 ## Setup
 
-Hegel for Ruby is packaged as the `hegeltest` gem, which has not reached
-RubyGems.org yet. Installing it from git works for the Ruby code. A git
-checkout carries no `libhegel` engine, so a run also needs
-`HEGEL_LIBHEGEL_PATH` pointing at a local build:
+Hegel for Ruby is packaged as the `hegeltest` gem. Each platform gem carries
+the matching `libhegel` engine, so an install compiles nothing and needs no
+engine on the side:
 
 ```ruby
 # Gemfile
-gem "hegeltest", git: "https://github.com/meganemura/hegel-ruby"
+gem "hegeltest"
 ```
+
+A platform with no published `libhegel` build, such as macOS on Intel, needs
+`HEGEL_LIBHEGEL_PATH` pointing at a local build instead.
 
 Require it, then include the generator methods wherever tests draw values:
 
