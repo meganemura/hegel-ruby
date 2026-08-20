@@ -42,11 +42,11 @@ module Hegel
     DISCARD = Discard.new
 
     # The two keywords every Hegel.test call below shares: quiet
-    # libhegel-side verbosity, and a discarded output: (see DISCARD
-    # above). Hegel::Runner already disables the example database on every
-    # run, unconditionally (lib/hegel/runner.rb's settings_set_database
-    # call) -- unlike hegel-java's Utils, which passes Database.disabled()
-    # itself, there is nothing left here to disable a second time.
+    # libhegel-side verbosity, and a discarded output: (see DISCARD above).
+    # Neither database: nor database_key: is passed, which is the row
+    # Hegel::Settings.apply_database answers with settings_set_database(ctx,
+    # settings, "") (lib/hegel/settings.rb, docs/adr/0009), so every call
+    # below runs with the example database off.
     QUIET_SETTINGS = {verbosity: :quiet, output: DISCARD}.freeze
 
     # Asserts that the block holds for every value +generator+ draws

@@ -91,10 +91,12 @@ machine.
 
 ## Consequences
 
-The typo that prefix discovery swallows now raises: `rule :psuh` registers a
-rule named `psuh`, the engine picks it, and calling it fails on whatever the
-block does. That failure is visible either way. A missing `rule_` prefix, by
-contrast, stays silent under prefix discovery.
+The typo that a Ruby prefix convention would swallow now raises. `rule :psuh`
+registers a rule named `psuh`, the engine picks it, and the call fails on
+whatever the block does. A `rule_` prefix over Ruby methods has no such
+moment, because the misspelled method is simply not a rule. hegel-go closes
+that gap in its own language, by rejecting a method that takes a `TestCase`
+without the prefix.
 
 The machine still has to reach its framework's assertions itself, with
 `include Minitest::Assertions` or the RSpec equivalent, and that boilerplate

@@ -846,8 +846,7 @@ seen # => ["2020-01-01 00:00:00 UTC", "2020-07-23 00:00:00 UTC", "2020-04-28 00:
 ```
 
 `max_value < min_value` raises `Hegel::Error` at draw time: `"datetimes:
-max_value < min_value"`. See [Gotchas](#gotchas) for a Windows-specific
-note on how this generator's value crosses into the native engine.
+max_value < min_value"`.
 
 ### `composite(&block)`
 
@@ -1204,8 +1203,8 @@ result # => nil
    binding, such as one at the top of a `Hegel.test` block, or inside a
    generator's own draw, discards the whole test case.
 
-10. **This binding has not been exercised on Windows or Linux yet.** It is
-    developed and tested on arm64 macOS. The native calls go through the
-    `ffi` gem, so libffi decides how each argument reaches the engine on a
-    given ABI rather than this binding deciding it, but that is an argument
-    for expecting it to work, not a report that it has.
+10. **The suite runs against the real engine on Linux, macOS, and Windows.**
+    Every push to main runs it on Ruby 3.3, 3.4, and 4.0, across Linux x64
+    and arm64, macOS arm64, and Windows x64 and arm64. Windows arm64 starts
+    at Ruby 3.4, the oldest Ruby that RubyInstaller publishes an arm64 build
+    for. Alpine (musl) is the platform this binding has not run on.

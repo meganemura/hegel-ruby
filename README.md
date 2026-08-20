@@ -60,8 +60,10 @@ bundle exec rake libhegel:fetch   # downloads the pinned build, checked against 
 bundle exec rake
 ```
 
-CI runs the suite on Ruby 3.3, 3.4, and 4.0, across Linux x64 and arm64,
-macOS arm64, and Windows x64 and arm64.
+Every push to main runs the suite on Ruby 3.3, 3.4, and 4.0, across Linux x64
+and arm64, macOS arm64, and Windows x64 and arm64. Windows arm64 starts at
+Ruby 3.4, the oldest Ruby that RubyInstaller publishes an arm64 build for. A
+pull request runs Linux x64 alone.
 
 [hegeldev/hegel-rust#411]: https://github.com/hegeldev/hegel-rust/issues/411
 
@@ -75,7 +77,7 @@ macOS arm64, and Windows x64 and arm64.
 | Binding | the `ffi` gem, which publishes a prebuilt binary for every platform above |
 | Ruby | 3.3, 3.4, and 4.0 |
 | Platforms | Linux amd64/arm64, macOS arm64, Windows amd64/arm64 |
-| Engine delivery | One prebuilt `libhegel` per platform-specific gem: decided, not built yet |
+| Engine delivery | One prebuilt `libhegel` per platform-specific gem, built by `rake platform_gems:build` |
 
 `HEGEL_LIBHEGEL_PATH` will override the bundled engine with a local build.
 

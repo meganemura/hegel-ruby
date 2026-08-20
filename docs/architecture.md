@@ -159,9 +159,10 @@ fields.
 ## Open questions
 
 - Whether the vendored `linux` binaries run under musl (Alpine) has not
-  been checked.
-- How `ffi`'s `dlopen`-based loading searches for a DLL on Windows has not
-  been checked.
+  been checked. CI runs on Ubuntu, which is glibc.
+- This project has not traced which directories `ffi`'s `dlopen`-based
+  loading searches on Windows. The suite loads the engine from the path
+  `Hegel::Locate` resolves, on both Windows runners.
 
 ## Answered
 
