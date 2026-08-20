@@ -31,8 +31,8 @@ same process. There is no server and no Python dependency.
 
 ## Status
 
-**Nothing is released yet, and the version stays at `0.0.0` until it is.**
-Everything described below runs: Hegel finds a counterexample, shrinks it,
+**The first release is prepared, and the version is `0.1.0`.** Everything
+described below runs: Hegel finds a counterexample, shrinks it,
 names the values it drew, and re-raises your own exception.
 
 Work ran in three stages, and all three are done:
@@ -48,7 +48,7 @@ Work ran in three stages, and all three are done:
 `rake platform_gems:build` produces one gem per platform, each carrying the
 matching `libhegel` build. The arm64 macOS gem is verified to find that
 engine inside itself and run a property with no `HEGEL_LIBHEGEL_PATH` set.
-What is left is a release workflow. The Hegel maintainers permit a
+A `v*` tag publishes all six gems from CI. The Hegel maintainers permit a
 third-party project to redistribute their release binaries
 ([hegeldev/hegel-rust#411]).
 

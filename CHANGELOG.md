@@ -1,9 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.0] - 2026-08-20
 
-Nothing is released yet. The version in `lib/hegel/version.rb` stays at `0.0.0`
-until the first release to RubyGems.org, which becomes `0.1.0`.
+The first release.
 
 `Hegel.test` runs a property against libhegel, shrinks a failure to its
 smallest counterexample, reports the values it drew, and re-raises the
@@ -16,8 +15,8 @@ steer generation with `target`. A run can be shaped with `phases`,
 and libhegel's example database. Stateful testing runs a `Hegel::StateMachine`
 and shrinks a failing sequence of rules.
 
-The engine is called through the `ffi` gem. No released gem carries a
-`libhegel` build yet, so running this needs a local engine and
-`HEGEL_LIBHEGEL_PATH`.
+The engine is called through the `ffi` gem. Each platform gem carries the
+matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
+so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
-[Unreleased]: https://github.com/meganemura/hegel-ruby/commits/main
+[0.1.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.1.0

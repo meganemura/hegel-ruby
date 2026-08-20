@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Unofficial skill for teaching Claude to write Ruby property-based tests using Hegel",
-    "version": "0.0.0"
+    "version": "0.1.0"
   },
   "plugins": [
     {
@@ -15,7 +15,7 @@
         "repo": "meganemura/hegel-ruby"
       },
       "description": "Unofficial: teaches agents how to write property-based tests using Hegel in Ruby projects, driven by the third-party hegeltest gem",
-      "version": "0.0.0"
+      "version": "0.1.0"
     }
   ]
 }

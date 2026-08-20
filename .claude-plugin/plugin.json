@@ -1,7 +1,7 @@
 {
   "name": "hegel-ruby",
   "description": "Unofficial: teaches agents how to write property-based tests using Hegel in Ruby projects, driven by the third-party hegeltest gem",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "license": "MIT",
   "repository": "https://github.com/meganemura/hegel-ruby"
 }
