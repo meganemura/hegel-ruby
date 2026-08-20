@@ -80,10 +80,9 @@ module Hegel
         # already answers HEGEL_E_ASSUME for an empty pool, which
         # Hegel::LibHegel.check! already translates to Hegel::AssumeFailed --
         # the same translation every other assumption failure gets.
-        # hegel-rust's own ValuesReusable checks again on its own side, with
-        # a tc.assume call ahead of its own pool_generate call; doing that
-        # here too would only give the empty case two paths to drift apart
-        # from each other.
+        # hegel-rust's own ValuesReusable calls tc.assume ahead of its own
+        # pool_generate call (src/stateful.rs). Here the engine's answer is
+        # the single path, so the empty case has one place to change.
         def do_draw(tc)
           variable_id = tc.pool_generate(@pool, false)
           @values.fetch(variable_id)

@@ -29,9 +29,9 @@ only test case. A third run with a different key behaved like a fresh
 search.
 
 So the key, not the path, is what makes the database do anything.
-`hegel_settings_set_database_key`'s own header entry says only that NULL
-"clears" the key; that a cleared key also suppresses storage is not stated
-there, and the measurement above is what supplies it.
+`hegel_settings_set_database_key`'s own header entry describes NULL as
+clearing the key. What a cleared key does to storage is what the measurement
+above supplies.
 
 The two implementations that ship this feature both leave the path at the
 engine default and get a key from a name they already have: hegel-go passes

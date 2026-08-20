@@ -32,10 +32,9 @@ a new record; a changed decision supersedes the old record rather than editing
 it, so the history stays readable.
 
 Write comments that record why: a constraint, or an alternative that got
-rejected. The code already states what it does. Reading another repository's
-agent instructions does not change this one: hegel-rust, for example, asks its
-own agents for almost no comments, and that instruction applies where it
-lives.
+rejected. The code already states what it does. Another repository's agent
+instructions bind that repository: when hegel-rust's own instructions and this
+file disagree about how much to comment, this file governs work here.
 
 Do not write a claim that rests on absence: "only here", "nothing else does
 this", "no other implementation states it". A search reports where something

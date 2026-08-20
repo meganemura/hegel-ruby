@@ -31,9 +31,9 @@ several, and shrank them together.
 This gem exists to be driven from RSpec and Minitest, so that is not an edge
 case; it is the ordinary path.
 
-hegel-rust does not have this problem, and so offers no answer to copy: Rust's
-assertion macros expand at the call site, so a panic already carries the
-caller's own location. hegel-java does have it, and answers it in
+hegel-rust answers this at compile time: Rust's assertion macros expand at the
+call site, so a panic already carries the caller's own location. hegel-java
+meets the same problem this gem meets, and answers it in
 `Runner.originOf` by walking the stack for the first frame that is not
 infrastructure, where infrastructure is a list of class-name prefixes: its
 own package, JUnit, opentest4j, and the JDK.
