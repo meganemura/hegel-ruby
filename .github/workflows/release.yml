@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish the gems and the GitHub release
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: write
+
+    # Actions are pinned to the commit each release points at, matching
+    # ci.yml. A tag can move to another commit; a pinned commit says which
+    # code runs, while a tag says only which version its owner offers today.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+
+      # A tag can be pushed against the wrong commit, or after a version bump
+      # that never landed. This step stops the job here when the tag and
+      # lib/hegel/version.rb disagree, so a mismatch never reaches a publish
+      # step. VERSION is exported for every later step to read.
+      - name: Check that the tag matches the gem version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(ruby -e 'puts File.read("lib/hegel/version.rb").slice(/VERSION\s*=\s*"([^"]+)"/, 1)')
+          if [ "$TAG" != "v$version" ]; then
+            echo "tag $TAG does not match gem version $version" >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # The suite drives the real engine, so this step fetches every asset
+      # before the tests run and before the platform gems build.
+      - name: Fetch every platform's libhegel asset
+        run: bundle exec rake libhegel:fetch_all
+
+      # A tag push does not trigger ci.yml, which watches main and pull
+      # requests alone. This step runs the same tests and linter here, so a
+      # tagged release still gets checked before anything is published.
+      - name: Run the tests and the linter
+        run: bundle exec rake
+
+      - name: Build the ruby gem
+        run: bundle exec rake build
+
+      - name: Build the platform gems
+        run: bundle exec rake platform_gems:build
+
+      # This list repeats the published platform names rather than reading
+      # them from the library, so it checks the build instead of restating
+      # it. A change to that list shows here as a diff in this workflow.
+      #
+      # The count check is what lets the later steps say pkg/*.gem: it
+      # proves the glob holds these six files and nothing else.
+      - name: Check that every platform gem was built
+        run: |
+          for name in \
+            "hegeltest-$VERSION.gem" \
+            "hegeltest-$VERSION-arm64-darwin.gem" \
+            "hegeltest-$VERSION-x86_64-linux.gem" \
+            "hegeltest-$VERSION-aarch64-linux.gem" \
+            "hegeltest-$VERSION-x64-mingw-ucrt.gem" \
+            "hegeltest-$VERSION-aarch64-mingw-ucrt.gem"; do
+            if [ ! -f "pkg/$name" ]; then
+              echo "missing pkg/$name" >&2
+              exit 1
+            fi
+          done
+          set -- pkg/*.gem
+          if [ "$#" -ne 6 ]; then
+            echo "pkg/ holds $# gems, and this release expects 6" >&2
+            printf '%s\n' "$@" >&2
+            exit 1
+          fi
+
+      # The exchanged token is short lived, so this step runs right before
+      # the push rather than earlier in the job.
+      - name: Configure RubyGems trusted publishing credentials
+        uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+
+      # A job that fails partway through and gets rerun can reach this step
+      # after some gems already pushed. RubyGems answers a repeat push for a
+      # version already live with "Repushing of gem versions is not
+      # allowed". Only that message is worth skipping past. Any other
+      # failure still stops the job.
+      - name: Push every gem to RubyGems
+        run: |
+          for path in pkg/*.gem; do
+            if output=$(gem push "$path" 2>&1); then
+              echo "$output"
+              continue
+            fi
+            echo "$output"
+            if echo "$output" | grep -q "Repushing of gem versions is not allowed"; then
+              echo "already pushed: $path"
+              continue
+            fi
+            exit 1
+          done
+
+      # A rerun reaches this step with the release already created, and
+      # `gh release create` refuses that. Uploading to the existing release
+      # instead lets a rerun finish the job it started.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber pkg/*.gem
+          else
+            gh release create "$TAG" --generate-notes pkg/*.gem
+          fi
