@@ -31,6 +31,5 @@ SOFTWARE.
 Rust crates that libhegel links
 --------------------------------
 
-This section is not filled in yet. The project that publishes libhegel has
-not published the list of crate licenses. Add that list here once it is
-available.
+libhegel links Rust crates that carry their own licenses. This section will
+hold that list.

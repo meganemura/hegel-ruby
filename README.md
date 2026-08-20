@@ -259,6 +259,6 @@ Report bugs and open pull requests at
 
 This gem is available under the [MIT License](LICENSE.txt).
 
-Released gems will also carry the license of `libhegel`, which is MIT and
-copyright Antithesis, LLC, together with the licenses of the Rust crates that
-`libhegel` links.
+Released gems also carry `libhegel`'s own license, which is MIT and copyright
+Antithesis, LLC. Each platform gem ships `NOTICE-libhegel.txt` next to the
+engine, and that file holds the text.
