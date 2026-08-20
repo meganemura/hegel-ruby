@@ -48,8 +48,9 @@ Work ran in three stages, and all three are done:
 `rake platform_gems:build` produces one gem per platform, each carrying the
 matching `libhegel` build. The arm64 macOS gem is verified to find that
 engine inside itself and run a property with no `HEGEL_LIBHEGEL_PATH` set.
-What is left is a release workflow, and an answer from upstream on
-redistributing their binaries ([hegeldev/hegel-rust#411]).
+What is left is a release workflow. The Hegel maintainers permit a
+third-party project to redistribute their release binaries
+([hegeldev/hegel-rust#411]).
 
 So running this today means cloning the repository:
 
