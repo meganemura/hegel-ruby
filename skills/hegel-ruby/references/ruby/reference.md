@@ -468,6 +468,39 @@ min_size"`. `alphabet:`, `categories:`, `include_characters:`, and
 expose) are not available in this binding; `codec:`, `min_codepoint:`, and
 `max_codepoint:` are the alphabet controls it exposes today.
 
+Other generators cover most character-set jobs. These results were measured
+with libhegel 0.32.5 on this repository's main branch:
+
+| Job | Generator | Measured output |
+|---|---|---|
+| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"げLだづは"`, `"あぐA"` |
+| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `"Ë3ù*掆&"`, `"MßzæŜ\u0002"`; 30 draws contained no comma, tab, or newline |
+| A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character was in U+0300 through U+036F |
+| An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | `"İaİß"`, `"ßßß"` |
+
+The `categories:` option remains an open request. A category such as any `Lu`
+or any `Mn` spans codepoint ranges that a codepoint bound cannot select. A
+regular expression character class requires those ranges to be written out.
+The `.filter` method is not a substitute. In a measured run of 50 test cases,
+filtering `text` to `\p{Han}` produced no valid inputs. The engine filtered 50
+inputs and reported this health check:
+
+```
+FailedHealthCheck: FilterTooMuch — it looks like this test is filtering out
+too many inputs. 50 inputs were filtered out by assume() while only 0 valid
+inputs were generated. If this is expected, suppress the check with
+suppress_health_check = [HealthCheck::FilterTooMuch].
+```
+
+The engine writes that last sentence in its own naming. This binding takes
+the same setting as `suppress_health_check: [:filter_too_much]`, listed in
+[Settings](#settings).
+
+Unconfigured `text` draws from a much wider Unicode range. In 200 draws of
+`text(min_size: 1, max_size: 4)`, the results included emoji, private-use
+characters, and control characters. The highest codepoint was U+10F11A. A
+property that accepts any string needs no character-set options.
+
 ### `arrays(elements, min_size: 0, max_size: nil)`
 
 An `Array` of values from the `elements` generator, with `[min_size,
