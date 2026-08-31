@@ -129,7 +129,7 @@ end
 
 | Keyword | Type | Default | Purpose |
 |---|---|---|---|
-| `test_cases` | `Integer` or `nil` | `nil` (libhegel's own default) | Number of test cases to run |
+| `test_cases` | `Integer` or `nil` | `nil` (libhegel's own default: 100) | Number of test cases to run |
 | `seed` | `Integer` or `nil` | `nil` (libhegel picks its own) | Fixed RNG seed; pair with `derandomize: true` for a reproducible sequence |
 | `derandomize` | `true`/`false` or `nil` | `nil` (libhegel's own default) | Derive the seed deterministically from the test itself, instead of drawing a random one |
 | `verbosity` | `Symbol` or `nil` | `nil` (libhegel's own default) | `:quiet`, `:normal`, `:verbose`, or `:debug` |
