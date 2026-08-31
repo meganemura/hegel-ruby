@@ -130,6 +130,33 @@ Including `Hegel::Syntax::Methods` makes the generators available without a
 prefix, the way FactoryBot makes `create` available. The same generators stay
 reachable as `Hegel::Generators.arrays(...)` without the include.
 
+An existing RSpec suite can limit the 25 generator names to tagged example
+groups. This keeps the names out of other groups that have their own helpers:
+
+```ruby
+config.include Hegel::Syntax::Methods, :hegel
+```
+
+A new project can include the methods in every group, as the Quickstart does.
+
+Hegel draws values imperatively, so an ordinary Ruby method can share a group
+of draws between properties. Give the method parameter a descriptive name,
+which the default RuboCop naming rule accepts where a block parameter `tc`
+needs no change:
+
+```ruby
+def draw_sorted_pair(test_case)
+  low = test_case.draw(integers(min_value: 0, max_value: 100))
+  high = test_case.draw(integers(min_value: low, max_value: 200))
+  [low, high]
+end
+
+Hegel.test do |tc|
+  low, high = draw_sorted_pair(tc)
+  expect(low).to be <= high
+end
+```
+
 The generators are `arrays`, `binary`, `booleans`, `characters`, `composite`,
 `dates`, `datetimes`, `deferred`, `domains`, `emails`, `floats`, `from_regex`,
 `hashes`, `integers`, `ip_addresses`, `just`, `one_of`, `optional`,

@@ -275,6 +275,22 @@ To reproduce this failure, pass the blob below to Hegel.test:
     reproduce_failure: "AAEAAAAACgEAAAAG"
 ```
 
+An ordinary Ruby method can share a related group of draws. Use a descriptive
+method parameter name so that the default RuboCop naming rule accepts it:
+
+```ruby
+def draw_sorted_pair(test_case)
+  low = test_case.draw(integers(min_value: 0, max_value: 100))
+  high = test_case.draw(integers(min_value: low, max_value: 200))
+  [low, high]
+end
+
+Hegel.test do |tc|
+  low, high = draw_sorted_pair(tc)
+  raise "values are out of order" unless low <= high
+end
+```
+
 `assume` discards a test case (the same way `reject` does) unless its
 condition holds, read as ordinary Ruby truthiness rather than restricted to
 `true`/`false`, so `tc.assume(hash[:key])` works directly:
