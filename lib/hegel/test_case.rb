@@ -25,6 +25,12 @@ module Hegel
     # #name_for's fallback when a draw has no better name (see below).
     DEFAULT_DRAW_NAME = "draw"
 
+    # The method names that reach #record_draw: #draw_integer, #draw_boolean,
+    # and #draw below. Hegel::DrawName.for takes this as an argument rather
+    # than knowing the list itself, so that class -- not DrawName -- stays
+    # the one place a fourth draw method needs to be added.
+    DRAW_METHOD_NAMES = [:draw, :draw_integer, :draw_boolean].freeze
+
     # Frames from #name_for's own caller_locations call up to the user's own
     # source line: #record_draw's call to #name_for (1), the public
     # draw_integer/draw_boolean/draw call to #record_draw (2), and the
@@ -517,7 +523,7 @@ module Hegel
       return label if label
 
       location = caller_locations(depth, 1)&.first
-      (location && DrawName.for(location.path, location.lineno)) || DEFAULT_DRAW_NAME
+      (location && DrawName.for(location.path, location.lineno, DRAW_METHOD_NAMES)) || DEFAULT_DRAW_NAME
     end
   end
 end

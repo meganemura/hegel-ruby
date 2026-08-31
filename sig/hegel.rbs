@@ -17,6 +17,7 @@ module Hegel
 
   class TestCase
     DEFAULT_DRAW_NAME: String
+    DRAW_METHOD_NAMES: Array[Symbol]
     DRAW_CALLER_DEPTH: Integer
 
     def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool) -> void
@@ -326,7 +327,7 @@ module Hegel
   module DrawName
     ASSIGNMENT_NODE_TYPES: Array[untyped]
 
-    def self.for: (String path, Integer lineno) -> String?
+    def self.for: (String path, Integer lineno, Array[Symbol] call_names) -> String?
     def self.reset_cache: () -> void
     def self.parse: (String path) -> untyped
     def self.cache: () -> Hash[String, untyped]

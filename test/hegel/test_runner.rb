@@ -203,10 +203,12 @@ class TestRunner < Minitest::Test
     assert_includes output.string, "@n = 501"
   end
 
-  # A method chain still names the draw after its own assignment target,
-  # not the chain's final result: the recorded value is the drawn integer
-  # itself (see Hegel::TestCase#record_draw), not xs.to_s's String.
-  def test_report_names_a_draw_behind_a_method_chain
+  # A method chain's assignment target names the chain's own result, not
+  # the draw underneath it: xs here holds a String built from the drawn
+  # Integer, so naming the draw "xs" would describe the wrong value (see
+  # Hegel::DrawName.for). It falls back to the generic name instead, the
+  # same as any other draw whose result is not itself the assigned value.
+  def test_report_falls_back_to_a_generic_name_for_a_draw_behind_a_method_chain
     output = StringIO.new
 
     assert_raises(RuntimeError) do
@@ -216,7 +218,9 @@ class TestRunner < Minitest::Test
       end
     end
 
-    assert_includes output.string, "xs = 501"
+    report = output.string
+    assert_match(/draw = 501/, report)
+    refute_includes report, "xs ="
   end
 
   # tc.draw(generator) must recover a name from the caller's own source the

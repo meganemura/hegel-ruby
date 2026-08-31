@@ -6,9 +6,10 @@ module Hegel
   # Recovers a drawn value's variable name from the caller's own source (see
   # docs/adr/0005), so a failure report can print `n = 501` instead of
   # `draw = 501` when the caller never passed a label:. This module only
-  # answers "what name does path:lineno assign a value to"; deciding
-  # whether to call it, and what to fall back to when it answers nil, is
-  # Hegel::TestCase#name_for's job, not this one's.
+  # answers "what name does path:lineno assign the value a draw call there
+  # produced, when that call is the whole assigned value"; deciding whether
+  # to call it, what counts as a draw call, and what to fall back to when it
+  # answers nil, is Hegel::TestCase#name_for's job, not this one's.
   module DrawName
     # Node types #for treats as "this line names a drawn value". An
     # explicit list, not every Prism::Node subclass whose name ends in
@@ -23,10 +24,20 @@ module Hegel
 
     # The name +path+:+lineno+ assigns a drawn value to, or nil when that
     # cannot be answered confidently: +path+ cannot be read, Prism cannot
-    # parse it, or the assignments covering +lineno+ do not single one out.
+    # parse it, the assignments covering +lineno+ do not single one out, or
+    # the one they single out does not assign a draw call directly.
+    # +call_names+ is the set of method names that count as a draw call
+    # (Hegel::TestCase::DRAW_METHOD_NAMES); this module has no opinion of
+    # its own about which methods draw.
+    #
     # A wrong name would misdirect a reader of the failure report more than
     # a missing one would, so an ambiguous line returns nil rather than
-    # guessing between candidates.
+    # guessing between candidates. That is also why a singled-out
+    # assignment still answers nil when its value is built from a draw
+    # rather than being the draw itself, as in `xs = [tc.draw(integers)]`
+    # or `n = tc.draw(integers).abs`: the recovered name would describe the
+    # Array or the Integer#abs result, not the drawn value the report
+    # actually prints next to it.
     #
     # Several assignments can cover one line by nesting rather than by
     # ambiguity. `error = assert_raises do ... n = tc.draw_integer(...) ...
@@ -35,13 +46,16 @@ module Hegel
     # whenever another candidate sits inside it. Two assignments written
     # side by side on one line contain neither the other, nothing singles
     # one out, and the answer is nil.
-    def for(path, lineno)
+    def for(path, lineno, call_names)
       program = parse(path)
       return nil unless program
 
       matches = assignment_nodes(program).select { |node| covers?(node.location, lineno) }
       innermost = matches.reject { |node| matches.any? { |other| encloses?(node, other) } }
-      innermost.one? ? innermost.first.name.to_s : nil
+      return nil unless innermost.one?
+
+      node = innermost.first
+      (node.value.is_a?(Prism::CallNode) && call_names.include?(node.value.name)) ? node.name.to_s : nil
     end
 
     # Drops every cached parse. #for's only state; a fresh process would
