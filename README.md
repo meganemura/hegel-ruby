@@ -55,6 +55,19 @@ compiles nothing and needs no engine on the side. The Hegel maintainers
 permit a third-party project to redistribute their release binaries
 ([hegeldev/hegel-rust#411]).
 
+A project that already has a `Gemfile.lock` needs one more step. Bundler keeps
+the platform list the lock already holds. It adds only the platform of the
+machine that runs `bundle install`. A lock written before this gem went in
+therefore names no Linux platform, and a Linux CI job cannot find the gem. Add
+each platform your CI uses:
+
+```bash
+bundle lock --add-platform x86_64-linux
+```
+
+A project with no lock yet needs nothing here. Its first `bundle install`
+writes the Linux platforms as well.
+
 Every push to main runs the suite on Ruby 3.3, 3.4, and 4.0, across Linux x64
 and arm64, macOS arm64, and Windows x64 and arm64. Windows arm64 starts at
 Ruby 3.4, the oldest Ruby that RubyInstaller publishes an arm64 build for. A
