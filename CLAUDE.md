@@ -136,6 +136,15 @@ Finalizer ordering cannot guarantee that. Release handles in an `ensure` block
 in the code that owns the run. A finalizer may back that up against leaks, but
 it must do nothing when the handle is already free.
 
+**The public surface follows the interface the hegeldev implementations
+share.** Names, arguments, defaults, and meanings. A feature this gem alone
+has, and one it alone lacks, are both divergences. A change to that interface
+starts as a proposal upstream, and this gem then takes the name and the
+semantics that were settled on. Mechanism is outside the rule: how the engine
+is reached, what Ruby alone can offer a reader, and where a Ruby hazard forces
+a different construction. See
+[ADR 0015](docs/adr/0015-follow-the-hegeldev-interface-and-take-changes-upstream-first.md).
+
 **Wrap compound generators in spans.** The engine shrinks better when it can
 see the structure of a drawn value. A missing span costs nothing at generation
 time and shows up only as a worse counterexample, so the shrink-quality tests
