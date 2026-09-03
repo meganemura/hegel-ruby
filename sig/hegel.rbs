@@ -103,7 +103,7 @@ module Hegel
     class FloatGenerator < Generator
       WIDTH: Integer
 
-      def initialize: (min_value: Float?, max_value: Float?, allow_nan: bool, allow_infinity: bool, exclude_min: bool, exclude_max: bool) -> void
+      def initialize: (min_value: Float?, max_value: Float?, allow_nan: bool?, allow_infinity: bool?, exclude_min: bool, exclude_max: bool) -> void
       def do_draw: (untyped tc) -> Float
     end
 
@@ -298,7 +298,7 @@ module Hegel
     module Methods
       def booleans: (?p: Float) -> Generators::BooleanGenerator
       def integers: (?min_value: Integer?, ?max_value: Integer?) -> Generators::IntegerGenerator
-      def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool, ?allow_infinity: bool, ?exclude_min: bool, ?exclude_max: bool) -> Generators::FloatGenerator
+      def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool?, ?allow_infinity: bool?, ?exclude_min: bool, ?exclude_max: bool) -> Generators::FloatGenerator
       def text: (?min_size: Integer, ?max_size: Integer?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::TextGenerator
       def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::ArrayGenerator
       def just: (untyped value) -> Generators::JustGenerator

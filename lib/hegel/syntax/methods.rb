@@ -25,8 +25,9 @@ module Hegel
       end
 
       # A double in [min_value, max_value]. allow_nan and allow_infinity
-      # both default to false.
-      def floats(min_value: nil, max_value: nil, allow_nan: false, allow_infinity: false, exclude_min: false,
+      # default to what the bounds imply: NaN when the caller passed
+      # neither bound, an infinity when the caller left either side open.
+      def floats(min_value: nil, max_value: nil, allow_nan: nil, allow_infinity: nil, exclude_min: false,
         exclude_max: false)
         Generators::FloatGenerator.new(
           min_value: min_value, max_value: max_value, allow_nan: allow_nan, allow_infinity: allow_infinity,

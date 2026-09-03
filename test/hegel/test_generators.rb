@@ -116,32 +116,66 @@ class TestGenerators < Minitest::Test
     assert_all_examples(floats(max_value: 0.0)) { |v| v <= 0.0 }
   end
 
-  # allow_nan: false (the default) rules NaN out entirely, so this proves
-  # the option has an effect rather than merely not raising. No shrink
-  # pressure is involved (the property never fails); test_cases: 200 gives
-  # the generation phase enough draws to reliably hit NaN even though it is
-  # not forced the way p: 1.0 forces a boolean. Neither helper fits: this
-  # is an existence check ("some draw is NaN"), which assert_all_examples
-  # (a universal check) cannot express, and find_any would add a shrink
-  # phase and its own 500-case budget, undermining the "no shrink
-  # pressure" and 200-case reasoning above.
-  def test_floats_allow_nan_can_draw_nan
+  # The tests below fix the defaults docs/adr/0015 adopted: NaN when the
+  # caller passed neither bound, an infinity when either side is open.
+  #
+  # The two existence checks ("some draw is NaN") need a shape the helpers
+  # do not have. assert_all_examples states a universal, and find_any would
+  # add a shrink phase to a property that never fails. test_cases: 200
+  # gives the generation phase enough draws to hit a special value that is
+  # not forced the way p: 1.0 forces a boolean.
+  def test_floats_unbounded_draws_nan_by_default
     found_nan = false
     Hegel.test(test_cases: 200, verbosity: :quiet) do |tc|
-      found_nan ||= tc.draw(floats(allow_nan: true)).nan?
+      found_nan ||= tc.draw(floats).nan?
     end
 
     assert found_nan
   end
 
-  # Same reasoning as allow_nan above, for allow_infinity.
-  def test_floats_allow_infinity_can_draw_infinity
+  # Half-bounded rather than unbounded: this is the case that separates
+  # allow_infinity's default (either side open) from allow_nan's (both
+  # sides open), and it is the weaker draw of the two, because min_value
+  # rules out one of the two infinities. It gets 500 cases where the NaN
+  # check above gets 200 for that reason.
+  def test_floats_half_bounded_draws_infinity_by_default
     found_infinity = false
-    Hegel.test(test_cases: 200, verbosity: :quiet) do |tc|
-      found_infinity ||= tc.draw(floats(allow_infinity: true)).infinite?
+    Hegel.test(test_cases: 500, verbosity: :quiet) do |tc|
+      found_infinity ||= tc.draw(floats(min_value: 0.0)).infinite?
     end
 
     assert found_infinity
+  end
+
+  def test_floats_fully_bounded_draws_neither_nan_nor_infinity_by_default
+    assert_no_examples(floats(min_value: -1.0, max_value: 1.0)) { |v| v.nan? || v.infinite? }
+  end
+
+  def test_floats_allow_nan_false_rules_nan_out_when_unbounded
+    assert_no_examples(floats(allow_nan: false)) { |v| v.nan? }
+  end
+
+  def test_floats_allow_infinity_false_rules_infinity_out_when_unbounded
+    assert_no_examples(floats(allow_nan: false, allow_infinity: false)) { |v| v.infinite? }
+  end
+
+  # hegel-rust's src/generators/numeric.rs and hegel-go's primitives.go
+  # each raise on these two combinations. The asserted substrings are the
+  # ones those two messages carry.
+  def test_floats_allow_nan_with_a_bound_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(floats(allow_nan: true, min_value: 0.0)) }
+    end
+
+    assert_includes error.message, "cannot have allow_nan=true with min_value or max_value"
+  end
+
+  def test_floats_allow_infinity_with_both_bounds_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(floats(allow_infinity: true, min_value: 0.0, max_value: 1.0)) }
+    end
+
+    assert_includes error.message, "cannot have allow_infinity=true with both min_value and max_value"
   end
 
   def test_floats_exclude_min_excludes_the_minimum

@@ -64,15 +64,22 @@ module Hegel
     end
 
     # Hegel::Syntax::Methods#floats. A double in [min_value, max_value],
-    # unbounded (the full finite range) by default. allow_nan and
-    # allow_infinity both default to false here, unlike hegel-rust's
-    # floats() (true when neither bound is set): this milestone exposes a
-    # plain, always-off-by-default surface and leaves
-    # smallest_nonzero_magnitude, and the allow_nan/allow_infinity/bounds
-    # interaction hegel-rust validates, unexposed. A caller who never asks
-    # for NaN never has to reason about it, and a keyword can be added to
-    # this list later without breaking anyone, where a default flipped from
-    # true to false would.
+    # unbounded by default.
+    #
+    # allow_nan and allow_infinity are three-valued: nil asks for the
+    # default the bounds imply, and true or false overrides it. Three
+    # implementations write that default as the same pair of expressions --
+    # hegel-rust's src/generators/numeric.rs, hegel-go's primitives.go, and
+    # hegel-typescript's src/generators/numeric.ts -- so an unbounded
+    # floats() draws NaN and both infinities, and a fully bounded one draws
+    # neither. docs/adr/0015 decides to follow that surface rather than the
+    # always-off one this generator carried through 0.1.1.
+    #
+    # The two checks below come with those defaults: hegel-rust and
+    # hegel-go each raise on the same two combinations, and the messages
+    # here carry the substring theirs do. smallest_nonzero_magnitude and
+    # allow_subnormal, which hegel-rust also exposes, stay unexposed; a
+    # keyword can be added later without breaking a caller.
     class FloatGenerator < Generator
       # hegel_generate_float's width; Ruby has one Float type, the 64-bit
       # IEEE 754 double, so this is never anything else.
@@ -89,13 +96,25 @@ module Hegel
       end
 
       def do_draw(tc)
+        has_min = !@min_value.nil?
+        has_max = !@max_value.nil?
+        allow_nan = @allow_nan.nil? ? !has_min && !has_max : @allow_nan
+        allow_infinity = @allow_infinity.nil? ? !has_min || !has_max : @allow_infinity
+
+        if allow_nan && (has_min || has_max)
+          raise Hegel::Error, "floats: cannot have allow_nan=true with min_value or max_value"
+        end
+        if allow_infinity && has_min && has_max
+          raise Hegel::Error, "floats: cannot have allow_infinity=true with both min_value and max_value"
+        end
+
         min_value = @min_value || -Float::INFINITY
         max_value = @max_value || Float::INFINITY
         raise Hegel::Error, "floats: max_value < min_value" if max_value < min_value
 
         tc.generate_float(
           WIDTH, min_value, max_value,
-          allow_nan: @allow_nan, allow_infinity: @allow_infinity,
+          allow_nan: allow_nan, allow_infinity: allow_infinity,
           exclude_min: @exclude_min, exclude_max: @exclude_max,
           smallest_nonzero_magnitude: LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
         )

@@ -419,12 +419,15 @@ Hegel.test(verbosity: :quiet) { |tc| tc.draw(integers(min_value: 10**30, max_val
 # => nil
 ```
 
-### `floats(min_value: nil, max_value: nil, allow_nan: false, allow_infinity: false, exclude_min: false, exclude_max: false)`
+### `floats(min_value: nil, max_value: nil, allow_nan: nil, allow_infinity: nil, exclude_min: false, exclude_max: false)`
 
-A double in `[min_value, max_value]`, unbounded (the full finite range) by
-default. Unlike hegel-rust's and hegel-typescript's `floats()`, `allow_nan`
-and `allow_infinity` both default to **`false`** here even when fully
-unbounded (see [Gotchas](#gotchas)).
+A double in `[min_value, max_value]`, unbounded by default.
+
+`allow_nan` defaults to `true` when the caller passes neither bound, `false`
+otherwise. `allow_infinity` defaults to `true` when the caller leaves either
+side open, `false` when both bounds are set. hegel-rust and
+hegel-typescript's `floats()` default the same way. Pass `true` or `false` to
+override either (see [Gotchas](#gotchas)).
 
 ```ruby
 Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
@@ -433,12 +436,18 @@ Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
 end
 
 Hegel.test(test_cases: 200, verbosity: :quiet) do |tc|
-  tc.draw(floats(allow_nan: true)) # can now draw NaN
+  tc.draw(floats) # unbounded: draws NaN and both infinities
+  tc.draw(floats(allow_nan: false, allow_infinity: false)) # finite doubles only
 end
 ```
 
-`max_value < min_value` raises `Hegel::Error` at draw time:
-`"floats: max_value < min_value"`.
+Three combinations raise `Hegel::Error` at draw time:
+
+- `max_value < min_value`: `"floats: max_value < min_value"`
+- `allow_nan: true` with either bound:
+  `"floats: cannot have allow_nan=true with min_value or max_value"`
+- `allow_infinity: true` with both bounds:
+  `"floats: cannot have allow_infinity=true with both min_value and max_value"`
 
 ### `text(min_size: 0, max_size: nil, codec: nil, min_codepoint: nil, max_codepoint: nil)`
 
@@ -1181,11 +1190,11 @@ result # => nil
 
 ## Gotchas
 
-1. **`floats` defaults `allow_nan: false, allow_infinity: false`, even when
-   fully unbounded.** hegel-rust's and hegel-typescript's `floats()` default
-   both to `true` when neither bound is set. This binding always starts
-   both off; pass `allow_nan: true` and/or `allow_infinity: true`
-   deliberately if the code under test needs to see them.
+1. **Float defaults include NaN and infinity when unbounded.** `floats` with
+   no bounds draws `NaN` and both infinities. If your code does not handle
+   them, pass `allow_nan: false, allow_infinity: false` -- but consider
+   whether the code *should* handle them first. A bound turns each one off:
+   NaN needs both bounds absent, an infinity needs one side open.
 
 2. **`integers`'s default range, when a bound is omitted, is still the
    signed 64-bit range (`-2**63..(2**63 - 1)`), even though arbitrary
