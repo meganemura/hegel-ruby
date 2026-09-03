@@ -57,16 +57,16 @@ permit a third-party project to redistribute their release binaries
 
 A project that already has a `Gemfile.lock` needs one more step. Bundler keeps
 the platform list the lock already holds. It adds only the platform of the
-machine that runs `bundle install`. A lock written before this gem went in
-therefore names no Linux platform, and a Linux CI job cannot find the gem. Add
-each platform your CI uses:
+machine that runs `bundle install`. A lock therefore names only the platforms
+of the machines that have run it. A Linux CI job cannot find the gem when the
+lock names no Linux platform. Add each platform your CI uses:
 
 ```bash
 bundle lock --add-platform x86_64-linux
 ```
 
-A project with no lock yet needs nothing here. Its first `bundle install`
-writes the Linux platforms as well.
+A project with no lock yet reads the `PLATFORMS` section of the lock its first
+`bundle install` writes, and adds whatever its CI needs the same way.
 
 Every push to main runs the suite on Ruby 3.3, 3.4, and 4.0, across Linux x64
 and arm64, macOS arm64, and Windows x64 and arm64. Windows arm64 starts at
