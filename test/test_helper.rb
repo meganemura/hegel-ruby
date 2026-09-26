@@ -38,3 +38,33 @@ end
 ENV["HEGEL_LIBHEGEL_PATH"] ||= host_asset && Dir[File.expand_path("../tmp/libhegel/*/#{host_asset}", __dir__)].max
 
 require "minitest/autorun"
+
+require "fileutils"
+
+# Every test class that drives a real Hegel.test run checks that the run left
+# no ./.hegel directory behind. When a run does leave one, this removes it
+# before failing, so the leftover cannot fail every later test in the same
+# working directory as well. A mutation testing tool runs each mutant's tests
+# in this one directory, and without the removal, one mutant that writes
+# ./.hegel made every later mutant's tests fail too.
+# A ./.hegel that existed before the test started is left alone: the test
+# still fails, and a directory someone put there on purpose survives.
+module HegelDirectoryGuard
+  def before_setup
+    super
+    @hegel_directory_existed = Dir.exist?(hegel_directory)
+  end
+
+  def refute_new_hegel_directory
+    created = !@hegel_directory_existed && Dir.exist?(hegel_directory)
+    FileUtils.rm_rf(hegel_directory) if created
+    refute created || Dir.exist?(hegel_directory),
+      "a run must not leave a .hegel directory behind"
+  end
+
+  private
+
+  def hegel_directory
+    File.join(Dir.pwd, ".hegel")
+  end
+end

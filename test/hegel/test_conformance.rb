@@ -4,6 +4,7 @@ require "test_helper"
 require "support/conformance"
 
 class TestConformance < Minitest::Test
+  include HegelDirectoryGuard
   include Hegel::Conformance
   include Hegel::Syntax::Methods
 
@@ -11,8 +12,7 @@ class TestConformance < Minitest::Test
   # TestGenerators#teardown): a run must not leave ./.hegel behind, and
   # every test below drives a real Hegel.test run through these helpers.
   def teardown
-    refute Dir.exist?(File.join(Dir.pwd, ".hegel")),
-      "a run must not leave a .hegel directory behind"
+    refute_new_hegel_directory
   end
 
   def test_assert_all_examples_passes_when_every_value_satisfies_the_block

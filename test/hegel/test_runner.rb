@@ -22,6 +22,8 @@ class OriginProbe
 end
 
 class TestRunner < Minitest::Test
+  include HegelDirectoryGuard
+
   # A run that leaves ./.hegel behind means Hegel::Settings.apply_database's
   # nil/nil row (the default when a test here passes neither database:
   # keyword) regressed and stopped calling hegel_settings_set_database with
@@ -29,8 +31,7 @@ class TestRunner < Minitest::Test
   # engine and Fake alike, must leave none; the database-round-trip tests
   # below write into their own Dir.mktmpdir instead, never here.
   def teardown
-    refute Dir.exist?(File.join(Dir.pwd, ".hegel")),
-      "a run must not leave a .hegel directory behind"
+    refute_new_hegel_directory
   end
 
   # Exercises the default Hegel::LibHegel::Real wiring end to end: no impl:

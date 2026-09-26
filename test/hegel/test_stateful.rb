@@ -4,12 +4,13 @@ require "test_helper"
 require "stringio"
 
 class TestStateful < Minitest::Test
+  include HegelDirectoryGuard
+
   # A run that leaves ./.hegel behind means the mandatory database-disable
   # step regressed, the same check test/hegel/test_generators.rb's own
   # #teardown makes for every real-engine test in that file.
   def teardown
-    refute Dir.exist?(File.join(Dir.pwd, ".hegel")),
-      "a run must not leave a .hegel directory behind"
+    refute_new_hegel_directory
   end
 
   # ---- declaration (no real engine: these only read StateMachine's own

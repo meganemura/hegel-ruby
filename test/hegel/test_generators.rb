@@ -8,6 +8,7 @@ require "stringio"
 require "timeout"
 
 class TestGenerators < Minitest::Test
+  include HegelDirectoryGuard
   include Hegel::Syntax::Methods
   include Hegel::Conformance
 
@@ -15,8 +16,7 @@ class TestGenerators < Minitest::Test
   # step regressed (see TestRunner#teardown); every real-engine test in
   # this class must leave none.
   def teardown
-    refute Dir.exist?(File.join(Dir.pwd, ".hegel")),
-      "a run must not leave a .hegel directory behind"
+    refute_new_hegel_directory
   end
 
   # ---- booleans ----
