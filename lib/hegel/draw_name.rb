@@ -116,7 +116,8 @@ module Hegel
     def encloses?(outer, inner)
       return false if outer.equal?(inner)
 
-      outer.location.start_offset <= inner.location.start_offset &&
+      # An outer assignment's start offset never equals an inner one's, since the outer node begins with the name first.
+      outer.location.start_offset <= inner.location.start_offset && # mutineer:disable-line comparison
         inner.location.end_offset <= outer.location.end_offset
     end
   end

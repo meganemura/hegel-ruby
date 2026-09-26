@@ -172,7 +172,8 @@ module Hegel
     # BooleanGenerator's own primitive; #draw_boolean is this plus
     # recording.
     def generate_boolean(p = 0.5)
-      @impl.generate_boolean(@ctx, @handle, p, false, false)
+      # has_forced is false, so the engine ignores the forced argument's value.
+      @impl.generate_boolean(@ctx, @handle, p, false, false) # mutineer:disable-line boolean_literal
     end
 
     # hegel_generate_float. Hegel::Generators::FloatGenerator's own

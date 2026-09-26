@@ -78,8 +78,10 @@ module Hegel
 
       def do_draw(tc)
         MAX_ATTEMPTS.times do
-          accepted = false
-          value = nil
+          # Each variable is set again before it is read, or stays nil, which acts like false (!nil == !false).
+          # The initializer also shows intent: discard the span when an exception skips the reassignment.
+          accepted = false # mutineer:disable-line statement_removal
+          value = nil # mutineer:disable-line statement_removal, boolean_literal
           tc.start_span(LibHegel::HEGEL_LABEL_FILTER)
           begin
             value = @source.do_draw(tc)

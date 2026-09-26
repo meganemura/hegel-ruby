@@ -281,7 +281,8 @@ module Hegel
     # framework that catches the re-raised exception would otherwise read
     # its own output before this one, out of order.
     def replay(impl, ctx, settings, result, stats, quiet:, output:, &block)
-      kept_exception = nil
+      # The loop below always assigns a real exception, per the zero-failures note on #replay above.
+      kept_exception = nil # mutineer:disable-line boolean_literal
       failures = []
       impl.run_result_failure_count(ctx, result).times do |index|
         failure = impl.run_result_failure(ctx, result, index)
@@ -386,13 +387,14 @@ module Hegel
     # being reported as a Hegel failure.
     def classify(test_case, &block)
       block.call(test_case)
-      [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil]
+      # No caller reads a VALID, INVALID, or OVERRUN tuple past its first two elements.
+      [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil] # mutineer:disable-line boolean_literal
     rescue *Hegel::FATAL_EXCEPTIONS
       raise
     rescue Hegel::AssumeFailed
-      [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil]
+      [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil] # mutineer:disable-line boolean_literal
     rescue Hegel::StopTest
-      [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil]
+      [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil] # mutineer:disable-line boolean_literal
     rescue Exception => e
       [LibHegel::HEGEL_STATUS_INTERESTING, origin_for(e), e, test_case.entries]
     end
