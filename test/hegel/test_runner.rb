@@ -142,6 +142,24 @@ class TestRunner < Minitest::Test
     refute_includes report, "value ="
   end
 
+  # #draw_boolean records the same way #draw_integer does (see
+  # Hegel::TestCase#record_draw): every test above this one exercises
+  # #draw_integer's own recording, so this is #draw_boolean's own turn.
+  def test_report_shows_a_labelled_draw_boolean_value
+    fake = failing_fake_replaying_the_same_body
+    fake.generate_boolean_value = true
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, output: output) do |tc|
+        tc.draw_boolean(label: "flag")
+        raise "boom"
+      end
+    end
+
+    assert_includes output.string, "flag = true"
+  end
+
   # Two unlabelled draws assigned on the same line: Hegel::DrawName.for
   # finds two assignment nodes covering that line and refuses to guess
   # which draw either name belongs to, so both fall back to "draw" the same
@@ -622,6 +640,14 @@ class TestRunner < Minitest::Test
     error = assert_raises(Hegel::Error) { tc.note("x") { "y" } }
 
     assert_includes error.message, "exactly one"
+  end
+
+  # #entries's own documented contract (see Hegel::TestCase#entries): nil,
+  # not an empty list, for an instance not built to record.
+  def test_entries_is_nil_for_a_test_case_not_built_to_record
+    tc = Hegel::TestCase.new(nil, nil, nil, record: false)
+
+    assert_nil tc.entries
   end
 
   def test_hegel_test_reraises_the_bodys_exception_class_and_message
