@@ -21,6 +21,10 @@ test:
 coverage:
     bundle exec rake coverage
 
+# run mutation testing over lib/ with mutineer
+mutation:
+    bundle exec rake mutation
+
 # run the linter
 lint:
     bundle exec rake standard
