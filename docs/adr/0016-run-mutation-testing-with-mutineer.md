@@ -44,9 +44,12 @@ A first run over `lib/` met four problems, all measured on mutineer 1.0.2:
 3. `test/hegel/test_conformance.rb` stays out of the run. It still runs in
    `rake test`.
 4. `--strategy redefine`. mutineer's default, `reload`, loads the whole
-   mutated file again. On this suite, that alone failed tests for three
-   mutants that the suite does not catch: one of them, applied by hand,
-   left all 377 tests passing. `redefine` loads only the mutated method.
+   mutated file from a tempfile by a relative path, so its backtrace lines
+   show a relative path. `Hegel::Runner.origin_for` then takes a line in
+   `lib/` for the caller's, and its test fails for every mutant of
+   `lib/hegel/test_case.rb`. That alone killed three mutants that the
+   suite does not catch: one of them, applied by hand, left all 377 tests
+   passing. `redefine` loads only the mutated method.
 
 The five teardowns share `HegelDirectoryGuard#refute_new_hegel_directory`
 (`test/test_helper.rb`). When a test leaves a `./.hegel` it did not find at
@@ -68,9 +71,13 @@ survivors, which were false kills before.
 The survivors are a list of tests to add. A later change works through them
 by file.
 
-Settings 1 and 3 work around mutineer itself, and setting 2 follows from its
-pairing rule. The load path is reported as
+Settings 1, 3, and 4 work around mutineer itself, and setting 2 follows
+from its pairing rule. Each is reported: the load path as
 [davidteren/mutineer#119](https://github.com/davidteren/mutineer/issues/119),
-and the pairing rule as
-[davidteren/mutineer#120](https://github.com/davidteren/mutineer/issues/120).
+the pairing rule as
+[davidteren/mutineer#120](https://github.com/davidteren/mutineer/issues/120),
+the `StringIO` as
+[davidteren/mutineer#121](https://github.com/davidteren/mutineer/issues/121),
+and the relative path as
+[davidteren/mutineer#123](https://github.com/davidteren/mutineer/issues/123).
 When a mutineer release fixes one, drop the setting that it replaces.

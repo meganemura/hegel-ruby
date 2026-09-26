@@ -28,8 +28,9 @@ task default: %i[coverage standard]
 #   $stdout, and mutineer replaces $stdout with a StringIO, so the file fails
 #   before any mutant runs.
 # - --strategy redefine reloads only the mutated method. The default,
-#   reload, loads the whole mutated file again, and that alone failed tests
-#   for three mutants the suite does not catch.
+#   reload, loads the whole mutated file by a relative path, which breaks
+#   Hegel::Runner.origin_for and killed three mutants the suite does not
+#   catch.
 # MUTINEER_ARGS passes more flags, for example
 # MUTINEER_ARGS="--since origin/main --format json --output .mutineer/run.json".
 desc "Run mutation testing over lib/ with mutineer"
