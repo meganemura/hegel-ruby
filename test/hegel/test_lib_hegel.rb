@@ -392,6 +392,17 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # .encode_integer_le's own minimal byte length, pinned exactly: a
+  # round-trip alone cannot tell a minimal encoding from a longer one, since
+  # .decode_integer_le already accepts a sign-filled longer buffer (see the
+  # test below). 0 and -1 are excluded: both have bit_length 0, which gives
+  # the same 1-byte answer whether the formula divides or multiplies by 8.
+  def test_encode_integer_le_returns_the_minimal_byte_length
+    assert_equal "\x01".b, Hegel::LibHegel.encode_integer_le(1)
+    assert_equal "\x80\x00".b, Hegel::LibHegel.encode_integer_le(128)
+    assert_equal "\x80".b, Hegel::LibHegel.encode_integer_le(-128)
+  end
+
   # .decode_integer_le accepts a buffer longer than the value's own minimal
   # encoding, sign-filled the way hegel_generate_integer_big's out_value is
   # documented to be, and must still decode to the same value either way.
@@ -584,6 +595,55 @@ class TestLibHegel < Minitest::Test
     assert_nil real.collection_free(nil, nil)
     assert_nil real.string_generator_free(nil, nil)
     assert_nil real.generate_string_result_free(nil, nil)
+  end
+
+  # #generate_bytes_result_free's own no-op-on-nil contract, the
+  # #generate_string_result_free twin the test above already pins.
+  def test_real_generate_bytes_result_free_is_a_no_op_on_nil
+    real = Hegel::LibHegel::Real.new
+    assert_nil real.generate_bytes_result_free(nil, nil)
+  end
+
+  # Every method below reaches its own +nil+ literal only after a
+  # successful call, so each return value pins that literal against a
+  # rewrite that would instead hand back the call's own success value
+  # (true). The database is disabled ("") so the run leaves nothing on
+  # disk.
+  def test_real_settings_setters_mark_complete_and_state_machine_rule_rejected_return_nil
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      assert_nil real.settings_set_test_cases(ctx, settings, 1)
+      assert_nil real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      assert_nil real.settings_set_seed(ctx, settings, 42, true)
+      assert_nil real.settings_set_derandomize(ctx, settings, true)
+      assert_nil real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [])
+      real.state_machine_next_rule(ctx, tc, state_machine)
+      assert_nil real.state_machine_rule_rejected(ctx, tc, state_machine)
+      real.state_machine_free(ctx, state_machine)
+
+      assert_nil real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
   end
 
   # hegel_start_span / hegel_stop_span pair around a draw, per the header
