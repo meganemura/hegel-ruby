@@ -62,6 +62,12 @@ class TestGenerators < Minitest::Test
     assert_includes error.message, "max_value < min_value"
   end
 
+  # min_value == max_value is the boundary the < check must not reject: it
+  # names an exact value, not an empty range.
+  def test_integers_min_value_equals_max_value_returns_that_value
+    assert_all_examples(integers(min_value: 5, max_value: 5)) { |v| v == 5 }
+  end
+
   # A bound outside int64_t's range dispatches to hegel_generate_integer_big
   # instead of hegel_generate_integer (see IntegerGenerator#do_draw); the
   # caller-facing integers() surface stays the same either way, so this
@@ -194,6 +200,12 @@ class TestGenerators < Minitest::Test
     assert_includes error.message, "max_value < min_value"
   end
 
+  # min_value == max_value is the boundary the < check must not reject: it
+  # names an exact value, not an empty range.
+  def test_floats_min_value_equals_max_value_returns_that_value
+    assert_all_examples(floats(min_value: 1.0, max_value: 1.0)) { |v| v.between?(1.0, 1.0) }
+  end
+
   # ---- text ----
 
   def test_text_draws_against_the_real_engine
@@ -288,6 +300,12 @@ class TestGenerators < Minitest::Test
     end
 
     assert_includes error.message, "must not be negative"
+  end
+
+  # max_size == min_size is the boundary the < check must not reject: it
+  # names an exact length, not an empty range.
+  def test_arrays_max_size_equals_min_size_returns_that_length
+    assert_all_examples(arrays(integers, min_size: 3, max_size: 3)) { |v| v.length == 3 }
   end
 
   # ---- just ----
@@ -540,6 +558,12 @@ class TestGenerators < Minitest::Test
     end
 
     assert_includes error.message, "max_size < min_size"
+  end
+
+  # max_size == min_size is the boundary the < check must not reject: it
+  # names an exact length, not an empty range.
+  def test_binary_max_size_equals_min_size_returns_that_length
+    assert_all_examples(binary(min_size: 3, max_size: 3)) { |v| v.bytesize == 3 }
   end
 
   # ---- from_regex ----
