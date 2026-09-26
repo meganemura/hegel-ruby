@@ -19,3 +19,9 @@ gem "simplecov", "1.0.3"
 # Mutation testing only; `bundle exec mutineer run` reads it. Pinned exact,
 # and never required at load time, so the library and its tests do not see it.
 gem "mutineer", "1.0.2", require: false
+
+# Trial of evilution beside mutineer. Pinned exact, development-only, and
+# never required at load time, the same way mutineer is. 1.1.0 is the newest
+# release that has been public for seven days; 1.2.0 is newer and is not
+# taken here.
+gem "evilution", "1.1.0", require: false
