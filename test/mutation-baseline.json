@@ -1,35 +1,7 @@
 {
   "schema_version": "1.3",
-  "summary": {"score":95.6,"scoped":false},
+  "summary": {"score":100.0,"scoped":false},
   "survivors": [
-    {"id":"ea0de9b4a18f","file":"lib/hegel/draw_name.rb","subject":"Hegel::DrawName.encloses?","operator":"comparison","change":"- outer.location.start_offset <= inner.location.start_offset && | + outer.location.start_offset < inner.location.start_offset &&"},
-    {"id":"33f65eb5125e","file":"lib/hegel/generator.rb","subject":"Hegel::Generator::Filtered#do_draw","operator":"statement_removal","change":"- accepted = false | + nil"},
-    {"id":"5957927f81fb","file":"lib/hegel/generator.rb","subject":"Hegel::Generator::Filtered#do_draw","operator":"statement_removal","change":"- value = nil | + nil"},
-    {"id":"b5481278935a","file":"lib/hegel/generator.rb","subject":"Hegel::Generator::Filtered#do_draw","operator":"boolean_literal","change":"- value = nil | + value = true"},
-    {"id":"9a37bacbc8e6","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#collection_free","operator":"statement_removal","change":"- @hegel_collection_free_fn.call(ctx, collection) | + nil"},
-    {"id":"408422a5f0ab","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#context_free","operator":"statement_removal","change":"- @hegel_context_free_fn.call(ctx) | + nil"},
-    {"id":"10e69b79b10e","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#failure_free","operator":"statement_removal","change":"- @hegel_failure_free_fn.call(ctx, f) | + nil"},
-    {"id":"2b00d05741c1","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#generate_bytes_result_free","operator":"statement_removal","change":"- @hegel_generate_bytes_result_free_fn.call(ctx, result) | + nil"},
-    {"id":"d3bccaab8a05","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#generate_string_result_free","operator":"statement_removal","change":"- @hegel_generate_string_result_free_fn.call(ctx, result) | + nil"},
-    {"id":"4084e7256196","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#pack_name_array","operator":"statement_removal","change":"- return [nil, []] if names.empty? | + nil"},
-    {"id":"da31426030aa","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#pool_free","operator":"statement_removal","change":"- @hegel_pool_free_fn.call(ctx, pool) | + nil"},
-    {"id":"f9a658ccf3ad","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#run_free","operator":"statement_removal","change":"- @hegel_run_free_fn.call(ctx, run) | + nil"},
-    {"id":"2c28cb366cea","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#run_result_free","operator":"statement_removal","change":"- @hegel_run_result_free_fn.call(ctx, r) | + nil"},
-    {"id":"ef39a338384b","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#settings_free","operator":"statement_removal","change":"- @hegel_settings_free_fn.call(ctx, s) | + nil"},
-    {"id":"7a3c36f21652","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#settings_new","operator":"statement_removal","change":"- LibHegel.check!(self, ctx, code) | + nil"},
-    {"id":"12765abdc7e2","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#state_machine_free","operator":"statement_removal","change":"- @hegel_state_machine_free_fn.call(ctx, state_machine) | + nil"},
-    {"id":"990e723fff9d","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#string_generator_email","operator":"statement_removal","change":"- LibHegel.check!(self, ctx, code) | + nil"},
-    {"id":"3e3ac7a51ac6","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#string_generator_free","operator":"statement_removal","change":"- @hegel_string_generator_free_fn.call(ctx, generator) | + nil"},
-    {"id":"5e2798be1618","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#string_generator_url","operator":"statement_removal","change":"- LibHegel.check!(self, ctx, code) | + nil"},
-    {"id":"00412640b973","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#test_case_free","operator":"statement_removal","change":"- @hegel_test_case_free_fn.call(ctx, tc) | + nil"},
-    {"id":"040db083a5bd","file":"lib/hegel/lib_hegel/real.rb","subject":"Hegel::LibHegel::Real#version","operator":"statement_removal","change":"- LibHegel.check!(self, ctx, code) | + nil"},
-    {"id":"1ace6e4d964a","file":"lib/hegel/runner.rb","subject":"Hegel::Runner.classify","operator":"boolean_literal","change":"- [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil] | + [LibHegel::HEGEL_STATUS_VALID, nil, nil, true]"},
-    {"id":"5fdc10ff5a64","file":"lib/hegel/runner.rb","subject":"Hegel::Runner.classify","operator":"boolean_literal","change":"- [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil] | + [LibHegel::HEGEL_STATUS_OVERRUN, nil, true, nil]"},
-    {"id":"851e2a26fe07","file":"lib/hegel/runner.rb","subject":"Hegel::Runner.classify","operator":"boolean_literal","change":"- [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil] | + [LibHegel::HEGEL_STATUS_INVALID, nil, true, nil]"},
-    {"id":"8b4fbf8bd123","file":"lib/hegel/runner.rb","subject":"Hegel::Runner.classify","operator":"boolean_literal","change":"- [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil] | + [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, true]"},
-    {"id":"b87d844edf98","file":"lib/hegel/runner.rb","subject":"Hegel::Runner.classify","operator":"boolean_literal","change":"- [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil] | + [LibHegel::HEGEL_STATUS_INVALID, nil, nil, true]"},
-    {"id":"eac06d24fce1","file":"lib/hegel/runner.rb","subject":"Hegel::Runner.classify","operator":"boolean_literal","change":"- [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil] | + [LibHegel::HEGEL_STATUS_VALID, nil, true, nil]"},
-    {"id":"79d15da11f41","file":"lib/hegel/runner.rb","subject":"Hegel::Runner.replay","operator":"boolean_literal","change":"- kept_exception = nil | + kept_exception = true"},
-    {"id":"5dd711d063ac","file":"lib/hegel/test_case.rb","subject":"Hegel::TestCase#generate_boolean","operator":"boolean_literal","change":"- @impl.generate_boolean(@ctx, @handle, p, false, false) | + @impl.generate_boolean(@ctx, @handle, p, true, false)"}
+
   ]
 }
