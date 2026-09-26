@@ -22,7 +22,6 @@ module Hegel
     # Hegel::Syntax::Methods#booleans. A boolean, true with probability +p+.
     class BooleanGenerator < Generator
       def initialize(p:)
-        super()
         @p = p
       end
 
@@ -45,7 +44,6 @@ module Hegel
       INT64_MAX = (2**63) - 1
 
       def initialize(min_value:, max_value:)
-        super()
         @min_value = min_value
         @max_value = max_value
       end
@@ -86,7 +84,6 @@ module Hegel
       WIDTH = 64
 
       def initialize(min_value:, max_value:, allow_nan:, allow_infinity:, exclude_min:, exclude_max:)
-        super()
         @min_value = min_value
         @max_value = max_value
         @allow_nan = allow_nan
@@ -125,7 +122,6 @@ module Hegel
     # characters, unbounded above by default.
     class TextGenerator < Generator
       def initialize(min_size:, max_size:, codec:, min_codepoint:, max_codepoint:)
-        super()
         @min_size = min_size
         @max_size = max_size
         @codec = codec
@@ -159,7 +155,6 @@ module Hegel
     # with [min_size, max_size] entries, unbounded above by default.
     class ArrayGenerator < Generator
       def initialize(elements, min_size:, max_size:)
-        super()
         @elements = elements
         @min_size = min_size
         @max_size = max_size
@@ -212,7 +207,6 @@ module Hegel
     # nothing here to retry or isolate).
     class JustGenerator < Generator
       def initialize(value)
-        super()
         @value = value
       end
 
@@ -225,7 +219,6 @@ module Hegel
     # picked by drawing an index in [0, collection.size - 1].
     class SampledFromGenerator < Generator
       def initialize(collection)
-        super()
         @collection = collection
       end
 
@@ -246,7 +239,6 @@ module Hegel
     # by drawing an index in [0, generators.size - 1].
     class OneOfGenerator < Generator
       def initialize(generators)
-        super()
         @generators = generators
       end
 
@@ -268,7 +260,6 @@ module Hegel
     # milestone leaves generate_boolean at its own default probability.
     class OptionalGenerator < Generator
       def initialize(generator)
-        super()
         @generator = generator
       end
 
@@ -289,7 +280,6 @@ module Hegel
     # not repeated draws of one, so there is no per-element span to open.
     class TupleGenerator < Generator
       def initialize(generators)
-        super()
         @generators = generators
       end
 
@@ -307,7 +297,6 @@ module Hegel
     # [min_size, max_size] entries, unbounded above by default.
     class SetGenerator < Generator
       def initialize(elements, min_size:, max_size:)
-        super()
         @elements = elements
         @min_size = min_size
         @max_size = max_size
@@ -368,7 +357,6 @@ module Hegel
     # duplicate element.
     class HashGenerator < Generator
       def initialize(keys, values, min_size:, max_size:)
-        super()
         @keys = keys
         @values = values
         @min_size = min_size
@@ -430,7 +418,6 @@ module Hegel
     # delegated #do_draw is the whole draw, not a composition of several.
     class CharactersGenerator < Generator
       def initialize(codec:, min_codepoint:, max_codepoint:)
-        super()
         @text = TextGenerator.new(
           min_size: 1, max_size: 1, codec: codec,
           min_codepoint: min_codepoint, max_codepoint: max_codepoint
@@ -446,7 +433,6 @@ module Hegel
     # bytes, unbounded above by default.
     class BinaryGenerator < Generator
       def initialize(min_size:, max_size:)
-        super()
         @min_size = min_size
         @max_size = max_size
       end
@@ -492,7 +478,6 @@ module Hegel
     # passing here.
     class FromRegexGenerator < Generator
       def initialize(pattern, fullmatch:)
-        super()
         @pattern = pattern
         @fullmatch = fullmatch
       end
@@ -533,7 +518,6 @@ module Hegel
     # only repeat the engine's own validation with a worse message.
     class DomainsGenerator < Generator
       def initialize(max_length:)
-        super()
         @max_length = max_length
       end
 
@@ -557,7 +541,6 @@ module Hegel
     # separately.
     class IpAddressesGenerator < Generator
       def initialize(v4:, v6:)
-        super()
         @v4 = v4
         @v6 = v6
       end
@@ -607,7 +590,6 @@ module Hegel
     # family choice and address draw are two calls under one span).
     class UuidsGenerator < Generator
       def initialize(version:)
-        super()
         @version = version
       end
 
@@ -637,7 +619,6 @@ module Hegel
       MAX_DATE = Date.new(9999, 12, 31)
 
       def initialize(min_value:, max_value:)
-        super()
         @min_value = min_value
         @max_value = max_value
       end
@@ -682,7 +663,6 @@ module Hegel
       FORMAT = /\A(\d{2}):(\d{2}):(\d{2})\.(\d{6})\z/
 
       def initialize(min_value:, max_value:)
-        super()
         @min_value = min_value
         @max_value = max_value
       end
@@ -740,7 +720,6 @@ module Hegel
       MAX_DATETIME = Time.utc(9999, 12, 31, 23, 59, 59, 999_999)
 
       def initialize(min_value:, max_value:)
-        super()
         @min_value = min_value
         @max_value = max_value
       end
@@ -778,7 +757,6 @@ module Hegel
     # may mint its own stable u64).
     class CompositeGenerator < Generator
       def initialize(&block)
-        super()
         @block = block
       end
 
@@ -857,7 +835,6 @@ module Hegel
     # Deferred) opens none either.
     class DeferredGenerator < Generator
       def initialize
-        super
         @inner = nil
       end
 
