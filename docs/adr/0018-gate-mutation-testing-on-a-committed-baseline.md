@@ -59,5 +59,9 @@ without a change to the file, and the next rewrite shows the survivor as one
 removed line.
 
 A survivor that no test can kill, because the mutant behaves the same as the
-original, belongs in `.mutineer.yml` under `ignore:`, with its reason in a
-comment beside the id. It then leaves the baseline too.
+original, gets a `# mutineer:disable-line <operator>` marker on its line,
+with the reason in a comment on the line above. The judgment then moves
+with the code through an edit or a move, which an id list in
+`.mutineer.yml` does not do. The reason cannot follow the marker on the same
+line, because mutineer reads every word after the marker as an operator
+name. The survivor then leaves the baseline too.
