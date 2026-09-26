@@ -27,7 +27,7 @@ class TestGenerator < Minitest::Test
   # notice. This one checks every such class in the library at once.
   def test_every_class_that_implements_do_draw_is_a_generator
     drawing_classes = ObjectSpace.each_object(Class).select do |klass|
-      klass.name&.start_with?("Hegel::") && klass.instance_methods(false).include?(:do_draw)
+      klass.name&.start_with?("Hegel::") && klass.method_defined?(:do_draw, false)
     end
 
     assert_includes drawing_classes, Hegel::Generators::BooleanGenerator
