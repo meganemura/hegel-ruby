@@ -18,4 +18,8 @@ gem "simplecov", "1.0.3"
 
 # Mutation testing only; `bundle exec mutineer run` reads it. Pinned exact,
 # and never required at load time, so the library and its tests do not see it.
-gem "mutineer", "1.0.2", require: false
+# It needs Ruby 3.4 or later and the gem supports 3.3, so it sits in a group
+# that a 3.3 install leaves out (`bundle config set --local without mutation`).
+group :mutation do
+  gem "mutineer", "1.0.2", require: false
+end

@@ -58,8 +58,11 @@ that wrote it is still killed, and later mutants no longer fail on the
 leftover. A `./.hegel` that existed before the test stays in place.
 
 `mutineer` is a development dependency, pinned exact and never required at
-load time. `.mutineer/` (the cache and reports) and `.hegel/` are ignored
-by git.
+load time. It needs Ruby 3.4 or later, and the gem supports 3.3, so it sits
+in the Gemfile group `mutation`. CI leaves that group out on every job, and
+a 3.3 install leaves it out with `bundle config set --local without
+mutation`. Mutation testing then runs on 3.4 or later only.
+`.mutineer/` (the cache and reports) and `.hegel/` are ignored by git.
 
 ## Consequences
 

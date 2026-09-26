@@ -34,6 +34,10 @@ jobs:
     needs: select
     name: Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # mutineer needs Ruby 3.4 or later, so a 3.3 job cannot install its
+    # group. CI does not run mutation testing, so every job leaves it out.
+    env:
+      BUNDLE_WITHOUT: mutation
     strategy:
       fail-fast: false
       matrix:
