@@ -1,0 +1,23 @@
+# Trial configuration for running evilution against this Minitest suite.
+# The default integration is rspec, so this file sets minitest. isolation
+# fork is what auto selects for a project with a gemspec; in_process does
+# not rerun Minitest after the first mutant. The mappings cover source files
+# whose tests are not named test_<basename>.rb under a mirrored directory.
+# A run still needs RUBYOPT=-Itest, because every test file requires
+# "test_helper" and evilution does not put test/ on the load path.
+schema_version: 1
+integration: minitest
+isolation: fork
+timeout: 15
+spec_mappings:
+  lib/hegel/lib_hegel/real.rb:
+    - test/hegel/test_lib_hegel.rb
+    - test/hegel/test_lib_hegel_real_error_paths.rb
+  lib/hegel/state_machine.rb:
+    - test/hegel/test_stateful.rb
+  lib/hegel/stateful/pool.rb:
+    - test/hegel/test_stateful.rb
+  lib/hegel/syntax/methods.rb:
+    - test/hegel/test_generators.rb
+  lib/hegel/test_case.rb:
+    - test/hegel/test_runner.rb
