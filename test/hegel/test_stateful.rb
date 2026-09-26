@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "support/fake_lib_hegel"
 require "stringio"
 
 class TestStateful < Minitest::Test
@@ -334,6 +335,66 @@ class TestStateful < Minitest::Test
     end
   end
 
+  # ---- apply_rule / drive's own native calls (a Fake, not the real engine:
+  # these pin which hegel_start_span / hegel_stop_span / hegel_state_machine_
+  # rule_rejected calls each of #apply_rule's three outcomes makes, rather
+  # than the failure-shrinking behaviour those calls end up producing) ----
+
+  # A machine with one rule whose body is decided per test, so the three
+  # tests below each drive a different #apply_rule outcome (completes,
+  # rejects, raises) without three near-identical machine classes.
+  class ScriptedRuleMachine < Hegel::StateMachine
+    def initialize(&behavior)
+      @behavior = behavior
+    end
+
+    rule(:step) { |tc| @behavior.call(tc) }
+  end
+
+  # #drive opens a span before every hegel_state_machine_next_rule call,
+  # including the one that completes normally; #apply_rule's else branch
+  # then closes it without discarding.
+  def test_a_completed_rule_opens_a_span_and_closes_it_without_discarding
+    fake = stateful_recording_fake([0])
+
+    Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(ScriptedRuleMachine.new { |_tc| }, tc) }
+
+    assert_includes fake.spans, [:start, Hegel::LibHegel::HEGEL_LABEL_STATEFUL_RULE]
+    assert_includes fake.spans, [:stop, false]
+  end
+
+  # tc.assume(false) inside a rule discards that rule's span and tells
+  # libhegel the rule was rejected, distinct from a completed rule's
+  # stop_span(discard: false) above.
+  def test_a_rejected_rule_discards_its_span_and_tells_the_engine
+    fake = stateful_recording_fake([0])
+
+    Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(ScriptedRuleMachine.new { |tc| tc.reject }, tc) }
+
+    assert_includes fake.spans, [:stop, true]
+    assert_equal 1, fake.rejected_calls
+  end
+
+  # An ordinary exception closes the span without discarding, then
+  # re-raises -- #apply_rule's rescue Exception branch, distinct from both
+  # outcomes above. The run is configured to fail and replay so the raised
+  # exception reaches the caller (see failing_fake_replaying_the_same_body
+  # in test_runner.rb for the same shape).
+  def test_a_raising_rule_closes_the_span_without_discarding_before_reraising
+    fake = stateful_recording_fake([0])
+    fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
+    fake.failure_count = 1
+    fake.failure_origins = ["origin.rb:1"]
+    fake.failure_blobs = ["blob"]
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(ScriptedRuleMachine.new { |_tc| raise "boom" }, tc) }
+    end
+
+    assert_equal "boom", error.message
+    assert_includes fake.spans, [:stop, false]
+  end
+
   # ---- Hegel::Stateful::Pool (real engine: docs/adr/0011 has the ownership
   # decision behind this class's shape) ----
 
@@ -503,5 +564,55 @@ class TestStateful < Minitest::Test
     end
 
     assert_includes output.string, "handle = 42"
+  end
+
+  private
+
+  # A Fake that runs the rule at each index in +rule_indices+, in order,
+  # then reports HEGEL_STATE_MACHINE_DONE, and records every
+  # hegel_start_span / hegel_stop_span / hegel_state_machine_rule_rejected
+  # call this test case's own state machine makes. The step counter resets
+  # on every hegel_new_state_machine call, not just once, so a failing
+  # run's replay (a second, separate state machine) runs the same rule
+  # sequence again instead of finding nothing left and ending early.
+  def stateful_recording_fake(rule_indices)
+    spans = []
+    rejected_calls = 0
+    fake = Class.new(Hegel::LibHegel::Fake) do
+      define_method(:new_state_machine) do |ctx, tc, rule_names, invariant_names|
+        @step = 0
+        super(ctx, tc, rule_names, invariant_names)
+      end
+
+      define_method(:state_machine_next_rule) do |ctx, tc, state_machine|
+        Hegel::LibHegel.check!(self, ctx, @state_machine_next_rule_code)
+        if @step < rule_indices.length
+          index = rule_indices[@step]
+          @step += 1
+          index
+        else
+          Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE
+        end
+      end
+
+      define_method(:start_span) do |ctx, tc, label|
+        spans << [:start, label]
+        super(ctx, tc, label)
+      end
+
+      define_method(:stop_span) do |ctx, tc, discard|
+        spans << [:stop, discard]
+        super(ctx, tc, discard)
+      end
+
+      define_method(:state_machine_rule_rejected) do |ctx, tc, state_machine|
+        rejected_calls += 1
+        super(ctx, tc, state_machine)
+      end
+    end.new
+    fake.test_case_count = 1
+    fake.define_singleton_method(:spans) { spans }
+    fake.define_singleton_method(:rejected_calls) { rejected_calls }
+    fake
   end
 end
