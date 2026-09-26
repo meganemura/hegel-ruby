@@ -24,10 +24,10 @@ Gem::Specification.new do |spec|
   spec.homepage = "https://github.com/meganemura/hegel-ruby"
   spec.license = "MIT"
 
-  # 3.3 is the oldest Ruby that is not end-of-life, and the oldest that ships
-  # Prism as a default gem. Hegel parses the caller's source with Prism to name
-  # drawn values in failure reports, so the floor and the feature agree.
-  spec.required_ruby_version = ">= 3.3.0"
+  # 3.4 is the floor, so the gem and its mutation testing tool need one Ruby
+  # (docs/adr/0017). It ships Prism as a default gem, which Hegel uses to name
+  # drawn values in failure reports.
+  spec.required_ruby_version = ">= 3.4.0"
 
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.metadata["homepage_uri"] = spec.homepage

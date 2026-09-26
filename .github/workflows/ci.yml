@@ -34,23 +34,12 @@ jobs:
     needs: select
     name: Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    # mutineer needs Ruby 3.4 or later, so a 3.3 job cannot install its
-    # group. CI does not run mutation testing, so every job leaves it out.
-    env:
-      BUNDLE_WITHOUT: mutation
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.select.outputs.os) }}
-        # Every Ruby that is not end-of-life. 3.2 reached end of life on
-        # 2026-03-31.
-        ruby: ["3.3", "3.4", "4.0"]
-        exclude:
-          # RubyInstaller publishes no arm64 build before 3.4, so this pair
-          # cannot exist. Nobody can run Ruby 3.3 on Windows arm64 either, so
-          # the aarch64-mingw-ucrt gem loses no reachable user.
-          - os: windows-11-arm
-            ruby: "3.3"
+        # Every Ruby from the gem's floor, 3.4 (docs/adr/0017), to the newest.
+        ruby: ["3.4", "4.0"]
 
     # Actions are pinned to the commit each release points at. A tag can be
     # moved to another commit, so a tag reference says which version its owner

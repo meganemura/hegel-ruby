@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted. [ADR 0017](0017-raise-the-ruby-floor-to-3-4.md) supersedes the
+Gemfile group `mutation` in the Consequences.
 
 ## Context
 

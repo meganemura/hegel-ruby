@@ -143,7 +143,7 @@ test because it reads as coverage:
   reaches that size. Deleting the reject branch then fails the test.
 - **Do not assert on a report's rendered text when the drawn value's own
   `#inspect` varies across the supported Rubies.** `Set[0]` on Ruby 4.0 is
-  `#<Set: {0}>` on 3.3 and 3.4, and CI runs all three. Assert on a message
+  `#<Set: {0}>` on 3.4, and CI runs both. Assert on a message
   the test itself built.
 - **A round trip cannot check a byte convention.** A draw that needs a
   Ruby-side encode/decode pair is one example: `generate_integer_big` takes

@@ -1264,7 +1264,6 @@ result # => nil
    generator's own draw, discards the whole test case.
 
 10. **The suite runs against the real engine on Linux, macOS, and Windows.**
-    Every push to main runs it on Ruby 3.3, 3.4, and 4.0, across Linux x64
-    and arm64, macOS arm64, and Windows x64 and arm64. Windows arm64 starts
-    at Ruby 3.4, the oldest Ruby that RubyInstaller publishes an arm64 build
-    for. Alpine (musl) is the platform this binding has not run on.
+    Every push to main runs it on Ruby 3.4 and 4.0, across Linux x64 and
+    arm64, macOS arm64, and Windows x64 and arm64. Alpine (musl) is the
+    platform this binding has not run on.

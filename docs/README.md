@@ -23,6 +23,7 @@ An index of the design records for `hegel-ruby`.
 - [0014: Name a drawn value only when the draw is the whole assigned value](adr/0014-name-a-drawn-value-only-when-the-draw-is-the-whole-assigned-value.md)
 - [0015: Follow the hegeldev interface, and take changes upstream first](adr/0015-follow-the-hegeldev-interface-and-take-changes-upstream-first.md)
 - [0016: Run mutation testing with mutineer](adr/0016-run-mutation-testing-with-mutineer.md)
+- [0017: Raise the Ruby floor to 3.4](adr/0017-raise-the-ruby-floor-to-3-4.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.

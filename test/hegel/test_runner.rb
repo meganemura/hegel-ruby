@@ -784,17 +784,13 @@ class TestRunner < Minitest::Test
     infrastructure_frames = error.backtrace_locations.select { |location| Hegel::Runner.infrastructure?(location.path) }
     refute_empty infrastructure_frames
 
-    # Exception#set_backtrace accepts Thread::Backtrace::Location objects
-    # from Ruby 3.4 on, and raises TypeError on 3.3, which this gem still
-    # supports -- so trimming a real exception's own backtrace works on two
-    # of the three Rubies here and errors on the third, taking this branch's
-    # coverage with it. #origin_for reads nothing but #backtrace_locations,
-    # so an object answering that one message carries the case everywhere,
-    # and the frames it answers with are the real ones a real assertion
-    # failure produced, selected rather than invented.
-    raised = Struct.new(:backtrace_locations).new(infrastructure_frames)
+    # Trimming the real exception's own backtrace keeps the frames a real
+    # assertion failure produced, selected rather than invented.
+    # Exception#set_backtrace takes Thread::Backtrace::Location objects from
+    # Ruby 3.4, the gem's floor.
+    error.set_backtrace(infrastructure_frames)
 
-    origin = Hegel::Runner.origin_for(raised)
+    origin = Hegel::Runner.origin_for(error)
 
     first = infrastructure_frames.first
     assert_equal "Raised at #{first.path}:#{first.lineno}", origin

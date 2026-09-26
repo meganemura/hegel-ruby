@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+The floor is Ruby 3.4. A project on Ruby 3.3 stays on 0.1.1. See
+[ADR 0017](docs/adr/0017-raise-the-ruby-floor-to-3-4.md).
+
 ## [0.1.1] - 2026-08-31
 
 The reference that ships inside the gem told a reader to install `hegeltest`
