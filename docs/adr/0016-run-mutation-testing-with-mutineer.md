@@ -21,9 +21,11 @@ A first run over `lib/` met four problems, all measured on mutineer 1.0.2:
   `require "test_helper"`, so each one failed to load. The run then reported
   every mutant as uncovered, with a score of N/A and exit status 0. The load
   error appears only with `--verbose`.
-- `--test` takes one file. A second path after it becomes a source to
-  mutate, so the test files themselves were mutated, and the score read
-  0.7%.
+- mutineer pairs a source with `test/<name>_test.rb` only. This suite
+  names its tests `test_<name>.rb`, so each test file must be named with
+  `--test`. The flag takes one file, and it repeats. A first run gave one
+  flag several files, and the files after the first became sources to
+  mutate, so the score read 0.7%.
 - mutineer replaces `$stdout` with a `StringIO` before it runs the tests.
   Minitest's `capture_subprocess_io` reopens `$stdout` on a file, so
   `test/hegel/test_conformance.rb` failed before any mutant ran.
@@ -66,5 +68,9 @@ survivors, which were false kills before.
 The survivors are a list of tests to add. A later change works through them
 by file.
 
-The workarounds in settings 1 to 3 belong in mutineer itself. When a
-mutineer release fixes one, drop that setting from the task.
+Settings 1 and 3 work around mutineer itself, and setting 2 follows from its
+pairing rule. The load path is reported as
+[davidteren/mutineer#119](https://github.com/davidteren/mutineer/issues/119),
+and the pairing rule as
+[davidteren/mutineer#120](https://github.com/davidteren/mutineer/issues/120).
+When a mutineer release fixes one, drop the setting that it replaces.
