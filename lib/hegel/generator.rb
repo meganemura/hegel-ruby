@@ -39,7 +39,6 @@ module Hegel
     # generators.rb.
     class Mapped < Generator
       def initialize(source, block)
-        super()
         @source = source
         @block = block
       end
@@ -73,7 +72,6 @@ module Hegel
       MAX_ATTEMPTS = 3
 
       def initialize(source, block)
-        super()
         @source = source
         @block = block
       end

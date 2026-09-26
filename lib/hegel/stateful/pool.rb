@@ -71,7 +71,6 @@ module Hegel
       # of this library's own public generator vocabulary.
       class ValuesReusable < Generator
         def initialize(pool, values)
-          super()
           @pool = pool
           @values = values
         end
@@ -94,7 +93,6 @@ module Hegel
       # pre-checking emptiness.
       class ValuesConsumed < Generator
         def initialize(pool, values)
-          super()
           @pool = pool
           @values = values
         end
