@@ -1173,6 +1173,33 @@ class TestRunner < Minitest::Test
     assert_equal 1, fake.freed_pools.size
   end
 
+  # #replay_failure calls hegel_mark_complete for its own replayed case, on
+  # top of the live case's own call inside #run_case: the header documents
+  # blob replay as ended by the caller's own hegel_mark_complete, distinct
+  # from the live loop's completion of the same test case object.
+  def test_replay_failure_marks_the_replayed_case_complete_a_second_time
+    fake = failing_fake_replaying_the_same_body
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake) { |_tc| raise "boom" } }
+
+    assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING, Hegel::LibHegel::HEGEL_STATUS_INTERESTING],
+      fake.marked_statuses
+  end
+
+  # reproduce_failure: skips the run loop entirely (#reproduce), so a
+  # single hegel_mark_complete call is the whole story -- distinct from
+  # #replay_failure's second call above, which comes on top of a live
+  # case's own.
+  def test_reproduce_failure_marks_the_replayed_case_complete
+    fake = Hegel::LibHegel::Fake.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, reproduce_failure: "blob") { |_tc| raise "boom" }
+    end
+
+    assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING], fake.marked_statuses
+  end
+
   private
 
   # A Fake configured for a FAILED run with exactly one failure whose blob
