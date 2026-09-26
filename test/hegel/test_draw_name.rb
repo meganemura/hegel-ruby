@@ -71,6 +71,17 @@ class TestDrawName < Minitest::Test
     end
   end
 
+  # The file holds a draw's assignment, but on another line. A file with no
+  # assignment at all cannot show that #covers? limits the candidates to the
+  # queried line; this one can, because without that limit the one
+  # assignment in the file would name a line it does not span.
+  def test_returns_nil_for_a_line_outside_the_only_assignment_in_the_file
+    with_fixture("n = tc.draw(integers)\nfoo(1, 2)\n") do |path|
+      assert_equal "n", draw_name_for(path, 1)
+      assert_nil draw_name_for(path, 2)
+    end
+  end
+
   def test_returns_nil_when_prism_cannot_parse_the_file
     with_fixture("def foo(\n") do |path|
       assert_nil draw_name_for(path, 1)
