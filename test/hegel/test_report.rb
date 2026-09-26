@@ -28,6 +28,19 @@ class TestReport < Minitest::Test
       Hegel::Report.assign_names(entries)
   end
 
+  # A :note's own tag and 2-element shape must survive even when its
+  # message happens to match a repeated :draw name: the "unless :draw"
+  # guard is what skips a :note before the tally is ever read for it, not
+  # the tally coming up empty. A :note's message reused as a repeated
+  # draw's own name is the one case that tells the two apart -- without
+  # the guard, this :note's own count would read the draws' tally (2, so
+  # "> 1") and get rebuilt as a third, spurious [:draw, "n_3", nil].
+  def test_assign_names_never_renames_a_note_even_when_its_message_repeats_a_draw_name
+    entries = [[:draw, "n", 1], [:draw, "n", 2], [:note, "n"]]
+
+    assert_equal [[:draw, "n_1", 1], [:draw, "n_2", 2], [:note, "n"]], Hegel::Report.assign_names(entries)
+  end
+
   def test_render_one_failure_has_no_distinct_failures_heading
     failure = Hegel::Report::Failure.new(test_cases: 8, discarded: 2, entries: [[:draw, "n", 501]], blob: "AXicY2Ig...")
 
@@ -71,5 +84,17 @@ class TestReport < Minitest::Test
     text = Hegel::Report.render_failure(failure)
 
     assert_includes text, "  no draws here"
+  end
+
+  # A blank line separates the entries from the "To reproduce" footer, the
+  # same way a blank line already separates the header from the entries
+  # (the array literal #render_failure starts from) -- without it, the
+  # last entry and the footer's first line would run together.
+  def test_render_failure_has_a_blank_line_before_the_reproduce_footer
+    failure = Hegel::Report::Failure.new(test_cases: 1, discarded: 0, entries: [[:draw, "n", 501]], blob: "blob")
+
+    text = Hegel::Report.render_failure(failure)
+
+    assert_includes text, "  n = 501\n\nTo reproduce this failure, pass the blob below to Hegel.test:"
   end
 end
