@@ -1,0 +1,16 @@
+# Equivalent mutants that share a line with a killed mutant of the same
+# operator. A `# mutineer:disable-line` marker suppresses every mutant of
+# that operator on its line, so these few are ignored by their stable id
+# instead (ADR 0018). The reason for each sits in a comment beside the code.
+ignore:
+  # Hegel::Runner.classify: no caller reads a VALID, INVALID, or OVERRUN
+  # tuple past its first two elements.
+  - eac06d24fce1 # VALID, third element
+  - 1ace6e4d964a # VALID, fourth element
+  - 851e2a26fe07 # INVALID, third element
+  - b87d844edf98 # INVALID, fourth element
+  - 5fdc10ff5a64 # OVERRUN, third element
+  - 8b4fbf8bd123 # OVERRUN, fourth element
+  # Hegel::TestCase#generate_boolean: has_forced is false, so the engine
+  # ignores the forced argument's value.
+  - 5dd711d063ac # forced

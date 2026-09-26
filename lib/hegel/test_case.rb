@@ -173,7 +173,9 @@ module Hegel
     # recording.
     def generate_boolean(p = 0.5)
       # has_forced is false, so the engine ignores the forced argument's value.
-      @impl.generate_boolean(@ctx, @handle, p, false, false) # mutineer:disable-line boolean_literal
+      # .mutineer.yml ignores that mutant by id, since a line marker would also
+      # hide the killed mutant of has_forced.
+      @impl.generate_boolean(@ctx, @handle, p, false, false)
     end
 
     # hegel_generate_float. Hegel::Generators::FloatGenerator's own

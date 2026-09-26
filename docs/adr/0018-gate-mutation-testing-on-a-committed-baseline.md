@@ -65,3 +65,10 @@ with the code through an edit or a move, which an id list in
 `.mutineer.yml` does not do. The reason cannot follow the marker on the same
 line, because mutineer reads every word after the marker as an operator
 name. The survivor then leaves the baseline too.
+
+A marker suppresses every mutant of its operator on its line. When a line
+holds an equivalent mutant and a killed one of the same operator, a marker
+would also hide the killed one. `Runner.classify` has three such lines,
+and `TestCase#generate_boolean` has one. Those equivalent mutants go in
+`.mutineer.yml` under `ignore:`, by their stable id. The reason stays in a
+comment beside the code, and the comment names `.mutineer.yml`.
