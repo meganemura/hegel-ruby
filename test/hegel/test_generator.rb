@@ -20,6 +20,22 @@ class TestGenerator < Minitest::Test
     assert_raises(NotImplementedError) { generator.do_draw(nil) }
   end
 
+  # #map and #filter come from Hegel::Generator alone, so a generator class
+  # that implements #do_draw without that parent would draw values yet raise
+  # NoMethodError on #map. The tests of each generator draw through
+  # Hegel::TestCase#draw, which calls only #do_draw, so none of them would
+  # notice. This one checks every such class in the library at once.
+  def test_every_class_that_implements_do_draw_is_a_generator
+    drawing_classes = ObjectSpace.each_object(Class).select do |klass|
+      klass.name&.start_with?("Hegel::") && klass.instance_methods(false).include?(:do_draw)
+    end
+
+    assert_includes drawing_classes, Hegel::Generators::BooleanGenerator
+    drawing_classes.each do |klass|
+      assert_operator klass, :<=, Hegel::Generator, "#{klass} implements #do_draw but is not a Hegel::Generator"
+    end
+  end
+
   def test_map_transforms_every_drawn_value_against_the_real_engine
     result = Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
       v = tc.draw(integers(min_value: 0, max_value: 100).map { |n| n * 2 })
