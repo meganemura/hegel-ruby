@@ -55,6 +55,16 @@ class TestDrawName < Minitest::Test
     end
   end
 
+  # `n = m = ...` nests the inner assignment's node inside the outer one,
+  # and both share the same end offset because the inner's value reaches to
+  # the statement's end. #encloses? must still tell them apart by their
+  # (unequal) start offsets alone, so the innermost name, "m", wins.
+  def test_returns_the_innermost_name_for_a_chained_assignment
+    with_fixture("n = m = tc.draw(integers)\n") do |path|
+      assert_equal "m", draw_name_for(path, 1)
+    end
+  end
+
   def test_returns_nil_for_a_line_with_no_assignment_at_all
     with_fixture("foo(1, 2)\n") do |path|
       assert_nil draw_name_for(path, 1)
