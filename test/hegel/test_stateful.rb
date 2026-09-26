@@ -434,6 +434,28 @@ class TestStateful < Minitest::Test
     end
   end
 
+  # #values_consumed must also remove the value from libhegel's own pool,
+  # not just this class's Ruby-side @values -- consume: true on
+  # hegel_pool_generate, not this class's own bookkeeping, is what stops
+  # the engine offering the same variable id again. A pool with one value
+  # confirms it: a second draw against an engine copy that still held the
+  # id would return that same id, and @values.fetch would raise KeyError
+  # instead of the clean Hegel::AssumeFailed an emptied pool is supposed
+  # to raise.
+  def test_values_consumed_removes_the_value_from_the_engines_own_pool
+    Hegel.test(test_cases: 5, verbosity: :quiet) do |tc|
+      pool = Hegel::Stateful::Pool.new(tc)
+      pool.add(1)
+      tc.draw(pool.values_consumed)
+      begin
+        tc.draw(pool.values_consumed)
+        raise "expected the second draw against an emptied pool to raise Hegel::AssumeFailed"
+      rescue Hegel::AssumeFailed
+        nil
+      end
+    end
+  end
+
   # A pool draw outside a rule behaves like any other assume/reject call:
   # HEGEL_E_ASSUME from an empty pool translates to Hegel::AssumeFailed,
   # which Hegel::Runner.classify discards the whole case for. A call
