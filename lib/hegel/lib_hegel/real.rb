@@ -253,7 +253,8 @@ module Hegel
       # side. The result code is not translated: the header documents this
       # call as always returning HEGEL_OK, so there is nothing to raise.
       def context_free(ctx)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_context_free_fn.call(ctx) # mutineer:disable-line statement_removal
         nil
       end
@@ -270,7 +271,8 @@ module Hegel
       def version(ctx)
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_version_fn.call(ctx, out)
-        # This call takes only ctx and this method's own out argument; neither makes the real engine return anything but HEGEL_OK.
+        # This call takes only ctx and this method's own out argument; neither
+        # makes the real engine return anything but HEGEL_OK.
         LibHegel.check!(self, ctx, code) # mutineer:disable-line statement_removal
         utf8(out.read_pointer)
       end
@@ -281,7 +283,8 @@ module Hegel
       def settings_new(ctx)
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_settings_new_fn.call(ctx, out)
-        # This call takes only ctx and this method's own out argument; neither makes the real engine return anything but HEGEL_OK.
+        # This call takes only ctx and this method's own out argument; neither
+        # makes the real engine return anything but HEGEL_OK.
         LibHegel.check!(self, ctx, code) # mutineer:disable-line statement_removal
         out.read_pointer
       end
@@ -291,7 +294,8 @@ module Hegel
       # #context_free: the header documents this call as always returning
       # HEGEL_OK.
       def settings_free(ctx, s)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_settings_free_fn.call(ctx, s) # mutineer:disable-line statement_removal
         nil
       end
@@ -393,7 +397,8 @@ module Hegel
       # no-op-on-NULL contract; not translated, for the same reason as
       # #context_free.
       def run_free(ctx, run)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_run_free_fn.call(ctx, run) # mutineer:disable-line statement_removal
         nil
       end
@@ -402,7 +407,8 @@ module Hegel
       # no-op-on-NULL contract; not translated, for the same reason as
       # #context_free.
       def test_case_free(ctx, tc)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_test_case_free_fn.call(ctx, tc) # mutineer:disable-line statement_removal
         nil
       end
@@ -445,7 +451,8 @@ module Hegel
       # no-op-on-NULL contract; not translated, for the same reason as
       # #context_free.
       def run_result_free(ctx, r)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_run_result_free_fn.call(ctx, r) # mutineer:disable-line statement_removal
         nil
       end
@@ -495,7 +502,8 @@ module Hegel
       # no-op-on-NULL contract; not translated, for the same reason as
       # #context_free.
       def failure_free(ctx, f)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_failure_free_fn.call(ctx, f) # mutineer:disable-line statement_removal
         nil
       end
@@ -651,7 +659,8 @@ module Hegel
       # call takes no test-case handle: the header documents a collection
       # as independent of the test case and run it was created under.
       def collection_free(ctx, collection)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_collection_free_fn.call(ctx, collection) # mutineer:disable-line statement_removal
         nil
       end
@@ -700,7 +709,8 @@ module Hegel
       # no-op-on-NULL contract; not translated, for the same reason as
       # #context_free.
       def pool_free(ctx, pool)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_pool_free_fn.call(ctx, pool) # mutineer:disable-line statement_removal
         nil
       end
@@ -763,7 +773,8 @@ module Hegel
       # hegel_state_machine_free's documented no-op-on-NULL contract; not
       # translated, for the same reason as #context_free.
       def state_machine_free(ctx, state_machine)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_state_machine_free_fn.call(ctx, state_machine) # mutineer:disable-line statement_removal
         nil
       end
@@ -804,7 +815,8 @@ module Hegel
       # hegel_string_generator_free's documented no-op-on-NULL contract;
       # not translated, for the same reason as #context_free.
       def string_generator_free(ctx, generator)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_string_generator_free_fn.call(ctx, generator) # mutineer:disable-line statement_removal
         nil
       end
@@ -840,7 +852,8 @@ module Hegel
       # contract (also safe on an already-freed, zeroed struct); not
       # translated, for the same reason as #context_free.
       def generate_string_result_free(ctx, result)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_generate_string_result_free_fn.call(ctx, result) # mutineer:disable-line statement_removal
         nil
       end
@@ -877,7 +890,8 @@ module Hegel
       # contract (also safe on an already-freed, zeroed struct); not
       # translated, for the same reason as #context_free.
       def generate_bytes_result_free(ctx, result)
-        # Removing this call only leaks native memory; Ruby has no way to observe the leak.
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
         @hegel_generate_bytes_result_free_fn.call(ctx, result) # mutineer:disable-line statement_removal
         nil
       end
@@ -902,7 +916,8 @@ module Hegel
       def string_generator_email(ctx)
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_string_generator_email_fn.call(ctx, out)
-        # This call takes only ctx and this method's own out argument; neither makes the real engine return anything but HEGEL_OK.
+        # This call takes only ctx and this method's own out argument; neither
+        # makes the real engine return anything but HEGEL_OK.
         LibHegel.check!(self, ctx, code) # mutineer:disable-line statement_removal
         out.read_pointer
       end
@@ -912,7 +927,8 @@ module Hegel
       def string_generator_url(ctx)
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_string_generator_url_fn.call(ctx, out)
-        # This call takes only ctx and this method's own out argument; neither makes the real engine return anything but HEGEL_OK.
+        # This call takes only ctx and this method's own out argument; neither
+        # makes the real engine return anything but HEGEL_OK.
         LibHegel.check!(self, ctx, code) # mutineer:disable-line statement_removal
         out.read_pointer
       end
@@ -1066,7 +1082,8 @@ module Hegel
       # factory method, not in a method whose only job is packing an
       # Array into a buffer.
       def pack_name_array(names)
-        # An empty array acts the same as NULL with length 0: hegel_new_state_machine reads zero names either way.
+        # An empty array acts the same as NULL with length 0:
+        # hegel_new_state_machine reads zero names either way.
         return [nil, []] if names.empty? # mutineer:disable-line statement_removal
 
         pointers = names.map { |name| FFI::MemoryPointer.from_string(name) }
