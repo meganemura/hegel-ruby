@@ -21,9 +21,13 @@ test:
 coverage:
     bundle exec rake coverage
 
-# run mutation testing over lib/ with mutineer
+# run mutation testing over lib/, and fail on a survivor the baseline does not list
 mutation:
     bundle exec rake mutation
+
+# rewrite test/mutation-baseline.json from a full mutation testing run
+mutation-baseline:
+    bundle exec rake mutation:baseline
 
 # run the linter
 lint:

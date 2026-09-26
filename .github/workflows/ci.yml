@@ -66,3 +66,23 @@ jobs:
         run: bundle exec rake libhegel:fetch
       - name: Run the tests and the linter
         run: bundle exec rake
+
+  # Mutation testing over lib/ takes about a minute, so it runs in full on
+  # every push and pull request, on one platform. It fails on a survivor that
+  # test/mutation-baseline.json does not list (docs/adr/0018).
+  mutation:
+    name: Mutation testing against the baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+      - name: Fetch the pinned libhegel
+        run: bundle exec rake libhegel:fetch
+      - name: Run mutation testing
+        run: bundle exec rake mutation
