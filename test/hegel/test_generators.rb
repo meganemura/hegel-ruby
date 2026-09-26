@@ -2,10 +2,35 @@
 
 require "test_helper"
 require "support/conformance"
+require "support/fake_lib_hegel"
 require "date"
 require "ipaddr"
 require "stringio"
 require "timeout"
+
+# Hegel::LibHegel::Fake (test/support/fake_lib_hegel.rb) accepts any
+# #start_span / #stop_span call but does not remember it, so it cannot tell
+# a test whether a generator opened the right span, or closed it with the
+# right +discard+. This subclass adds that memory, local to this file: no
+# other test needs a compound generator's exact span sequence.
+class SpanRecordingFake < Hegel::LibHegel::Fake
+  attr_reader :span_events
+
+  def initialize
+    super
+    @span_events = []
+  end
+
+  def start_span(ctx, tc, label)
+    @span_events << [:start, label]
+    super
+  end
+
+  def stop_span(ctx, tc, discard)
+    @span_events << [:stop, discard]
+    super
+  end
+end
 
 class TestGenerators < Minitest::Test
   include HegelDirectoryGuard
@@ -944,6 +969,101 @@ class TestGenerators < Minitest::Test
     Timeout.timeout(20) do
       assert_all_examples(tree) { |v| v.is_a?(Integer) || v.is_a?(Array) }
     end
+  end
+
+  # ---- span protocol ----
+  #
+  # A compound generator's own start_span/stop_span calls (see
+  # docs/adr/0006): missing one, or closing it with the wrong +discard+,
+  # costs nothing the real engine reports back and shows up only as a
+  # worse shrunk counterexample -- not something a test against the real
+  # engine can pin down directly. Driving #do_draw against
+  # SpanRecordingFake instead asserts the exact sequence libhegel itself
+  # would see: a missing span drops an entry from the list, and a
+  # discard: true where false belongs tells libhegel a successful draw
+  # was rejected and should be retried, which is not what happened.
+
+  # Draws +generator+ once against a SpanRecordingFake and returns the
+  # span events it recorded. generate_boolean_value: true and
+  # collection_more_count: 1 make every conditional draw (optional's
+  # coin flip, ip_addresses' family choice, one collection element) take
+  # the branch that exercises a compound generator's own span, not the
+  # cheaper path around it.
+  def draw_with_span_recording(generator)
+    fake = SpanRecordingFake.new
+    fake.generate_boolean_value = true
+    fake.collection_more_count = 1
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+    generator.do_draw(tc)
+    fake.span_events
+  end
+
+  def test_arrays_do_draw_opens_list_and_list_element_and_closes_both_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_LIST], [:start, Hegel::LibHegel::HEGEL_LABEL_LIST_ELEMENT],
+        [:stop, false], [:stop, false]],
+      draw_with_span_recording(arrays(integers))
+    )
+  end
+
+  def test_sets_do_draw_opens_set_and_set_element_and_closes_both_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_SET], [:start, Hegel::LibHegel::HEGEL_LABEL_SET_ELEMENT],
+        [:stop, false], [:stop, false]],
+      draw_with_span_recording(sets(integers))
+    )
+  end
+
+  def test_hashes_do_draw_opens_map_and_map_entry_and_closes_both_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_MAP], [:start, Hegel::LibHegel::HEGEL_LABEL_MAP_ENTRY],
+        [:stop, false], [:stop, false]],
+      draw_with_span_recording(hashes(integers, integers))
+    )
+  end
+
+  def test_tuples_do_draw_opens_and_closes_tuple_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_TUPLE], [:stop, false]],
+      draw_with_span_recording(tuples(integers, integers))
+    )
+  end
+
+  def test_optional_do_draw_opens_and_closes_optional_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_OPTIONAL], [:stop, false]],
+      draw_with_span_recording(optional(integers))
+    )
+  end
+
+  def test_sampled_from_do_draw_opens_and_closes_sampled_from_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_SAMPLED_FROM], [:stop, false]],
+      draw_with_span_recording(sampled_from([1, 2, 3]))
+    )
+  end
+
+  def test_one_of_do_draw_opens_and_closes_one_of_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_ONE_OF], [:stop, false]],
+      draw_with_span_recording(one_of(integers))
+    )
+  end
+
+  def test_ip_addresses_do_draw_opens_and_closes_ip_address_kept
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_IP_ADDRESS], [:stop, false]],
+      draw_with_span_recording(ip_addresses(v6: false))
+    )
+  end
+
+  def test_composite_do_draw_opens_and_closes_flat_map_kept
+    generator = composite { |dtc| dtc.draw(integers) }
+
+    assert_equal(
+      [[:start, Hegel::LibHegel::HEGEL_LABEL_FLAT_MAP], [:stop, false]],
+      draw_with_span_recording(generator)
+    )
   end
 
   # ---- mixin ----
