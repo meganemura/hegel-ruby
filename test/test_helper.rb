@@ -24,18 +24,19 @@ end
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "hegel"
 
-# Use a build already fetched by `rake libhegel:fetch` (or `fetch_all`), if
-# any. Globs this host's own asset name specifically, not every asset under
-# tmp/libhegel/: `fetch_all` stages every published platform's asset in the
-# same tmp/libhegel/<version>/ directory, and a bare wildcard's `.max` would
-# then pick whichever platform's filename sorts last, not this host's own.
+# Use the pinned build, if `rake libhegel:fetch` (or `fetch_all`) has
+# fetched it. The path names the pinned version and this host's own asset:
+# tmp/libhegel/ keeps older versions after a bump, and `fetch_all` puts every
+# platform's asset in one version directory. A glob that took the last match
+# would pick by sort order, and once loaded an older engine whose ABI no
+# longer matched these bindings.
 # A no-op on an unsupported host, or otherwise: ENV#[]= with nil deletes.
 host_asset = begin
   Hegel::Locate.asset_name(host_cpu: RbConfig::CONFIG["host_cpu"], host_os: RbConfig::CONFIG["host_os"])
 rescue Hegel::Error
   nil
 end
-ENV["HEGEL_LIBHEGEL_PATH"] ||= host_asset && Dir[File.expand_path("../tmp/libhegel/*/#{host_asset}", __dir__)].max
+ENV["HEGEL_LIBHEGEL_PATH"] ||= host_asset && Dir[File.expand_path("../tmp/libhegel/#{Hegel::LIBHEGEL_VERSION}/#{host_asset}", __dir__)].first
 
 require "minitest/autorun"
 

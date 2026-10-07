@@ -323,16 +323,22 @@ class TestLibhegelFetch < Minitest::Test
     Dir.mktmpdir do |root|
       bytes = "native bytes"
       hex = Digest::SHA256.hexdigest(bytes)
+      requested = []
       canned = lambda do |url|
+        requested << url
         url.end_with?(".sha256") ? "#{hex}  libhegel-darwin-arm64.dylib\n" : bytes
       end
 
       result = Hegel::LibhegelFetch.fetch_host_asset(
-        version: "0.32.5", host_cpu: "arm64", host_os: "darwin25", root: root, downloader: canned
+        version: "0.45.0", host_cpu: "arm64", host_os: "darwin25", root: root, downloader: canned
       )
 
-      assert_equal File.join(root, "0.32.5", "libhegel-darwin-arm64.dylib"), result
+      assert_equal File.join(root, "0.45.0", "libhegel-darwin-arm64.dylib"), result
       assert_equal bytes, File.read(result)
+      assert_equal [
+        "https://github.com/hegeldev/hegel-rust/releases/download/libhegel-v0.45.0/libhegel-darwin-arm64.dylib",
+        "https://github.com/hegeldev/hegel-rust/releases/download/libhegel-v0.45.0/libhegel-darwin-arm64.dylib.sha256"
+      ], requested
     end
   end
 

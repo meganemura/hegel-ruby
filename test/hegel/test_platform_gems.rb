@@ -43,7 +43,7 @@ class TestLibhegelFetchAll < Minitest::Test
         "must not download #{staged_asset}: it was already present"
 
       Hegel::Locate::ASSET_NAMES.values.reject { |asset| asset == staged_asset }.each do |asset|
-        assert requested.any? { |url| url.include?(asset) }, "expected a request for #{asset}"
+        assert_includes requested, "https://github.com/hegeldev/hegel-rust/releases/download/libhegel-v0.32.5/#{asset}"
       end
     end
   end

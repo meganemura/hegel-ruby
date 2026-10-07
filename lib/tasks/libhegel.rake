@@ -18,6 +18,13 @@ module Hegel
 
     module_function
 
+    # Since libhegel 0.42.1, hegel-rust tags an engine release
+    # libhegel-v<version>. The plain v<version> tags belong to its hegeltest
+    # crate, whose version numbers differ from the engine's.
+    def release_base(version)
+      "#{RELEASE_BASE}/libhegel-v#{version}"
+    end
+
     # Fetches the host's pinned asset into <root>/<version>/<asset>,
     # skipping the download if it is already there. `downloader` is
     # injectable so the orchestration (skip-if-present, checksum parsing,
@@ -29,7 +36,7 @@ module Hegel
       dest = File.join(root, version, asset)
       return dest if File.file?(dest)
 
-      base = "#{RELEASE_BASE}/v#{version}"
+      base = release_base(version)
       bytes = downloader.call("#{base}/#{asset}")
       checksum_line = downloader.call("#{base}/#{asset}.sha256")
       verify_and_install(bytes, expected_sha256(checksum_line), dest)
@@ -66,7 +73,7 @@ module Hegel
     # each published platform just to have asset_name recompute the asset
     # name it already is.
     def fetch_all_assets(version: Hegel::LIBHEGEL_VERSION, root: DEFAULT_ROOT, downloader: method(:http_get))
-      base = "#{RELEASE_BASE}/v#{version}"
+      base = release_base(version)
       Hegel::Locate::ASSET_NAMES.values.map do |asset|
         dest = File.join(root, version, asset)
         next dest if File.file?(dest)
