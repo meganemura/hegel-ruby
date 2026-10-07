@@ -15,12 +15,13 @@ module Hegel
     # wants to exercise. The most useful case is an error code that drives
     # LibHegel.check! down a path the real engine would rarely take.
     class Fake
-      # The handle #run_result_failure hands back. Bundles the origin and
-      # blob a test configured at that index via #failure_origins= /
-      # #failure_blobs=, so #failure_origin / #failure_reproduction_blob
-      # can read them straight off the handle, mirroring how the real
-      # ABI's opaque failure handle already carries that state.
-      Failure = Struct.new(:origin, :blob)
+      # The handle #run_result_failure hands back. Bundles the origin, blob,
+      # and caveat a test configured at that index via #failure_origins= /
+      # #failure_blobs= / #failure_caveats=, so #failure_origin /
+      # #failure_reproduction_blob / #failure_caveat can read them straight
+      # off the handle, mirroring how the real ABI's opaque failure handle
+      # already carries that state.
+      Failure = Struct.new(:origin, :blob, :caveat)
 
       # Writers only: #version is also the name of the instance method
       # below that mimics the real ABI call, so an attr_accessor's 0-arity
@@ -39,7 +40,8 @@ module Hegel
         :generate_boolean_code, :generate_integer_code, :generate_integer_big_code,
         :run_result_code, :run_result_status_code, :run_result_error_code,
         :run_result_failure_count_code, :run_result_failure_code,
-        :failure_origin_code, :failure_reproduction_blob_code, :test_case_from_blob_code,
+        :failure_origin_code, :failure_reproduction_blob_code, :failure_caveat_code,
+        :run_start_blob_code, :test_case_should_capture_code,
         :start_span_code, :stop_span_code,
         :new_collection_code, :collection_more_code, :collection_reject_code,
         :generate_float_code, :string_generator_text_code, :generate_string_code,
@@ -98,8 +100,17 @@ module Hegel
       # Number of failures #run_result_failure_count reports, and the
       # per-index origin / reproduction blob #run_result_failure's handle
       # carries. A blob of nil at a given index models libhegel producing
-      # none for that failure.
-      attr_writer :failure_count, :failure_origins, :failure_blobs
+      # none for that failure; a caveat of nil, a deterministic failure.
+      attr_writer :failure_count, :failure_origins, :failure_blobs, :failure_caveats
+
+      # What #test_case_should_capture answers: one boolean for every case, or
+      # an Array answered one element per case in order. True by default,
+      # so every failing case records its draws, as the engine's stamped
+      # final replay would.
+      attr_writer :should_capture
+
+      # Every blob #run_start_blob was given, in call order.
+      attr_reader :run_start_blobs
 
       # Whether #run_start's out-parameter comes back NULL despite a
       # HEGEL_OK result, distinct from an error via #run_start_code=.
@@ -168,9 +179,14 @@ module Hegel
         @run_result_failure_code = HEGEL_OK
         @failure_origins = []
         @failure_blobs = []
+        @failure_caveats = []
         @failure_origin_code = HEGEL_OK
         @failure_reproduction_blob_code = HEGEL_OK
-        @test_case_from_blob_code = HEGEL_OK
+        @failure_caveat_code = HEGEL_OK
+        @run_start_blob_code = HEGEL_OK
+        @run_start_blobs = []
+        @test_case_should_capture_code = HEGEL_OK
+        @should_capture = true
 
         @start_span_code = HEGEL_OK
         @stop_span_code = HEGEL_OK
@@ -303,6 +319,19 @@ module Hegel
         @run_start_returns_nil ? nil : Object.new
       end
 
+      # Records +blob+ (readable via #run_start_blobs), then answers like
+      # #run_start: the cases it serves are the replay's.
+      def run_start_blob(ctx, _settings, blob)
+        @run_start_blobs << blob
+        LibHegel.check!(self, ctx, @run_start_blob_code)
+        Object.new
+      end
+
+      def test_case_should_capture(ctx, _tc)
+        LibHegel.check!(self, ctx, @test_case_should_capture_code)
+        @should_capture.is_a?(Array) ? @should_capture.shift : @should_capture
+      end
+
       # Yields @test_case_count distinct handles, then nil (the run
       # finished), matching hegel_next_test_case's documented NULL-on-
       # completion contract.
@@ -375,11 +404,19 @@ module Hegel
         @failure_count
       end
 
-      # Returns a Failure bundling the origin / blob configured at +index+
-      # via #failure_origins= / #failure_blobs=.
+      # Returns a Failure bundling the origin / blob / caveat configured at
+      # +index+ via #failure_origins= / #failure_blobs= / #failure_caveats=.
+      # An origin left unconfigured is the index-th distinct origin a case
+      # was marked INTERESTING with, as the real engine groups a failure
+      # under the origin the caller reported.
       def run_result_failure(ctx, _r, index)
         LibHegel.check!(self, ctx, @run_result_failure_code)
-        Failure.new(@failure_origins[index], @failure_blobs[index])
+        origin = @failure_origins[index] || interesting_origins[index]
+        Failure.new(origin, @failure_blobs[index], @failure_caveats[index])
+      end
+
+      def interesting_origins
+        @marked_statuses.zip(@marked_origins).filter_map { |status, origin| origin if status == HEGEL_STATUS_INTERESTING }.uniq
       end
 
       def failure_free(_ctx, _f)
@@ -396,9 +433,9 @@ module Hegel
         f.blob
       end
 
-      def test_case_from_blob(ctx, _settings, _blob)
-        LibHegel.check!(self, ctx, @test_case_from_blob_code)
-        Object.new
+      def failure_caveat(ctx, f)
+        LibHegel.check!(self, ctx, @failure_caveat_code)
+        f.caveat
       end
 
       def start_span(ctx, _tc, _label)
@@ -568,9 +605,8 @@ module Hegel
       end
 
       # Records +pool+ (readable via #freed_pools), so a test can confirm
-      # Hegel::Runner freed every pool a test case opened, across each of
-      # its three test-case-freeing paths (a live case, a replayed failure,
-      # and reproduce_failure:).
+      # Hegel::Runner freed every pool a test case opened, whether the case
+      # came from an ordinary run or from a reproduce_failure: replay.
       def pool_free(_ctx, pool)
         @freed_pools << pool
         nil

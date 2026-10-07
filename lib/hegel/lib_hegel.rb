@@ -114,7 +114,7 @@ module Hegel
       generate_boolean generate_integer generate_integer_big
       run_result run_result_free run_result_status run_result_error
       run_result_failure_count run_result_failure failure_free failure_origin
-      failure_reproduction_blob test_case_from_blob
+      failure_reproduction_blob failure_caveat run_start_blob test_case_should_capture
       start_span stop_span
       new_collection collection_more collection_reject collection_free
       generate_float

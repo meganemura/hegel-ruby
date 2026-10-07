@@ -111,7 +111,13 @@ module Hegel
         @hegel_run_start_fn = bind(
           "hegel_run_start", [:pointer, :pointer, :pointer, :pointer, :pointer], :int32
         )
+        @hegel_run_start_blob_fn = bind(
+          "hegel_run_start_blob", [:pointer, :pointer, :string, :pointer, :pointer, :pointer], :int32
+        )
         @hegel_next_test_case_fn = bind("hegel_next_test_case", [:pointer, :pointer, :pointer], :int32)
+        @hegel_test_case_should_capture_fn = bind(
+          "hegel_test_case_should_capture", [:pointer, :pointer, :pointer], :int32
+        )
         @hegel_run_free_fn = bind("hegel_run_free", [:pointer, :pointer], :int32)
         @hegel_test_case_free_fn = bind("hegel_test_case_free", [:pointer, :pointer], :int32)
         @hegel_mark_complete_fn = bind("hegel_mark_complete", [:pointer, :pointer, :uint32, :string], :int32)
@@ -132,9 +138,7 @@ module Hegel
         @hegel_failure_reproduction_blob_fn = bind(
           "hegel_failure_reproduction_blob", [:pointer, :pointer, :pointer], :int32
         )
-        @hegel_test_case_from_blob_fn = bind(
-          "hegel_test_case_from_blob", [:pointer, :pointer, :string, :pointer, :pointer, :pointer], :int32
-        )
+        @hegel_failure_caveat_fn = bind("hegel_failure_caveat", [:pointer, :pointer, :pointer], :int32)
 
         @hegel_generate_boolean_fn = bind(
           "hegel_generate_boolean", [:pointer, :pointer, :double, :bool, :bool, :pointer], :int32
@@ -382,6 +386,29 @@ module Hegel
         out.read_pointer
       end
 
+      # Like #run_start, but the run replays +blob+ (from
+      # #failure_reproduction_blob) until a replay fails, under the engine's
+      # own bounded budget. A run with no failures means the blob no longer
+      # reproduces. Raises HEGEL_E_INVALID_ARG (via LibHegel.check!) for a
+      # blob that is corrupt, non-UTF-8, or from an incompatible Hegel
+      # version.
+      def run_start_blob(ctx, settings, blob)
+        out = FFI::MemoryPointer.new(:pointer)
+        code = @hegel_run_start_blob_fn.call(ctx, settings, blob, nil, nil, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # Whether the engine stamped +tc+ for capture: a failure on a stamped
+      # case is material for that failure's report. Read once, when the
+      # case starts.
+      def test_case_should_capture(ctx, tc)
+        out = FFI::MemoryPointer.new(:bool)
+        code = @hegel_test_case_should_capture_fn.call(ctx, tc, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_uint8 != 0
+      end
+
       # Returns the next test case, or nil once the run has finished (the
       # header documents *out_test_case as NULL at that point, with a
       # HEGEL_OK result rather than an error).
@@ -528,25 +555,15 @@ module Hegel
         nullable_out_string(out)
       end
 
-      # Replays +blob+ (from #failure_reproduction_blob) against +settings+
-      # with no run handle and no run loop involved, per the header.
-      # callback and user_data are always NULL here, for the same reason as
-      # #run_start. +blob+ is declared :string, the same as
-      # #settings_set_database's own const char* argument. Raises
-      # HEGEL_E_INVALID_ARG (via LibHegel.check!) for a blob that is
-      # corrupt, non-UTF-8, or from an incompatible Hegel version.
-      #
-      # A blob whose choices no longer match the caller's generators is a
-      # different case, and the header places it elsewhere: it "returns
-      # HEGEL_E_STOP_TEST from the draw that overruns", so the replay is
-      # built here and fails later, inside the body. Measured against
-      # 0.32.5, replaying a two-draw blob against a five-draw body builds
-      # fine and overruns at a draw.
-      def test_case_from_blob(ctx, settings, blob)
+      # Returns how reliably +f+ reproduced under the run's nondeterministic
+      # handling, quoting the engine's own replay evidence, or nil for a
+      # deterministic failure. See #nullable_out_string for the shared
+      # ownership note.
+      def failure_caveat(ctx, f)
         out = FFI::MemoryPointer.new(:pointer)
-        code = @hegel_test_case_from_blob_fn.call(ctx, settings, blob, nil, nil, out)
+        code = @hegel_failure_caveat_fn.call(ctx, f, out)
         LibHegel.check!(self, ctx, code)
-        out.read_pointer
+        nullable_out_string(out)
       end
 
       # Forcing has to agree with +p+. Measured against libhegel 0.32.5:

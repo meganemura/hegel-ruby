@@ -14,11 +14,14 @@ module Hegel
     # the generation phase's own counts up to that failure's first
     # appearance (see Hegel::Runner::GenerationStats), not the shrink
     # phase's. +entries+ is the [:draw, name, value] / [:note, message] list
-    # Hegel::TestCase recorded on the final replay that produced this
+    # Hegel::TestCase recorded on the stamped case that produced this
     # failure, in call order, still un-#inspect'd/un-#to_s'd (see
     # Hegel::TestCase#record_draw and #note for why). +blob+ is the string
-    # Hegel.test(reproduce_failure:) accepts to replay this same failure.
-    Failure = Struct.new(:test_cases, :discarded, :entries, :blob)
+    # Hegel.test(reproduce_failure:) accepts to replay this same failure, or
+    # nil when the engine produced none. +caveat+ is the engine's own account
+    # of how reliably a nondeterministic failure reproduced, or nil for a
+    # deterministic one.
+    Failure = Struct.new(:test_cases, :discarded, :entries, :blob, :caveat)
 
     module_function
 
@@ -50,8 +53,11 @@ module Hegel
 
     # Renders one failure's block: its "Falsified after" header, its
     # entries in call order (:draw #inspect'd, :note #to_s'd -- both here,
-    # on report assembly, not when Hegel::TestCase recorded them), and how
-    # to reproduce it. A :note shares the :draw lines' 2-space indent
+    # on report assembly, not when Hegel::TestCase recorded them), the
+    # engine's caveat when it gave one, and how to reproduce it when there is
+    # a blob. hegel-rust prints the caveat as a "note:" line and leaves the
+    # reproduction line out for a failure with no blob, and this report does
+    # the same. A :note shares the :draw lines' 2-space indent
     # deliberately: both belong to the same block, and a different indent
     # would read as a different kind of thing instead of the same
     # call-order list.
@@ -67,9 +73,12 @@ module Hegel
           lines << "  #{message}"
         end
       end
-      lines << ""
-      lines << "To reproduce this failure, pass the blob below to Hegel.test:"
-      lines << "    reproduce_failure: #{failure.blob.inspect}"
+      lines.push("", "note: #{failure.caveat}") if failure.caveat
+      if failure.blob
+        lines << ""
+        lines << "To reproduce this failure, pass the blob below to Hegel.test:"
+        lines << "    reproduce_failure: #{failure.blob.inspect}"
+      end
       lines.join("\n")
     end
 

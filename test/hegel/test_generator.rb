@@ -97,24 +97,21 @@ class TestGenerator < Minitest::Test
   # when the source draw itself raises. The pre-loop "accepted = false"
   # (not the parser's own implicit nil) is what makes that span record a
   # discard, matching every other attempt this generator never gets to
-  # complete. The fake is configured as a failing run (see
-  # failing_fake_replaying_the_same_body in test_runner.rb) so the raised
-  # exception reaches the caller, which runs +block+ twice -- once live,
-  # once on replay -- recording the same discarded span both times.
+  # complete. The fake is configured as a failing run (see failing_fake in
+  # test_runner.rb) so the raised exception reaches the caller.
   def test_filter_discards_the_span_when_the_source_draw_raises
     generator = RaisingGenerator.new.filter { |_| true }
     fake = span_recording_fake(generator.label => :filter)
     fake.test_case_count = 1
     fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
     fake.failure_count = 1
-    fake.failure_origins = ["origin.rb:1"]
     fake.failure_blobs = ["blob"]
 
     assert_raises(RuntimeError) do
-      Hegel.test(impl: fake) { |tc| tc.draw(generator) }
+      Hegel.test(impl: fake, output: StringIO.new) { |tc| tc.draw(generator) }
     end
 
-    assert_equal [[:filter, :start], [:filter, :stop, true]] * 2, fake.spans.select { |kind,| kind == :filter }
+    assert_equal [[:filter, :start], [:filter, :stop, true]], fake.spans.select { |kind,| kind == :filter }
   end
 
   # Mapped#do_draw wraps its whole draw in one span with its own label.

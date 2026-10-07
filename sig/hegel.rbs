@@ -356,11 +356,12 @@ module Hegel
 
   module Report
     class Failure
-      def initialize: (test_cases: Integer, discarded: Integer, entries: Array[[:draw, String, untyped] | [:note, untyped]], blob: String) -> void
+      def initialize: (test_cases: Integer, discarded: Integer, entries: Array[[:draw, String, untyped] | [:note, untyped]], blob: String?, caveat: String?) -> void
       def test_cases: () -> Integer
       def discarded: () -> Integer
       def entries: () -> Array[[:draw, String, untyped] | [:note, untyped]]
-      def blob: () -> String
+      def blob: () -> String?
+      def caveat: () -> String?
     end
 
     def self.assign_names: (Array[[:draw, String, untyped] | [:note, untyped]] entries) -> Array[[:draw, String, untyped] | [:note, untyped]]
@@ -389,6 +390,12 @@ module Hegel
     INSTALLED_GEM_DIRS: Array[String]
     STDLIB_DIR: String
 
+    class Capture
+      attr_reader exception: Exception
+      attr_reader entries: Array[[:draw, String, untyped] | [:note, untyped]]?
+      def initialize: (Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
+    end
+
     class GenerationStats
       def initialize: () -> void
       def record: (Integer status, String? origin) -> void
@@ -396,18 +403,18 @@ module Hegel
     end
 
     def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
-    def self.run_and_finish: (untyped impl, untyped ctx, untyped settings, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
-    def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats) { (TestCase) -> void } -> void
+    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
+    def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
     def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> R } -> R
-    def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats) { (TestCase) -> void } -> void
-    def self.finish: (untyped impl, untyped ctx, untyped settings, untyped result, GenerationStats stats, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
-    def self.replay: (untyped impl, untyped ctx, untyped settings, untyped result, GenerationStats stats, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
-    def self.replay_failure: (untyped impl, untyped ctx, untyped settings, untyped failure, Integer index, GenerationStats stats) { (TestCase) -> void } -> [Exception, Report::Failure]
-    def self.reproduce: (untyped impl, untyped ctx, untyped settings, String blob, quiet: bool, output: untyped) { (TestCase) -> void } -> bot
+    def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
+    def self.keep_capture: (Hash[String, Capture] captures, String origin, Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
+    def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, output: untyped) -> nil
+    def self.report_failures: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, quiet: bool, output: untyped) -> bot
+    def self.failure_report: (untyped impl, untyped ctx, untyped failure, GenerationStats stats, Hash[String, Capture] captures) -> [Exception, Report::Failure]
     def self.classify: (TestCase test_case) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
     def self.origin_for: (Exception exception) -> String
     def self.infrastructure?: (String path) -> bool
-    def self.flaky_message: () -> String
+    def self.not_reproduced_message: () -> String
     def self.multiple_failures_message: (Integer count) -> String
   end
 
@@ -496,6 +503,8 @@ module Hegel
       def settings_set_phases: (untyped ctx, untyped s, Integer phases) -> nil
       def settings_set_suppress_health_check: (untyped ctx, untyped s, Integer checks) -> nil
       def run_start: (untyped ctx, untyped settings) -> untyped
+      def run_start_blob: (untyped ctx, untyped settings, String blob) -> untyped
+      def test_case_should_capture: (untyped ctx, untyped tc) -> bool
       def next_test_case: (untyped ctx, untyped run) -> untyped?
       def run_free: (untyped ctx, untyped run) -> nil
       def test_case_free: (untyped ctx, untyped tc) -> nil
@@ -513,7 +522,7 @@ module Hegel
       def failure_free: (untyped ctx, untyped f) -> nil
       def failure_origin: (untyped ctx, untyped f) -> String
       def failure_reproduction_blob: (untyped ctx, untyped f) -> String?
-      def test_case_from_blob: (untyped ctx, untyped settings, String blob) -> untyped
+      def failure_caveat: (untyped ctx, untyped f) -> String?
       def start_span: (untyped ctx, untyped tc, Integer label) -> nil
       def stop_span: (untyped ctx, untyped tc, bool discard) -> nil
       def new_collection: (untyped ctx, untyped tc, Integer min_size, Integer max_size) -> untyped

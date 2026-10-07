@@ -401,14 +401,13 @@ class TestStateful < Minitest::Test
 
   # An ordinary exception closes the span without discarding, then
   # re-raises -- #apply_rule's rescue Exception branch, distinct from both
-  # outcomes above. The run is configured to fail and replay so the raised
-  # exception reaches the caller (see failing_fake_replaying_the_same_body
-  # in test_runner.rb for the same shape).
+  # outcomes above. The run is configured to fail so the raised
+  # exception reaches the caller (see failing_fake in test_runner.rb for
+  # the same shape).
   def test_a_raising_rule_closes_the_span_without_discarding_before_reraising
     fake = stateful_recording_fake([0])
     fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
     fake.failure_count = 1
-    fake.failure_origins = ["origin.rb:1"]
     fake.failure_blobs = ["blob"]
 
     error = assert_raises(RuntimeError) do

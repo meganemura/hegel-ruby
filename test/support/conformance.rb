@@ -29,8 +29,8 @@ module Hegel
 
     # A puts-only stand-in for output:, given to every Hegel.test call
     # below alongside verbosity: :quiet. verbosity: :quiet alone already
-    # stops Hegel::Runner#replay from writing a failure report at all (see
-    # lib/hegel/runner.rb), but these four helpers back roughly 20
+    # stops Hegel::Runner#report_failures from writing a failure report at
+    # all (see lib/hegel/runner.rb), but these four helpers back roughly 20
     # generators' worth of tests and run hundreds of times per suite; this
     # is a second, independent seal on that output, not a substitute for
     # the first one.

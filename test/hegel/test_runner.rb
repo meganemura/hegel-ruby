@@ -146,7 +146,7 @@ class TestRunner < Minitest::Test
   # Hegel::TestCase#record_draw): every test above this one exercises
   # #draw_integer's own recording, so this is #draw_boolean's own turn.
   def test_report_shows_a_labelled_draw_boolean_value
-    fake = failing_fake_replaying_the_same_body
+    fake = failing_fake
     fake.generate_boolean_value = true
     output = StringIO.new
 
@@ -274,7 +274,7 @@ class TestRunner < Minitest::Test
   # verbosity: :quiet must silence the failure report itself (hegel-rust
   # does the same), not just libhegel's own progress output.
   def test_quiet_verbosity_suppresses_the_report
-    fake = failing_fake_replaying_the_same_body
+    fake = failing_fake
     output = StringIO.new
 
     assert_raises(ZeroDivisionError) do
@@ -288,7 +288,7 @@ class TestRunner < Minitest::Test
   # before the origin that ends up reported first went INTERESTING, not
   # every case #drive ever sees.
   def test_report_discarded_count_matches_the_assume_failed_calls_before_the_failure
-    fake = failing_fake_replaying_the_same_body
+    fake = failing_fake
     fake.test_case_count = 3
     calls = 0
     body = lambda do |_tc|
@@ -304,8 +304,8 @@ class TestRunner < Minitest::Test
   end
 
   # Two origins, both discovered live by #drive (so Hegel::Runner::
-  # GenerationStats has a snapshot for each before #replay asks), get
-  # hegel-rust's own distinct-failures heading, and #replay raises
+  # GenerationStats has a snapshot for each before #report_failures asks),
+  # get hegel-rust's own distinct-failures heading, and #report_failures raises
   # Hegel::Error carrying that exact same sentence rather than either
   # failure's own exception (see #multiple_failures_message's comment).
   def test_report_shows_a_heading_when_there_are_multiple_distinct_failures
@@ -313,7 +313,6 @@ class TestRunner < Minitest::Test
     fake.test_case_count = 2
     fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
     fake.failure_count = 2
-    fake.failure_origins = ["unused-a", "unused-b"]
     fake.failure_blobs = ["blob-a", "blob-b"]
     calls = 0
     body = lambda do |_tc|
@@ -347,7 +346,7 @@ class TestRunner < Minitest::Test
   end
 
   # report_multiple_failures: true against the real engine: two distinct
-  # origins (two different raise lines) both fail, and #replay raises
+  # origins (two different raise lines) both fail, and #report_failures raises
   # Hegel::Error summarizing the count rather than either origin's own
   # exception.
   def test_report_multiple_failures_true_summarizes_distinct_failures_against_the_real_engine
@@ -437,9 +436,8 @@ class TestRunner < Minitest::Test
     assert_includes reproduce_output.string, "n = 501"
   end
 
-  # Hegel::Runner.reproduce records with record: true the same way
-  # #replay_failure does; a note must reach its report through that path
-  # too, not only through the live loop's own replay.
+  # Every case of a reproduce_failure: replay is stamped for capture, so a
+  # note must reach the replay's report too, not only an ordinary run's.
   def test_reproduce_failure_replays_a_note_against_the_real_engine
     output = StringIO.new
     body = lambda do |tc|
@@ -459,10 +457,10 @@ class TestRunner < Minitest::Test
     assert_includes reproduce_output.string, "n was 501"
   end
 
-  # verbosity: :quiet must silence #reproduce's own report the same way it
-  # silences #replay's (see test_quiet_verbosity_suppresses_the_report).
+  # verbosity: :quiet must silence a reproduced failure's report the same
+  # way it silences any other (see test_quiet_verbosity_suppresses_the_report).
   def test_reproduce_failure_respects_quiet_verbosity
-    fake = Hegel::LibHegel::Fake.new
+    fake = reproducing_fake
     output = StringIO.new
 
     assert_raises(RuntimeError) do
@@ -472,19 +470,19 @@ class TestRunner < Minitest::Test
     assert_empty output.string
   end
 
-  # hegel_test_case_from_blob itself documents HEGEL_E_STOP_TEST for "a
-  # blob whose choices no longer match the caller's generators" -- staleness
-  # caught at construction, before any draw call runs. Hegel::Runner.reproduce
-  # must not let that leak as Hegel::StopTest.
-  def test_reproduce_failure_with_a_stale_blob_raises_hegel_error_at_construction
+  # hegel_run_start_blob rejects a blob that is corrupt, non-UTF-8, or from
+  # an incompatible Hegel version with HEGEL_E_INVALID_ARG, before any case
+  # runs.
+  def test_reproduce_failure_with_an_invalid_blob_raises_hegel_error_before_running_the_body
     fake = Hegel::LibHegel::Fake.new
-    fake.test_case_from_blob_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    fake.run_start_blob_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    calls = 0
 
-    error = assert_raises(Hegel::Error) do
-      Hegel.test(impl: fake, reproduce_failure: "stale-blob") { |_tc| }
+    assert_raises(Hegel::Error) do
+      Hegel.test(impl: fake, reproduce_failure: "corrupt-blob") { |_tc| calls += 1 }
     end
 
-    refute_kind_of Hegel::StopTest, error
+    assert_equal 0, calls
   end
 
   # The other manifestation of the same staleness: construction succeeds,
@@ -584,16 +582,19 @@ class TestRunner < Minitest::Test
     assert_includes output.string, "starting the queue\n  n = 501\n  queue was empty"
   end
 
-  # The block form is only evaluated on the one, already-shrunk replay that
-  # produces the report (see Hegel::TestCase#note): every other iteration
-  # of a failing run like this one -- roughly 1000, per Hegel::Runner.drive's
-  # own comment -- skips the block entirely, so the counter below reads 1.
-  def test_note_block_form_evaluates_exactly_once_on_the_final_replay
+  # The block form is only evaluated on a case the engine stamped for
+  # capture (see Hegel::TestCase#note): measured against libhegel 0.45.0, a
+  # run like this one calls the body 60 to 80 times and stamps 5 of them,
+  # the first-check replays of each failure it finds and the final replay.
+  # Every other case skips the block.
+  def test_note_block_form_evaluates_only_on_stamped_cases
     calls = 0
+    body_calls = 0
     output = StringIO.new
 
     assert_raises(RuntimeError) do
       Hegel.test(output: output) do |tc|
+        body_calls += 1
         n = tc.draw_integer(0, 1_000_000, label: "n")
         tc.note do
           calls += 1
@@ -603,13 +604,32 @@ class TestRunner < Minitest::Test
       end
     end
 
-    assert_equal 1, calls
+    assert_operator calls, :>=, 1
+    assert_operator calls, :<, body_calls
     assert_includes output.string, "n was 501"
+  end
+
+  # The same rule against a Fake that stamps only the last of three cases:
+  # the block runs once.
+  def test_note_block_form_evaluates_once_when_one_case_is_stamped
+    fake = failing_fake
+    fake.test_case_count = 3
+    fake.should_capture = [false, false, true]
+    calls = 0
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, output: StringIO.new) do |tc|
+        tc.note { calls += 1 }
+        raise "boom"
+      end
+    end
+
+    assert_equal 1, calls
   end
 
   # A failure can be reported with no draws at all, only notes.
   def test_note_reports_a_failure_with_no_draws
-    fake = failing_fake_replaying_the_same_body
+    fake = failing_fake
     output = StringIO.new
     body = lambda do |tc|
       tc.note("only a note")
@@ -651,7 +671,7 @@ class TestRunner < Minitest::Test
   end
 
   def test_hegel_test_reraises_the_bodys_exception_class_and_message
-    fake = failing_fake_replaying_the_same_body
+    fake = failing_fake
 
     error = assert_raises(ZeroDivisionError) do
       Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise ZeroDivisionError, "divided by zero" }
@@ -676,42 +696,50 @@ class TestRunner < Minitest::Test
     assert_equal 1, fake.freed_contexts.size
   end
 
-  # A stale blob's replay overruns (HEGEL_E_STOP_TEST from the draw that no
-  # longer matches, per the header), which #classify turns into OVERRUN, not
-  # INTERESTING. Re-raising Hegel::StopTest here would leak this library's
-  # own control exception into the host test framework -- the exact failure
-  # this test exists to rule out.
-  def test_replay_ending_in_stop_test_raises_flaky_error_not_stop_test
-    calls = 0
-    fake = failing_fake_replaying_the_same_body
-    body = lambda do |_tc|
-      calls += 1
-      raise "boom" if calls == 1
+  # A later stamped failure under one origin replaces an earlier one: the
+  # engine's final replay comes last, so the report and the re-raised
+  # exception come from it.
+  def test_a_later_stamped_failure_replaces_an_earlier_one_for_its_origin
+    fake = failing_fake
+    fake.test_case_count = 2
+    fake.should_capture = [true, true]
+    messages = %w[first second]
 
-      raise Hegel::StopTest, "stale blob"
-    end
+    error = assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise messages.shift } }
 
-    error = assert_raises(Hegel::Error) { Hegel.test(impl: fake, &body) }
-
-    refute_kind_of Hegel::StopTest, error
-    assert_equal 2, calls
+    assert_equal "second", error.message
   end
 
-  # The other non-reproducing case: replay's body simply returns instead of
-  # raising StopTest. Both are "not INTERESTING", the flaky check's actual
-  # condition (see Hegel::Runner#replay_failure), not "did not raise".
-  def test_replay_without_reproducing_raises_flaky_error_mentioning_external_state
-    calls = 0
-    fake = failing_fake_replaying_the_same_body
-    body = lambda do |_tc|
-      calls += 1
-      raise "boom" if calls == 1
+  # An unstamped failure never replaces a stamped one: its draws went
+  # unrecorded, so it has nothing to report.
+  def test_an_unstamped_failure_does_not_replace_a_stamped_one
+    fake = failing_fake
+    fake.test_case_count = 2
+    fake.should_capture = [true, false]
+    messages = %w[first second]
+
+    error = assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise messages.shift } }
+
+    assert_equal "first", error.message
+  end
+
+  # With no stamped case for its origin, an unstamped failure still gives
+  # the run an exception to re-raise, and a report with no drawn values.
+  def test_an_unstamped_failure_is_reported_when_nothing_was_stamped
+    fake = failing_fake
+    fake.should_capture = [false]
+    output = StringIO.new
+
+    error = assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, output: output) do |tc|
+        tc.draw_integer(0, 10, label: "n")
+        raise "boom"
+      end
     end
 
-    error = assert_raises(Hegel::Error) { Hegel.test(impl: fake, &body) }
-
-    assert_match(/state|time|random/i, error.message)
-    assert_equal 2, calls
+    assert_equal "boom", error.message
+    assert_includes output.string, "Falsified after 1 test case (0 discarded):"
+    refute_includes output.string, "n ="
   end
 
   def test_origin_is_stable_for_two_failures_raised_at_the_same_line
@@ -863,16 +891,30 @@ class TestRunner < Minitest::Test
     refute_empty error.message
   end
 
-  def test_replay_raises_hegel_error_when_a_failure_has_no_reproduction_blob
-    fake = Hegel::LibHegel::Fake.new
-    fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
-    fake.failure_count = 1
-    fake.failure_origins = ["origin.rb:1"]
+  # The engine produces no blob for an unconfirmed nondeterministic failure.
+  # The report then leaves out the reproduction line, as hegel-rust's does,
+  # rather than print one nobody could use.
+  def test_a_failure_with_no_blob_is_reported_without_a_reproduction_line
+    fake = failing_fake
     fake.failure_blobs = [nil]
+    output = StringIO.new
 
-    error = assert_raises(Hegel::Error) { Hegel.test(impl: fake) { |_tc| } }
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output) { |_tc| raise "boom" } }
 
-    assert_includes error.message, "reproduction blob"
+    assert_includes output.string, "Falsified after 1 test case"
+    refute_includes output.string, "reproduce_failure"
+  end
+
+  # A nondeterministic failure carries the engine's caveat, which the report
+  # prints as a note after the drawn values, the way hegel-rust does.
+  def test_a_failure_with_a_caveat_prints_it_as_a_note
+    fake = failing_fake
+    fake.failure_caveats = ["reproduced in 2 of 5 replays"]
+    output = StringIO.new
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output) { |_tc| raise "boom" } }
+
+    assert_includes output.string, "\n\nnote: reproduced in 2 of 5 replays\n\nTo reproduce this failure"
   end
 
   # hegel_run_status_t values this binding does not recognise (an engine
@@ -930,12 +972,10 @@ class TestRunner < Minitest::Test
   # stored failure. The body is called twice on that second run, not once:
   # once live, as the run's only drawn test case (see the "Falsified after 1
   # test case" assertion below, which is the ADR's own "first and only test
-  # case" claim read off the printed report), and once more during
-  # Hegel::Runner#replay_failure's own mandatory final replay, which every
-  # failure goes through regardless of the database to build its report
-  # entries and re-raise the body's own exception (see #replay's comment).
-  # Measured directly against libhegel 0.32.5 before writing this assertion,
-  # exactly matching what is asserted here.
+  # case" claim read off the printed report), and once more during the
+  # engine's own final replay of every failure it reports, which the report
+  # is built from. Measured against libhegel 0.45.0, exactly matching what
+  # is asserted here.
   def test_database_round_trip_replays_the_stored_failure_as_the_only_drawn_case_on_the_second_run
     Dir.mktmpdir do |dir|
       body = lambda do |tc|
@@ -1165,12 +1205,11 @@ class TestRunner < Minitest::Test
     refute_empty fake.freed_test_cases
   end
 
-  # The replay path (#replay_failure) opens its own Hegel::TestCase from the
-  # reproduction blob, distinct from the one the live loop used -- so this
-  # counts 2 freed pools, one from #run_case's own live case (calls == 1)
-  # and one from the replay (calls == 2), not just the replay's.
-  def test_replay_failure_frees_every_pool_the_replayed_test_case_opened
-    fake = failing_fake_replaying_the_same_body
+  # The engine replays a failure inside the run, so a failing run's body
+  # runs only for the cases the run hands out, and each case's pools are
+  # freed with it.
+  def test_a_failing_run_frees_every_pool_each_case_opened
+    fake = failing_fake
     calls = 0
     body = lambda do |tc|
       calls += 1
@@ -1178,49 +1217,45 @@ class TestRunner < Minitest::Test
       raise "boom"
     end
 
-    assert_raises(RuntimeError) { Hegel.test(impl: fake, &body) }
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new, &body) }
 
-    assert_equal 2, calls
-    assert_equal 2, fake.freed_pools.size
+    assert_equal 1, calls
+    assert_equal 1, fake.freed_pools.size
   end
 
-  # reproduce_failure: skips the run loop entirely (#reproduce), so this is
-  # the one path where a single body call is the whole story.
+  # reproduce_failure: starts the run from the blob, and the cases the
+  # replay hands out free their pools like any other case.
   def test_reproduce_failure_frees_every_pool_the_reproduced_test_case_opened
-    fake = Hegel::LibHegel::Fake.new
+    fake = reproducing_fake
 
     assert_raises(RuntimeError) do
-      Hegel.test(impl: fake, reproduce_failure: "blob") do |tc|
+      Hegel.test(impl: fake, reproduce_failure: "blob", output: StringIO.new) do |tc|
         tc.new_pool
         raise "boom"
       end
     end
 
+    assert_equal ["blob"], fake.run_start_blobs
     assert_equal 1, fake.freed_pools.size
   end
 
-  # #replay_failure calls hegel_mark_complete for its own replayed case, on
-  # top of the live case's own call inside #run_case: the header documents
-  # blob replay as ended by the caller's own hegel_mark_complete, distinct
-  # from the live loop's completion of the same test case object.
-  def test_replay_failure_marks_the_replayed_case_complete_a_second_time
-    fake = failing_fake_replaying_the_same_body
+  # Each case is marked complete once, in #run_case. No case is replayed
+  # after the run.
+  def test_a_failing_run_marks_each_case_complete_once
+    fake = failing_fake
 
-    assert_raises(RuntimeError) { Hegel.test(impl: fake) { |_tc| raise "boom" } }
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise "boom" } }
 
-    assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING, Hegel::LibHegel::HEGEL_STATUS_INTERESTING],
-      fake.marked_statuses
+    assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING], fake.marked_statuses
   end
 
-  # reproduce_failure: skips the run loop entirely (#reproduce), so a
-  # single hegel_mark_complete call is the whole story -- distinct from
-  # #replay_failure's second call above, which comes on top of a live
-  # case's own.
+  # reproduce_failure: drives the replay through the same loop, so each
+  # replayed case is marked complete once.
   def test_reproduce_failure_marks_the_replayed_case_complete
-    fake = Hegel::LibHegel::Fake.new
+    fake = reproducing_fake
 
     assert_raises(RuntimeError) do
-      Hegel.test(impl: fake, reproduce_failure: "blob") { |_tc| raise "boom" }
+      Hegel.test(impl: fake, reproduce_failure: "blob", output: StringIO.new) { |_tc| raise "boom" }
     end
 
     assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING], fake.marked_statuses
@@ -1228,15 +1263,22 @@ class TestRunner < Minitest::Test
 
   private
 
-  # A Fake configured for a FAILED run with exactly one failure whose blob
-  # replays through the same +block+ Hegel.test was given, matching how the
-  # real engine replays a failure against the caller's own test body.
-  def failing_fake_replaying_the_same_body
+  # A Fake whose blob replay fails once, the way the real engine reports a
+  # reproducing replay: a FAILED run whose failure carries no blob, because
+  # the caller already holds it.
+  def reproducing_fake
+    fake = failing_fake
+    fake.failure_blobs = [nil]
+    fake
+  end
+
+  # A Fake configured for a FAILED run with exactly one failure, grouped
+  # under the origin its one case reports, as the real engine groups it.
+  def failing_fake
     fake = Hegel::LibHegel::Fake.new
     fake.test_case_count = 1
     fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
     fake.failure_count = 1
-    fake.failure_origins = ["origin.rb:1"]
     fake.failure_blobs = ["blob"]
     fake
   end

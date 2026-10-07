@@ -491,12 +491,15 @@ class TestLibHegel < Minitest::Test
   end
 
   # Every case is marked INTERESTING under the same origin, so libhegel
-  # groups every shrink probe as one bug and the run always fails. Reads
-  # hegel_run_result's status, failure count, and each failure's origin
-  # and reproduction blob, then replays that blob through
-  # hegel_test_case_from_blob (no run handle or run loop needed for
-  # replay, per the header). The database is disabled ("") so the run
-  # leaves nothing on disk.
+  # groups every shrink probe as one bug and the run always fails. The
+  # engine replays the failure once more at the end of the run, stamped for
+  # capture, so some case of the run is stamped. Reads hegel_run_result's
+  # status, failure count, and each failure's origin, caveat, and
+  # reproduction blob, then replays that blob as a run through
+  # hegel_run_start_blob: every case of that replay is stamped, the replay
+  # fails again, and its failure carries no blob, since the caller already
+  # holds one. The database is disabled ("") so the run leaves nothing on
+  # disk.
   def test_real_failing_run_reports_failed_status_and_a_replayable_blob
     real = Hegel::LibHegel::Real.new
     origin = "hegel-ruby-test-origin"
@@ -508,62 +511,65 @@ class TestLibHegel < Minitest::Test
       real.settings_set_database(ctx, settings, "")
 
       run = real.run_start(ctx, settings)
-      real.settings_free(ctx, settings)
-
-      loop do
-        tc = real.next_test_case(ctx, run)
-        break if tc.nil?
-
-        # A shrink probe can hand back a case with fewer choices than the
-        # draw needs, and the protocol reports such a case as OVERRUN.
-        begin
-          real.generate_integer(ctx, tc, 0, 100)
-          real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin)
-        rescue Hegel::StopTest
-          real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_OVERRUN, nil)
-        end
-        real.test_case_free(ctx, tc)
-      end
-
+      stamps = drive_failing(real, ctx, run, origin)
       result = real.run_result(ctx, run)
       real.run_free(ctx, run)
 
+      assert_includes stamps, true
       assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED, real.run_result_status(ctx, result)
+      assert_equal 1, real.run_result_failure_count(ctx, result)
 
-      count = real.run_result_failure_count(ctx, result)
-      assert_operator count, :>=, 1
-
-      count.times do |index|
-        failure = real.run_result_failure(ctx, result, index)
-        assert_includes real.failure_origin(ctx, failure), origin
-
-        blob = real.failure_reproduction_blob(ctx, failure)
-        assert_kind_of String, blob
-
-        # Marking the replayed handle complete (rather than freeing it
-        # right away) proves it is a live test case, not merely a NULL
-        # out.ptr that test_case_free's documented no-op-on-NULL contract
-        # would silently accept.
-        replay_settings = real.settings_new(ctx)
-        real.settings_set_verbosity(ctx, replay_settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
-        real.settings_set_database(ctx, replay_settings, "")
-        replayed = real.test_case_from_blob(ctx, replay_settings, blob)
-        real.mark_complete(ctx, replayed, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin)
-        real.test_case_free(ctx, replayed)
-        real.settings_free(ctx, replay_settings)
-
-        real.failure_free(ctx, failure)
-      end
-
+      failure = real.run_result_failure(ctx, result, 0)
+      assert_equal origin, real.failure_origin(ctx, failure)
+      assert_nil real.failure_caveat(ctx, failure)
+      blob = real.failure_reproduction_blob(ctx, failure)
+      assert_kind_of String, blob
+      real.failure_free(ctx, failure)
       real.run_result_free(ctx, result)
+
+      replay = real.run_start_blob(ctx, settings, blob)
+      replay_stamps = drive_failing(real, ctx, replay, origin)
+      replay_result = real.run_result(ctx, replay)
+      real.run_free(ctx, replay)
+      real.settings_free(ctx, settings)
+
+      refute_empty replay_stamps
+      assert_equal [true], replay_stamps.uniq
+      assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED, real.run_result_status(ctx, replay_result)
+      replayed_failure = real.run_result_failure(ctx, replay_result, 0)
+      assert_nil real.failure_reproduction_blob(ctx, replayed_failure)
+      real.failure_free(ctx, replayed_failure)
+      real.run_result_free(ctx, replay_result)
     end
+  end
+
+  # Drives +run+ to its end, marking every case INTERESTING under +origin+
+  # after one draw, and returns each case's capture stamp in order. A shrink
+  # probe can hand back a case with fewer choices than the draw needs, and
+  # the protocol reports such a case as OVERRUN.
+  def drive_failing(real, ctx, run, origin)
+    stamps = []
+    loop do
+      tc = real.next_test_case(ctx, run)
+      break if tc.nil?
+
+      stamps << real.test_case_should_capture(ctx, tc)
+      begin
+        real.generate_integer(ctx, tc, 0, 100)
+        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin)
+      rescue Hegel::StopTest
+        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_OVERRUN, nil)
+      end
+      real.test_case_free(ctx, tc)
+    end
+    stamps
   end
 
   # The header documents HEGEL_E_INVALID_ARG for a blob that is corrupt,
   # non-UTF-8, or from an incompatible Hegel version; a plain string that
   # was never produced by hegel_failure_reproduction_blob hits the same
   # "corrupt" case.
-  def test_real_test_case_from_blob_raises_on_a_corrupt_blob
+  def test_real_run_start_blob_raises_on_a_corrupt_blob
     real = Hegel::LibHegel::Real.new
 
     Hegel::LibHegel.with_context(real) do |ctx|
@@ -571,7 +577,8 @@ class TestLibHegel < Minitest::Test
       real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
       real.settings_set_database(ctx, settings, "")
 
-      assert_raises(Hegel::Error) { real.test_case_from_blob(ctx, settings, "not a blob") }
+      error = assert_raises(Hegel::Error) { real.run_start_blob(ctx, settings, "not a blob") }
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
 
       real.settings_free(ctx, settings)
     end
@@ -1029,47 +1036,51 @@ class TestLibHegel < Minitest::Test
   # hegel_string_generator_email / _url / _domain each build a
   # hegel_string_generator_t*, freed and drawn the same way as the text
   # generator above (#string_generator_free / #generate_string): the
-  # header documents no dedicated free or draw call for any of them. The
-  # database is disabled ("") so the run leaves nothing on disk.
+  # header documents no dedicated free or draw call for any of them. A draw
+  # may reject its case with HEGEL_E_ASSUME, measured against libhegel
+  # 0.45.0 in about one run of ten, so a rejected case is reported INVALID
+  # and the test asks only that some case drew all three. The database is
+  # disabled ("") so the run leaves nothing on disk.
   def test_real_email_url_and_domain_generators_draw_strings
     real = Hegel::LibHegel::Real.new
+    drawn = []
 
     Hegel::LibHegel.with_context(real) do |ctx|
       settings = real.settings_new(ctx)
-      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_test_cases(ctx, settings, 10)
       real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
       real.settings_set_database(ctx, settings, "")
 
       run = real.run_start(ctx, settings)
       real.settings_free(ctx, settings)
 
-      tc = real.next_test_case(ctx, run)
-      refute_nil tc
-
-      [
-        real.string_generator_email(ctx),
-        real.string_generator_url(ctx),
-        real.string_generator_domain(ctx, 50)
-      ].each do |generator|
-        value = real.generate_string(ctx, tc, generator)
-        assert_kind_of String, value
-      ensure
-        real.string_generator_free(ctx, generator)
-      end
-
-      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
-      real.test_case_free(ctx, tc)
-
       loop do
-        next_tc = real.next_test_case(ctx, run)
-        break if next_tc.nil?
+        tc = real.next_test_case(ctx, run)
+        break if tc.nil?
 
-        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
-        real.test_case_free(ctx, next_tc)
+        begin
+          values = [
+            real.string_generator_email(ctx),
+            real.string_generator_url(ctx),
+            real.string_generator_domain(ctx, 50)
+          ].map do |generator|
+            real.generate_string(ctx, tc, generator)
+          ensure
+            real.string_generator_free(ctx, generator)
+          end
+          drawn << values
+          real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        rescue Hegel::AssumeFailed
+          real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INVALID, nil)
+        end
+        real.test_case_free(ctx, tc)
       end
 
       real.run_free(ctx, run)
     end
+
+    refute_empty drawn
+    drawn.flatten.each { |value| assert_kind_of String, value }
   end
 
   # hegel_string_generator_domain's max_length is documented as valid in
@@ -1829,26 +1840,27 @@ class TestLibHegel < Minitest::Test
     fake.state_machine_rule_rejected_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
     assert_raises(Hegel::Error) { fake.state_machine_rule_rejected(ctx, Object.new, Object.new) }
   end
-# Measured against libhegel 0.45.0's own hegel_label_from_name and
-# hegel_label_combine: the Ruby computation agreed with both on every
-# vector below. The first two vectors are the ones hegel-rust pins.
-def test_label_from_name_and_label_combine_match_the_engine
-  assert_equal 0xcbf29ce484222325, Hegel::LibHegel.label_from_name("")
-  assert_equal 0xaf63dc4c8601ec8c, Hegel::LibHegel.label_from_name("a")
-  assert_equal 0x121d7e35a6d3ce91, Hegel::LibHegel.label_from_name("日本")
-  assert_equal 0xcbf29ce484222325, Hegel::LibHegel.label_combine([])
-  assert_equal 0x7717980363c8e066, Hegel::LibHegel.label_combine([1, 2])
-  assert_equal 0x780d5836696931dd, Hegel::LibHegel.label_combine([(2**64) - 1, 0])
-end
 
-# An engine built from another release lacks symbols these bindings
-# need. The error names the symbol and the version the bindings want.
-def test_real_bind_names_a_symbol_the_library_lacks
-  real = Hegel::LibHegel::Real.new
+  # Measured against libhegel 0.45.0's own hegel_label_from_name and
+  # hegel_label_combine: the Ruby computation agreed with both on every
+  # vector below. The first two vectors are the ones hegel-rust pins.
+  def test_label_from_name_and_label_combine_match_the_engine
+    assert_equal 0xcbf29ce484222325, Hegel::LibHegel.label_from_name("")
+    assert_equal 0xaf63dc4c8601ec8c, Hegel::LibHegel.label_from_name("a")
+    assert_equal 0x121d7e35a6d3ce91, Hegel::LibHegel.label_from_name("日本")
+    assert_equal 0xcbf29ce484222325, Hegel::LibHegel.label_combine([])
+    assert_equal 0x7717980363c8e066, Hegel::LibHegel.label_combine([1, 2])
+    assert_equal 0x780d5836696931dd, Hegel::LibHegel.label_combine([(2**64) - 1, 0])
+  end
 
-  error = assert_raises(Hegel::Error) { real.send(:bind, "hegel_no_such_function", [], :int32) }
+  # An engine built from another release lacks symbols these bindings
+  # need. The error names the symbol and the version the bindings want.
+  def test_real_bind_names_a_symbol_the_library_lacks
+    real = Hegel::LibHegel::Real.new
 
-  assert_equal "libhegel has no hegel_no_such_function; these bindings need libhegel #{Hegel::LIBHEGEL_VERSION}",
-    error.message
-end
+    error = assert_raises(Hegel::Error) { real.send(:bind, "hegel_no_such_function", [], :int32) }
+
+    assert_equal "libhegel has no hegel_no_such_function; these bindings need libhegel #{Hegel::LIBHEGEL_VERSION}",
+      error.message
+  end
 end

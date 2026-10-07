@@ -906,6 +906,16 @@ class TestGenerators < Minitest::Test
     assert_includes error.message, "block is required"
   end
 
+  # An array asks for its elements' label before it draws one, so a
+  # blockless composite has to answer that with a label too, and leave the
+  # error to its own draw.
+  def test_composite_without_a_block_inside_arrays_raises_at_draw_time
+    generator = arrays(composite, min_size: 1)
+
+    error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+    assert_includes error.message, "block is required"
+  end
+
   # Pins the decision that a composite block's own tc.draw calls do not
   # each get their own report line: BlockTestCase#draw reaches the inner
   # generator's #do_draw directly, never Hegel::TestCase#draw, so the two
