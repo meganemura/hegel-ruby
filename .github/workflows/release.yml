@@ -11,14 +11,19 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Two jobs. publish runs under the release environment, whose approval is
+# the last check before anything goes out, and holds the RubyGems OIDC
+# token. release runs only after publish succeeds, and is the only job with
+# contents: write, so the token that can write the repository never sits in
+# the job that can push gems.
 jobs:
-  release:
-    name: Publish the gems and the GitHub release
+  publish:
+    name: Publish the gems
     runs-on: ubuntu-latest
     environment: release
     permissions:
       id-token: write
-      contents: write
+      contents: read
 
     # Actions are pinned to the commit each release points at, matching
     # ci.yml. A tag can move to another commit; a pinned commit says which
@@ -117,9 +122,66 @@ jobs:
             exit 1
           done
 
+  release:
+    name: Create the GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The notes are this version's section of CHANGELOG.md. A link in it
+      # is relative to the repository root, which a release page does not
+      # resolve, so each one is rewritten to the file at this tag.
+      - name: Write the release notes from this version's changelog section
+        env:
+          TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" 'index($0, "## [" v "]") == 1 {in_version=1; next} /^## /{in_version=0} in_version' CHANGELOG.md |
+            sed "s#](docs/#](https://github.com/${REPOSITORY}/blob/${TAG}/docs/#g" > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no section for ${version}" >&2
+            exit 1
+          fi
+
+      # The assets are fetched back from RubyGems rather than handed over
+      # from the publish job, so the release carries the exact files that
+      # were published, and no artifact action is needed to pass them on. A
+      # gem can take a moment to become downloadable after its push, so
+      # each fetch is retried.
+      - name: Fetch every published gem
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          mkdir pkg
+          cd pkg
+          for platform in ruby arm64-darwin x86_64-linux aarch64-linux x64-mingw-ucrt aarch64-mingw-ucrt; do
+            for attempt in 1 2 3 4 5 6; do
+              if gem fetch hegeltest --version "$version" --platform "$platform"; then
+                break
+              fi
+              if [ "$attempt" -eq 6 ]; then
+                echo "could not fetch hegeltest $version for $platform" >&2
+                exit 1
+              fi
+              sleep 10
+            done
+          done
+          set -- *.gem
+          if [ "$#" -ne 6 ]; then
+            echo "fetched $# gems, and this release expects 6" >&2
+            exit 1
+          fi
+
       # A rerun reaches this step with the release already created, and
       # `gh release create` refuses that. Uploading to the existing release
-      # instead lets a rerun finish the job it started.
+      # and rewriting its notes instead lets a rerun finish the job.
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,6 +189,7 @@ jobs:
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" --clobber pkg/*.gem
+            gh release edit "$TAG" --notes-file notes.md
           else
-            gh release create "$TAG" --generate-notes pkg/*.gem
+            gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag pkg/*.gem
           fi
