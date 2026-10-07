@@ -287,15 +287,14 @@ module Hegel
         utf8(out.read_pointer)
       end
 
-      # Returns a settings handle initialized with libhegel's defaults, or
-      # raises the exception LibHegel.check! translates this call's result
-      # code to.
+      # Returns a settings handle initialized from the engine's resolved
+      # profile, or raises the exception LibHegel.check! translates this
+      # call's result code to. Since libhegel 0.40 the call can fail: a
+      # malformed hegel.toml or HEGEL_* variable returns HEGEL_E_INVALID_ARG.
       def settings_new(ctx)
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_settings_new_fn.call(ctx, out)
-        # This call takes only ctx and this method's own out argument; neither
-        # makes the real engine return anything but HEGEL_OK.
-        LibHegel.check!(self, ctx, code) # mutineer:disable-line statement_removal
+        LibHegel.check!(self, ctx, code)
         out.read_pointer
       end
 
@@ -1224,10 +1223,10 @@ module Hegel
       end
 
       # Reads +out+'s const char* out-parameter into a Ruby String, or
-      # returns nil if libhegel left it NULL. Shared by #run_result_error
-      # and #failure_reproduction_blob, the two out-parameters the header
-      # documents as nullable, so both branches only need to be exercised
-      # once between the two call sites rather than at each one.
+      # returns nil if libhegel left it NULL. Shared by #run_result_error,
+      # #failure_reproduction_blob, and #failure_caveat, the out-parameters
+      # the header documents as nullable, so both branches only need to be
+      # exercised once between the call sites rather than at each one.
       def nullable_out_string(out)
         ptr = out.read_pointer
         ptr.null? ? nil : utf8(ptr)

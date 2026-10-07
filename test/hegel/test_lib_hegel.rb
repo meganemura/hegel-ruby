@@ -1863,4 +1863,20 @@ class TestLibHegel < Minitest::Test
     assert_equal "libhegel has no hegel_no_such_function; these bindings need libhegel #{Hegel::LIBHEGEL_VERSION}",
       error.message
   end
+
+  # The engine reads HEGEL_* variables when it builds a settings handle, and
+  # rejects a malformed one. The variable is restored afterwards, because
+  # every later run in this process reads it too.
+  def test_real_settings_new_raises_on_a_malformed_hegel_variable
+    real = Hegel::LibHegel::Real.new
+    saved = ENV.fetch("HEGEL_TEST_CASES", nil)
+    ENV["HEGEL_TEST_CASES"] = "abc"
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      error = assert_raises(Hegel::Error) { real.settings_new(ctx) }
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+    end
+  ensure
+    ENV["HEGEL_TEST_CASES"] = saved
+  end
 end
