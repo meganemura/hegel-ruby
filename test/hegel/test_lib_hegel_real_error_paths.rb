@@ -29,6 +29,7 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         settings_set_database: -> { real.settings_set_database(ctx, nil, "") },
         settings_set_report_multiple_failures: -> { real.settings_set_report_multiple_failures(ctx, nil, true) },
         settings_set_database_key: -> { real.settings_set_database_key(ctx, nil, "k") },
+        run_start_blob: -> { real.run_start_blob(ctx, nil, "blob") },
         settings_set_phases: -> { real.settings_set_phases(ctx, nil, Hegel::LibHegel::HEGEL_PHASE_ALL) },
         settings_set_suppress_health_check: -> {
           real.settings_set_suppress_health_check(ctx, nil, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
@@ -76,6 +77,7 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         collection_reject: -> { real.collection_reject(ctx, nil, nil) },
         pool_add: -> { real.pool_add(ctx, nil, nil) },
         state_machine_next_group: -> { real.state_machine_next_group(ctx, nil, nil) },
+        test_case_should_capture: -> { real.test_case_should_capture(ctx, nil) },
         state_machine_next_rule: -> { real.state_machine_next_rule(ctx, nil, nil) },
         state_machine_should_check_invariant: -> { real.state_machine_should_check_invariant(ctx, nil, nil, 0) },
         state_machine_rule_rejected: -> { real.state_machine_rule_rejected(ctx, nil, nil) }
@@ -100,8 +102,8 @@ class TestLibHegelRealErrorPaths < Minitest::Test
   end
 
   # hegel_run_result, its four readers, and hegel_failure_origin /
-  # hegel_failure_reproduction_blob each take a run, a run result, or a
-  # failure handle; NULL for it is the same documented
+  # hegel_failure_reproduction_blob / hegel_failure_caveat each take a run, a
+  # run result, or a failure handle; NULL for it is the same documented
   # HEGEL_E_INVALID_HANDLE case the two groups above already exercise, one
   # handle kind at a time.
   def test_run_result_and_failure_calls_raise_on_nil_handles
@@ -115,7 +117,8 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         run_result_failure_count: -> { real.run_result_failure_count(ctx, nil) },
         run_result_failure: -> { real.run_result_failure(ctx, nil, 0) },
         failure_origin: -> { real.failure_origin(ctx, nil) },
-        failure_reproduction_blob: -> { real.failure_reproduction_blob(ctx, nil) }
+        failure_reproduction_blob: -> { real.failure_reproduction_blob(ctx, nil) },
+        failure_caveat: -> { real.failure_caveat(ctx, nil) }
       }
 
       calls.each do |name, call|

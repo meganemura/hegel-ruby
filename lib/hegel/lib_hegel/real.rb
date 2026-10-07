@@ -515,7 +515,7 @@ module Hegel
 
       # +index+ must be less than #run_result_failure_count's value, per the
       # header. Returns a caller-owned failure handle, released separately
-      # with #failure_free. Measured against libhegel 0.32.5: an
+      # with #failure_free. Measured against libhegel 0.45.0: an
       # out-of-range +index+ comes back HEGEL_E_INVALID_ARG, even though
       # the header's Returns line for this call names only HEGEL_OK.
       def run_result_failure(ctx, r, index)
@@ -566,7 +566,7 @@ module Hegel
         nullable_out_string(out)
       end
 
-      # Forcing has to agree with +p+. Measured against libhegel 0.32.5:
+      # Forcing has to agree with +p+. Measured against libhegel 0.45.0:
       # forcing true at p = 0.0 and forcing false at p = 1.0 both come back
       # HEGEL_E_INVALID_ARG ("generate_boolean: cannot force ..."), while
       # forcing either way succeeds at any p between them. The header
@@ -1031,7 +1031,7 @@ module Hegel
       # 8-4-4-4-12 hex String is left to Hegel::Generators::UuidsGenerator,
       # the same division of labor #generate_ipv4/#generate_ipv6 already
       # follow for their own byte-to-address conversion. An out-of-range
-      # +version+ is not checked here: measured against libhegel 0.32.5, the
+      # +version+ is not checked here: measured against libhegel 0.45.0, the
       # engine itself returns HEGEL_E_INVALID_ARG for one, which
       # LibHegel.check! already translates.
       def generate_uuid(ctx, tc, version, has_version)
@@ -1049,7 +1049,7 @@ module Hegel
       # the same division of labor #generate_ipv4/#generate_uuid already
       # follow, returning raw values for a generator one layer up to turn
       # into the caller-facing type. This layer does not validate
-      # year/month/day itself: measured against libhegel 0.32.5, an
+      # year/month/day itself: measured against libhegel 0.45.0, an
       # invalid date (month 13, say) already comes back
       # HEGEL_E_INVALID_ARG, translated by LibHegel.check! below, even
       # though the header's Returns line for this call names only
@@ -1150,11 +1150,9 @@ module Hegel
       end
 
       # Packs +flags+ (an Array of true/false) into a const bool * buffer,
-      # one byte each, or nil for an empty Array, which the header reads as
-      # "all false".
+      # one byte each. An empty Array packs to a zero-length buffer, which the
+      # engine reads zero flags from.
       def pack_flags(flags)
-        return nil if flags.empty?
-
         buffer = FFI::MemoryPointer.new(:uint8, flags.size)
         buffer.write_array_of_uint8(flags.map { |flag| flag ? 1 : 0 })
         buffer

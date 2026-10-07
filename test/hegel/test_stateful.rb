@@ -418,6 +418,75 @@ class TestStateful < Minitest::Test
     assert_includes fake.spans, [:stop, false]
   end
 
+  # A machine whose one invariant counts its own runs, for the sampling
+  # tests below.
+  class SampledCountingMachine < Hegel::StateMachine
+    attr_reader :checks
+
+    def initialize
+      @checks = 0
+    end
+
+    rule(:step) { |_tc| }
+    invariant(:count) { @checks += 1 }
+  end
+
+  # Between rounds an invariant runs only when the engine samples it. Over
+  # two rounds, an invariant the engine never samples runs twice, on the
+  # initial and the final state, and one it always samples runs four times.
+  def test_an_invariant_runs_between_rounds_only_when_the_engine_samples_it
+    [[false, 2], [true, 4]].each do |sampled, expected|
+      fake = stateful_recording_fake([0, 0])
+      fake.state_machine_should_check_invariant_value = sampled
+      machine = SampledCountingMachine.new
+
+      Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(machine, tc) }
+
+      assert_equal expected, machine.checks, "sampled: #{sampled}"
+    end
+  end
+
+  # An invariant that breaks only once a rule has run, and that the engine
+  # never samples between rounds, fails at the final check, and the report
+  # says so.
+  class FinalCheckMachine < Hegel::StateMachine
+    def initialize
+      @steps = 0
+    end
+
+    rule(:step) { |_tc| @steps += 1 }
+    invariant(:no_steps) { raise "stepped" if @steps.positive? }
+  end
+
+  def test_the_report_names_the_final_invariant_check
+    fake = failing_stateful_fake([0])
+    fake.state_machine_should_check_invariant_value = false
+    output = StringIO.new
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, output: output) { |tc| Hegel::Stateful.run(FinalCheckMachine.new, tc) }
+    end
+
+    assert_includes output.string, "Final invariant check."
+  end
+
+  # A rule rejected by tc.assume leaves a note in the report, so the reader
+  # sees why that step did nothing.
+  def test_the_report_notes_a_rule_stopped_by_an_assumption
+    fake = failing_stateful_fake([0, 0])
+    calls = 0
+    machine = ScriptedRuleMachine.new do |tc|
+      calls += 1
+      tc.reject if calls == 1
+      raise "boom"
+    end
+    output = StringIO.new
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output) { |tc| Hegel::Stateful.run(machine, tc) } }
+
+    assert_includes output.string, "Rule stopped early due to violated assumption."
+  end
+
   # ---- Hegel::Stateful::Pool (real engine: docs/adr/0011 has the ownership
   # decision behind this class's shape) ----
 
@@ -612,6 +681,16 @@ class TestStateful < Minitest::Test
   end
 
   private
+
+  # stateful_recording_fake, configured for a FAILED run with one failure,
+  # so a raised exception reaches the caller with its report.
+  def failing_stateful_fake(rule_indices)
+    fake = stateful_recording_fake(rule_indices)
+    fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
+    fake.failure_count = 1
+    fake.failure_blobs = ["blob"]
+    fake
+  end
 
   # A Fake that runs one round per index in +rule_indices+, each round
   # running the rule at that index once, then ends the machine. It records
