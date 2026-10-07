@@ -30,16 +30,26 @@ module Hegel
     # The class name, prefixed with this binding's name as hegel.h asks, to
     # keep clear of the engine's own hegel.<kind> labels.
     def self.label
-      @label ||= LibHegel.label_from_name("hegel-ruby.#{name}")
+      LibHegel.label_from_name("hegel-ruby.#{name}")
     end
 
     # Combines this generator's class label with the labels of +parts+, the
-    # generators it draws from. Called at draw time, not at construction,
-    # because a generator validates its arguments when it is drawn.
+    # generators it draws from. A compound generator calls this once, when it
+    # is built, and keeps the result: computing it on every draw slowed a
+    # run of nested generators by more than twenty times, and keeping it
+    # from the first draw would write to a generator a caller may have
+    # frozen.
     def combined_label(*parts)
-      LibHegel.label_combine([self.class.label, *parts.map(&:label)])
+      LibHegel.label_combine([self.class.label, *parts.map { |part| Generator.label_of(part) }])
     end
     private :combined_label
+
+    # +part+'s label, or 0 for a part that is not a generator. Such a part
+    # fails when it is drawn, where a generator validates its arguments, so
+    # building the generator around it must not fail first.
+    def self.label_of(part)
+      part.respond_to?(:label) ? part.label : 0
+    end
 
     # Returns a new Generator whose #do_draw runs +block+ on the value this
     # generator drew, inside one span so the shrinker treats the source draw
@@ -64,11 +74,10 @@ module Hegel
       def initialize(source, block)
         @source = source
         @block = block
+        @label = combined_label(@source)
       end
 
-      def label
-        @label ||= combined_label(@source)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         tc.start_span(label)
@@ -101,11 +110,10 @@ module Hegel
       def initialize(source, block)
         @source = source
         @block = block
+        @label = combined_label(@source)
       end
 
-      def label
-        @label ||= combined_label(@source)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         MAX_ATTEMPTS.times do

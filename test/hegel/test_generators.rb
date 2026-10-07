@@ -1031,7 +1031,7 @@ class TestGenerators < Minitest::Test
     assert_equal [:start, generator.label], events[0]
     assert_equal [[:stop, false], [:stop, false]], events[2..]
     refute_includes [generator.label, integers.label, booleans.label], events[1][1]
-    refute_equal hashes(booleans, integers).send(:entry_label), events[1][1]
+    refute_equal draw_with_span_recording(hashes(integers, integers))[1][1], events[1][1]
   end
 
   def test_tuples_do_draw_opens_and_closes_its_own_span_kept
@@ -1093,14 +1093,32 @@ class TestGenerators < Minitest::Test
     refute_equal first.label, second.label
   end
 
-  # A self-referential deferred generator asks for its own label while
-  # computing it. The nested ask answers with the deferred class's label,
-  # so the computation ends, and the result is the installed generator's.
+  # A compound generator keeps its label from when it was built, so drawing
+  # it writes nothing to it, and a caller may freeze it.
+  def test_a_frozen_compound_generator_draws
+    generator = arrays(integers(min_value: 0, max_value: 3).map { |n| n * 2 }).freeze
+
+    Hegel.test(test_cases: 5, verbosity: :quiet) { |tc| tc.draw(generator) }
+  end
+
+  # A part that is not a generator fails when the compound generator is
+  # drawn, where a generator validates its arguments, so building one around
+  # it does not raise.
+  def test_a_compound_generator_builds_around_a_part_that_is_not_a_generator
+    assert_kind_of Hegel::Generator, arrays(5)
+  end
+
+  # A generator built around a deferred one before #set keeps the deferred
+  # class's label, so a self-referential definition has no cycle to follow.
+  # After #set, the deferred generator answers with the installed one's label.
   def test_a_self_referential_deferred_label_terminates
     tree = deferred
     assert_equal Hegel::Generators::DeferredGenerator.label, tree.label
 
-    tree.set(one_of(integers, arrays(tree)))
+    inner = one_of(integers, arrays(tree))
+    tree.set(inner)
+
+    assert_equal inner.label, tree.label
 
     assert_equal tree.label, tree.label
     refute_equal Hegel::Generators::DeferredGenerator.label, tree.label

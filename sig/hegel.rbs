@@ -72,6 +72,7 @@ module Hegel
 
   class Generator
     def self.label: () -> Integer
+    def self.label_of: (untyped part) -> Integer
     def do_draw: (untyped tc) -> untyped
     def label: () -> Integer
     def map: () { (untyped) -> untyped } -> Generator

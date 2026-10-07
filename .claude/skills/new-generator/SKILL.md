@@ -38,10 +38,11 @@ to `lib/hegel/generators.rb`, four pieces:
    `ArrayGenerator#do_draw` wraps the whole array in a span labelled with
    its own `#label`, and each element in a span labelled with the element
    generator's `#label`, both closed inside `ensure`. A generator built from
-   other generators overrides `#label` to combine its class label with
-   theirs (`combined_label`), computed on the first draw; see ADR 0020. A
-   missing or misplaced span does not fail a test outright; it can shrink
-   to a larger-than-minimal counterexample instead (see Test 3 below).
+   other generators sets `@label = combined_label(...)` in `initialize`,
+   combining its class label with theirs, and reads it with
+   `attr_reader :label`; see ADR 0020. A missing or misplaced span does not
+   fail a test outright; it can shrink to a larger-than-minimal
+   counterexample instead (see Test 3 below).
 
    **Open a span only around a generator that makes more than one native
    call for one drawn value.** A container with elements opens one span

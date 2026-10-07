@@ -37,15 +37,19 @@ the labels of the generators it draws from, in order. Both functions are
 computed in Ruby, with the same hash the header defines, and a test pins
 them against vectors measured from the engine's own functions.
 
-A compound generator computes its label the first time it is drawn, and
-keeps it. Computing it at construction was refused, because a generator
-validates its arguments when it is drawn, and a component that is not a
-generator would then fail at construction with a different error.
+A compound generator computes its label once, when it is built, and keeps
+it, as hegel-rust's generators do. Two alternatives were refused. Computing
+the label on every draw slowed a run of nested generators by more than
+twenty times. Computing it on the first draw and keeping it writes to the
+generator at draw time, so a generator the caller froze raised
+`FrozenError` on every draw. A component that is not a generator
+contributes 0 to the label, so building around it does not raise; the
+draw reports the mistake, where a generator validates its arguments.
 
-A deferred generator answers with its installed generator's label. A
-self-referential definition asks for its own label while it computes it,
-and the nested ask answers with the deferred class's own label, which ends
-the cycle. hegel-rust's deferred generator breaks the cycle the same way.
+A deferred generator answers with its installed generator's label, or its
+own class label before `set`. A generator built around it before `set`
+keeps that class label, so a self-referential definition has no cycle to
+follow. hegel-rust's deferred generator answers the same way.
 
 The span sites stay where they were: around each compound draw, and around
 each element of a collection, labelled with the element generator's own

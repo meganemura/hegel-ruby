@@ -158,11 +158,10 @@ module Hegel
         @elements = elements
         @min_size = min_size
         @max_size = max_size
+        @label = combined_label(@elements)
       end
 
-      def label
-        @label ||= combined_label(@elements)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         raise Hegel::Error, "arrays: min_size must not be negative" if @min_size.negative?
@@ -244,11 +243,10 @@ module Hegel
     class OneOfGenerator < Generator
       def initialize(generators)
         @generators = generators
+        @label = combined_label(*@generators)
       end
 
-      def label
-        @label ||= combined_label(*@generators)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         raise Hegel::Error, "one_of: at least one generator is required" if @generators.empty?
@@ -269,11 +267,10 @@ module Hegel
     class OptionalGenerator < Generator
       def initialize(generator)
         @generator = generator
+        @label = combined_label(@generator)
       end
 
-      def label
-        @label ||= combined_label(@generator)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         tc.start_span(label)
@@ -293,11 +290,10 @@ module Hegel
     class TupleGenerator < Generator
       def initialize(generators)
         @generators = generators
+        @label = combined_label(*@generators)
       end
 
-      def label
-        @label ||= combined_label(*@generators)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         tc.start_span(label)
@@ -316,11 +312,10 @@ module Hegel
         @elements = elements
         @min_size = min_size
         @max_size = max_size
+        @label = combined_label(@elements)
       end
 
-      def label
-        @label ||= combined_label(@elements)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         raise Hegel::Error, "sets: min_size must not be negative" if @min_size.negative?
@@ -383,11 +378,11 @@ module Hegel
         @values = values
         @min_size = min_size
         @max_size = max_size
+        @label = combined_label(@keys, @values)
+        @entry_label = LibHegel.label_combine([ENTRY_LABEL, *[@keys, @values].map { |part| Generator.label_of(part) }])
       end
 
-      def label
-        @label ||= combined_label(@keys, @values)
-      end
+      attr_reader :label
 
       def do_draw(tc)
         raise Hegel::Error, "hashes: min_size must not be negative" if @min_size.negative?
@@ -426,12 +421,8 @@ module Hegel
       # Draws the key and its value as one unit inside a single span, so the
       # shrinker can retry the whole pair together. The entry label combines
       # the key and value labels, as the hash's own label does.
-      def entry_label
-        @entry_label ||= LibHegel.label_combine([ENTRY_LABEL, @keys.label, @values.label])
-      end
-
       def draw_entry(tc)
-        tc.start_span(entry_label)
+        tc.start_span(@entry_label)
         [@keys.do_draw(tc), @values.do_draw(tc)]
       ensure
         tc.stop_span(discard: false)
@@ -785,13 +776,12 @@ module Hegel
     class CompositeGenerator < Generator
       def initialize(&block)
         @block = block
-      end
-
-      def label
-        @label ||= LibHegel.label_combine(
+        @label = LibHegel.label_combine(
           [self.class.label, LibHegel.label_from_name(Array(@block&.source_location).join(":"))]
         )
       end
+
+      attr_reader :label
 
       def do_draw(tc)
         raise Hegel::Error, "composite: block is required" unless @block
@@ -884,19 +874,12 @@ module Hegel
         @inner = generator
       end
 
-      # The installed generator's label. A self-referential definition asks
-      # for its own label while computing it, so a nested call answers with
-      # this class's label and the cycle ends there, as hegel-rust's
-      # DeferredGenerator does.
+      # The installed generator's label, or this class's own before #set.
+      # A generator built from this one before #set keeps the class label,
+      # which is how a self-referential definition ends its own cycle, as
+      # hegel-rust's DeferredGenerator does.
       def label
-        return self.class.label if @inner.nil? || @resolving
-
-        begin
-          @resolving = true
-          @inner.label
-        ensure
-          @resolving = false
-        end
+        @inner ? @inner.label : self.class.label
       end
 
       def do_draw(tc)
