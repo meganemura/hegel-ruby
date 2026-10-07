@@ -24,8 +24,15 @@ hegel-java return their languages' typed values.
 `times` and `datetimes` keep microsecond precision. A lower bound's
 microsecond becomes its first nanosecond, and an upper bound's its last,
 so the engine draws over every nanosecond inside the bounds. The drawn
-nanosecond rounds down to a microsecond. Each microsecond in range stays
-equally likely, and both bounds stay reachable.
+nanosecond rounds down to a microsecond, so every microsecond in range
+stays reachable, both bounds included. The engine does not draw
+nanoseconds uniformly, so the microseconds are not equally likely either:
+measured against libhegel 0.45.0, 2000 draws over four microseconds gave
+1437, 284, 162, and 117.
+
+A `datetimes` bound with a fraction of a microsecond narrows to the whole
+microseconds inside the range: the lower bound rounds up and the upper
+rounds down.
 
 Moving to nanosecond output was refused while the implementations do not
 agree on its format. A change to it belongs upstream first, as ADR 0015

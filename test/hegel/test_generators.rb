@@ -825,6 +825,16 @@ class TestGenerators < Minitest::Test
     assert_all_examples(datetimes(max_value: bound)) { |v| v <= bound }
   end
 
+  # A bound with a fraction of a microsecond: every drawn value, which has
+  # whole microseconds, still lies inside it.
+  def test_datetimes_bounds_with_a_fraction_of_a_microsecond_bound_the_draw
+    min_value = Time.utc(2020, 1, 1, 0, 0, 0, Rational(3, 2))
+    max_value = Time.utc(2020, 1, 1, 0, 0, 0, Rational(11, 2))
+    assert_all_examples(datetimes(min_value: min_value, max_value: max_value)) do |v|
+      v.between?(min_value, max_value)
+    end
+  end
+
   def test_datetimes_min_value_greater_than_max_value_raises_at_draw_time
     error = assert_raises(Hegel::Error) do
       Hegel.test(verbosity: :quiet) do |tc|

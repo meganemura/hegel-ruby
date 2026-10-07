@@ -649,8 +649,8 @@ module Hegel
     # nanoseconds. times and datetimes keep microseconds, because hegel-rust,
     # hegel-cpp, and hegel-typescript do not agree on a finer precision. A
     # bound's microsecond widens to every nanosecond inside it, and the
-    # drawn value rounds down, so each microsecond in range stays equally
-    # likely and both bounds stay reachable.
+    # drawn value rounds down, so every microsecond in range stays
+    # reachable, both bounds included.
     def self.first_nanosecond(parts)
       hour, minute, second, microsecond = parts
       [hour, minute, second, microsecond * 1000]
@@ -753,6 +753,11 @@ module Hegel
         max_value = @max_value || MAX_DATETIME
         raise Hegel::Error, "datetimes: max_value < min_value" if max_value < min_value
 
+        # A drawn value has whole microseconds, so a bound with a fraction of
+        # one narrows to the whole microseconds inside the range: the lower
+        # bound rounds up and the upper rounds down, keeping each bound's zone.
+        min_value = min_value.ceil(6)
+        max_value = max_value.floor(6)
         date, (hour, minute, second, nanosecond) = tc.generate_datetime(
           [min_value.year, min_value.month, min_value.day],
           Generators.first_nanosecond([min_value.hour, min_value.min, min_value.sec, min_value.usec]),
