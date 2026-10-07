@@ -215,7 +215,7 @@ Expected: [0, 0]
 
 Some bugs need a sequence of operations rather than one input. Declare the
 operations as rules on a `Hegel::StateMachine`, and Hegel picks which runs
-next, checks your invariants after each one, and shrinks a failure to the
+next, checks your invariants along the way, and shrinks a failure to the
 shortest sequence that still shows it:
 
 ```ruby
@@ -250,12 +250,22 @@ something an earlier rule produced, such as freeing a handle that some
 `alloc` actually returned, put the value in a `Hegel::Stateful::Pool` and
 draw it back out.
 
+Every invariant runs before the first rule and after the last. Between rules,
+the engine samples each one, so that it runs about once in a test case
+that runs every step.
+Declare an invariant with `always_run: true` to check it after every rule
+instead. `Hegel::Stateful.run(machine, tc, step_count: 50)` sets the most
+rules one test case runs; 50 is the default.
+
 ### Shaping a run
 
 `Hegel.test` takes keywords for the rest: `test_cases`, `seed`,
-`derandomize`, `verbosity`, `phases`, `suppress_health_check`,
-`report_multiple_failures`, and `stateful_step_count`. Each one left unset
-means the engine's own default.
+`derandomize`, `verbosity`, `phases`, `suppress_health_check`, and
+`report_multiple_failures`. Each one left unset takes its value from the
+engine's settings profile. That is libhegel's own default, unless a
+`hegel.toml` or a `HEGEL_*` environment variable says otherwise. On a CI
+server the engine picks its `ci` profile, which derandomizes the run and
+turns the example database off.
 
 Two more turn on libhegel's example database, which stores a failing case and
 replays it first next time. `database_key` is the switch and `database`

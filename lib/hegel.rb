@@ -31,11 +31,11 @@ module Hegel
   # +test_cases+, +seed+, +derandomize+, +verbosity+, +phases+, and
   # +suppress_health_check+ all default to nil, which means the same thing
   # for each of them: do not call the matching libhegel setter, and let the
-  # engine's own default apply instead. See Hegel::Settings for the
-  # keyword-to-setter mapping, the verbosity Symbols it accepts, and the
-  # +phases+/+suppress_health_check+ Symbols each of those two accepts (as
-  # an Array; an empty Array raises Hegel::Error rather than silently
-  # meaning "none"). +verbosity: :quiet+ also silences the failure report
+  # engine's resolved settings profile apply instead (see docs/adr/0023).
+  # See Hegel::Settings for the keyword-to-setter mapping, the verbosity
+  # Symbols it accepts, and the +phases+/+suppress_health_check+ Symbols
+  # each of those two accepts (as an Array; an empty Array raises
+  # Hegel::Error rather than silently meaning "none"). +verbosity: :quiet+ also silences the failure report
   # itself, not just libhegel's own progress output.
   #
   # +database+ and +database_key+ opt a run into libhegel's example
@@ -51,8 +51,8 @@ module Hegel
   # behind it.
   #
   # +report_multiple_failures+ defaults to false, not nil, unlike every
-  # keyword above: see Hegel::Runner.run's own comment for why departing
-  # from libhegel's own default (true) is itself the decision here.
+  # keyword above: see Hegel::Runner.run's own comment for why it is always
+  # passed.
   #
   # +output+ (default $stderr) is where a failure report is written; a
   # caller passes its own IO to capture that report instead (tests do).

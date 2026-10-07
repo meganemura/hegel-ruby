@@ -5,13 +5,13 @@ require_relative "lib_hegel"
 
 module Hegel
   # Copies Hegel.test's keyword arguments onto a libhegel settings handle.
-  # Most keywords follow one rule: nil means "leave libhegel's own default in
-  # place", so a caller of Hegel.test who passes none of them gets exactly
-  # the engine's untouched defaults (100 test cases, a random seed, no
-  # derandomize, every phase, every health check). +database+ and
-  # +database_key+ follow the table #apply_database documents instead, and
-  # +report_multiple_failures+ has no nil case at all -- see #apply's own
-  # comment for why.
+  # Most keywords follow one rule: nil means "call no setter", so a caller of
+  # Hegel.test who passes none of them gets the settings profile the engine
+  # resolved: libhegel's own defaults, unless a hegel.toml, a HEGEL_*
+  # environment variable, or the engine's ci profile on a CI server says
+  # otherwise (see docs/adr/0023). +database+ and +database_key+ follow the
+  # table #apply_database documents instead, and +report_multiple_failures+
+  # has no nil case at all -- see #apply's own comment for why.
   module Settings
     # Hegel.test's verbosity: values, mapped to hegel.h's hegel_verbosity_t.
     VERBOSITY_CODES = {

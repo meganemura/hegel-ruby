@@ -1084,7 +1084,7 @@ class TestLibHegel < Minitest::Test
   end
 
   # hegel_string_generator_domain's max_length is documented as valid in
-  # 4..=255. Measured against libhegel 0.32.5: both ends outside that
+  # 4..=255. Measured against libhegel 0.45.0: both ends outside that
   # range come back HEGEL_E_INVALID_ARG, translated here to Hegel::Error,
   # matching the header's "Returns ... HEGEL_E_INVALID_ARG for a
   # max_length that leaves no eligible top-level domains" (which also

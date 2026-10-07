@@ -4,7 +4,7 @@
 
 - [Setup](#setup)
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
-- [Settings](#settings): `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stateful_step_count:` `output:` `reproduce_failure:`
+- [Settings](#settings): `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`
 - [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
@@ -104,7 +104,7 @@ output.string
 `output.string` holds:
 
 ```
-Falsified after 3 test cases (0 discarded):
+Falsified after 12 test cases (0 discarded):
 
   xs = [0, 0]
 
@@ -114,7 +114,9 @@ To reproduce this failure, pass the blob below to Hegel.test:
 
 Hegel names each drawn value (`xs` above) by reading the line the `draw`
 call was written on. Pass the blob back through `reproduce_failure:` to
-replay that exact failing case without a full run:
+replay that failure without a full run. The engine replays it until a
+replay fails, within its own budget, and raises `Hegel::Error` when none
+does:
 
 ```ruby
 Hegel.test(reproduce_failure: "AXicY2VgYGBkZOBiZEBhMAAAAd8AIQ==", verbosity: :quiet) do |tc|
@@ -122,6 +124,17 @@ Hegel.test(reproduce_failure: "AXicY2VgYGBkZOBiZEBhMAAAAd8AIQ==", verbosity: :qu
   raise "not sorted-equal: #{xs.inspect}" unless my_sort(xs) == xs.sort
 end
 ```
+
+A body that fails only some of the time is reported like any other failure,
+with one more line from the engine that says how reliably it reproduced:
+
+```
+note: nondeterministic failure, confirmed: failed 6 of 20 replays at confirmation and 1 of 3 at report time
+```
+
+The blob of such a failure still works with `reproduce_failure:`. A failure
+the engine could not confirm comes with no blob, and its report leaves out
+the reproduction line.
 
 ## Settings
 
@@ -138,15 +151,19 @@ end
 | `phases` | `Array` of `Symbol` or `nil` | `nil` (libhegel's own default: every phase) | Which run phases to enable: `:explicit`, `:reuse`, `:generate`, `:target`, `:shrink` |
 | `suppress_health_check` | `Array` of `Symbol` or `nil` | `nil` (no suppression) | Which health checks to turn off: `:filter_too_much`, `:too_slow`, `:test_cases_too_large`, `:large_initial_test_case` |
 | `report_multiple_failures` | `true`/`false` | `false` | `true` summarizes every distinct failure into one `Hegel::Error` instead of re-raising a single failure's own exception |
-| `stateful_step_count` | `Integer` or `nil` | `nil` (libhegel's own default: 50) | Steps per test case a `Hegel::Stateful.run` call applies, for a stateful test |
 | `output` | `IO` | `$stderr` | Where a failure report is written |
-| `reproduce_failure` | `String` or `nil` | `nil` | Replays the single case the blob encodes, instead of running a full property |
+| `reproduce_failure` | `String` or `nil` | `nil` | Replays the blob as a run until a replay fails, instead of running a full property |
 
 `nil` means the same thing for `test_cases`, `seed`, `derandomize`,
-`verbosity`, `phases`, `suppress_health_check`, and `stateful_step_count`: do
-not call the matching libhegel setter, and let the engine's own default
-apply. `database`/`database_key` and `report_multiple_failures` each follow
-their own rule instead, covered below.
+`verbosity`, `phases`, and `suppress_health_check`: do not call the matching
+libhegel setter, and let the engine's settings profile decide. That is
+libhegel's own default, unless a `hegel.toml` or a `HEGEL_*` environment
+variable (such as `HEGEL_TEST_CASES`) sets the value. On a CI server the
+engine picks its `ci` profile, which derandomizes the run, turns the example
+database off, and suppresses the `too_slow` health check. A keyword passed
+explicitly wins over all of these. `database`/`database_key` and
+`report_multiple_failures` each follow their own rule instead, covered
+below.
 
 `database_key:` is the switch that turns libhegel's example database on;
 `database:` only chooses where it writes, and means nothing without a key.
@@ -162,7 +179,9 @@ Hegel.test(database: "/tmp/wherever") { |tc| tc.draw(integers) }
 Give `database_key:` a value unique to the property under test. Two
 `Hegel.test` calls that share a key share one replay scope, so an unrelated
 property can read or overwrite what this one stored. Left at their shared
-default (`nil`, `nil`), a run stores nothing.
+default (`nil`, `nil`), a run stores nothing. With a key and no
+`database:`, the profile chooses the directory, and the `ci` profile turns
+the database off; pass `database:` to store on CI too.
 
 `phases:` and `suppress_health_check:` each take an `Array` of `Symbol`, and
 each raises `Hegel::Error` at run time for an empty one. An empty `Array`
@@ -175,13 +194,13 @@ Hegel.test(phases: []) { |tc| tc.draw(integers) }
 # :reuse, :generate, :target, :shrink], got an empty Array"
 ```
 
-`report_multiple_failures:` defaults to `false`, which is not libhegel's own
-default (`true`). With the default `false`, a run stops at its first failing
-example and re-raises that failure's own exception, class and backtrace
-intact, so a host framework reports it as its own. `report_multiple_failures:
-true` keeps generating afterwards to surface other distinct bugs, and then
-raises `Hegel::Error` naming the count instead of any one of the individual
-exceptions:
+`report_multiple_failures:` defaults to `false`, and is always passed, so a
+profile cannot turn it on by accident. With the default `false`, a run
+stops at its first failing example and re-raises that failure's own
+exception, class and backtrace intact, so a host framework reports it as
+its own. `report_multiple_failures: true` keeps generating afterwards to
+surface other distinct bugs, and then raises `Hegel::Error` naming the count
+instead of any one of the individual exceptions:
 
 ```ruby
 Hegel.test(test_cases: 10, report_multiple_failures: true, verbosity: :quiet) do |tc|
@@ -194,11 +213,6 @@ Hegel.test(test_cases: 10, report_multiple_failures: true, verbosity: :quiet) do
 end
 # raises Hegel::Error, "Property-based test failed with 2 distinct failures."
 ```
-
-`stateful_step_count:` bounds how many rules one `Hegel::Stateful.run` call
-applies per test case (see [Stateful Testing](#stateful-testing)); the
-engine documents its own default as 50, and requires the value be at least
-1.
 
 `seed:` and `derandomize: true` together make a run reproducible:
 
@@ -310,9 +324,10 @@ body; `assume`/`reject` discard from anywhere in the block.
 
 `note` records a message for the eventual failure report, interleaved with
 draws in the order both were called. Pass a message directly, or a block.
-The block form is evaluated only on the one, already-shrunk replay that
-produces the report, so it is the cheaper choice when building the message
-itself costs something. Passing both, or neither, raises `Hegel::Error`:
+The block form is evaluated only on the cases the engine stamps for the
+report, its final replay of each failure and the replays that first
+confirm one, so it is the cheaper choice when building the message itself
+costs something. Passing both, or neither, raises `Hegel::Error`:
 
 ```ruby
 output = StringIO.new
@@ -478,14 +493,14 @@ expose) are not available in this binding; `codec:`, `min_codepoint:`, and
 `max_codepoint:` are the alphabet controls it exposes today.
 
 Other generators cover most character-set jobs. These results were measured
-with libhegel 0.32.5 on this repository's main branch:
+with libhegel 0.45.0:
 
 | Job | Generator | Measured output |
 |---|---|---|
-| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"げLだづは"`, `"あぐA"` |
-| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `"Ë3ù*掆&"`, `"MßzæŜ\u0002"`; 30 draws contained no comma, tab, or newline |
-| A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character was in U+0300 through U+036F |
-| An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | `"İaİß"`, `"ßßß"` |
+| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"ぁ"`, `"Hわ9ごう"`; 30 draws all matched the pattern |
+| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"\u008FBՔ\u0014੐C"`; 30 draws contained no comma, tab, or newline |
+| A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character of 100 draws was in U+0300 through U+036F |
+| An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | 30 draws, each built only from `ß`, `a`, and `İ` |
 
 The `categories:` option remains an open request. A category such as any `Lu`
 or any `Mn` spans codepoint ranges that a codepoint bound cannot select. A
@@ -507,7 +522,7 @@ the same setting as `suppress_health_check: [:filter_too_much]`, listed in
 
 Unconfigured `text` draws from a much wider Unicode range. In 200 draws of
 `text(min_size: 1, max_size: 4)`, the results included emoji, private-use
-characters, and control characters. The highest codepoint was U+10F11A. A
+characters, and control characters. The highest codepoint was U+10A78F. A
 property that accepts any string needs no character-set options.
 
 ### `arrays(elements, min_size: 0, max_size: nil)`
@@ -987,8 +1002,28 @@ instance variables directly, and calls a generator method (`integers`,
 surrounding class can once it includes `Hegel::Syntax::Methods`;
 `Hegel::StateMachine` already includes that module itself.
 
-An invariant runs once before the first rule, and again after every rule
-application that completes without its own assumption failing.
+An invariant runs before the first rule and after the last. Between rules,
+the engine samples it with probability 1 / `step_count`, so it runs about
+once in a test case that runs every step. `invariant(name, always_run:
+true, &block)` checks it after every rule instead:
+
+```ruby
+class CountingMachine < Hegel::StateMachine
+  rule(:step) { |_tc| }
+  invariant(:cheap, always_run: true) { |_tc| }
+  invariant(:expensive) { |_tc| }
+end
+```
+
+`Hegel::Stateful.run(machine, tc, step_count: 50)` takes the most rules one
+test case runs. It defaults to 50, and the engine rejects a value below 1:
+
+```ruby
+Hegel.test(test_cases: 1, verbosity: :quiet) do |tc|
+  Hegel::Stateful.run(CountingMachine.new, tc, step_count: 0)
+end
+# raises Hegel::Error, naming HEGEL_E_INVALID_ARG
+```
 
 A rule or invariant reports a failure the same way any other test-case body
 does: raise. This library brings no assertion methods of its own. Include
@@ -1077,7 +1112,7 @@ output.string
 ```
 
 ```
-Falsified after 1 test case (0 discarded):
+Falsified after 2 test cases (0 discarded):
 
   Initial invariant check.
   Step 1: push
@@ -1088,7 +1123,7 @@ Falsified after 1 test case (0 discarded):
   draw_3 = 0
 
 To reproduce this failure, pass the blob below to Hegel.test:
-    reproduce_failure: "AXiclcaxDQAACMMwd0Xi/3dh4QCGKG6E2tzywQAOIgBh"
+    reproduce_failure: "AXicjYghEgAACIOkmvz/a9Ww5RE4jqmjeYPCJ30sEXQAaw=="
 ```
 
 The shrunk report names each step by its rule (`Step 1: push`), and shrinks

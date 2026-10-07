@@ -53,8 +53,8 @@ class TestRunner < Minitest::Test
   # class-level documentation this task's public API follows. The captured
   # report must name that same 501 under its label:, and its "Falsified
   # after" count must be the generation phase's own count (bounded by the
-  # default 100 test_cases), not the ~1000-iteration shrink phase #drive's
-  # own comment measured for a similarly sized run.
+  # default 100 test_cases), not the shrink phase's. Measured against
+  # libhegel 0.45.0, this run calls the body 60 to 75 times.
   def test_hegel_test_shrinks_to_the_minimal_counterexample_and_reports_it
     output = StringIO.new
 
@@ -517,10 +517,10 @@ class TestRunner < Minitest::Test
   # afterward (both keep raising, since the counter has already passed 2)
   # cannot move the reported count.
   #
-  # The draw is required, not decoration: measured against libhegel 0.32.5,
+  # The draw is required, not decoration: measured against libhegel 0.45.0,
   # a case that discards having drawn nothing carries no choices to vary,
-  # so the run treats it as fully determined and stops after that one
-  # trial (PASSED) instead of pulling another test case.
+  # so the run stops after that one trial and fails as Unsatisfiable
+  # (Hegel::Error) instead of pulling another test case.
   def test_assume_false_discards_the_case_and_counts_toward_discarded
     output = StringIO.new
     calls = 0
@@ -1015,9 +1015,9 @@ class TestRunner < Minitest::Test
   # health check turns the run into an ERROR (Hegel::Error) after 50
   # rejections; suppressed, the same property runs to completion. test_cases
   # is kept small (20) because Hegel::AssumeFailed / #reject cases do not
-  # count against that budget (see docs/adr's own measurement, 560 draws for
-  # this same shape), so a larger budget would only cost more wall time
-  # without exercising a different branch.
+  # count against that budget (measured against libhegel 0.45.0, this shape
+  # calls the body 1040 to 1537 times at a budget of 20), so a larger budget
+  # would only cost more wall time without exercising a different branch.
   def test_suppress_health_check_filter_too_much_against_the_real_engine
     body = lambda do |tc|
       n = tc.draw_integer(0, 1_000_000)
@@ -1056,10 +1056,10 @@ class TestRunner < Minitest::Test
   # own test_can_target_a_score_upwards_without_failing
   # (tests/test_targeting.rs), against the same engine underneath. A
   # comparison run that fails past a threshold instead, with and without
-  # #target, does not tell targeting apart from luck: measured 10 runs each
-  # way at a fixed threshold, the mean case count before the first failure
-  # was 40.4 with #target called and 40.0 without, no distinguishable
-  # difference. Reaching a fixed ceiling has no such ambiguity, so this
+  # #target, does not tell targeting apart from luck: measured against
+  # libhegel 0.45.0, 10 runs each way failing once the sum reached 1900, the
+  # mean case count before the first failure was 109.4 with #target called
+  # and 111.8 without. Reaching a fixed ceiling has no such ambiguity, so this
   # shape is deterministic instead. Run 5 times here, at test_cases: 1000
   # (matching hegel-rust's own test_cases(1000)) to confirm it does not
   # flake.

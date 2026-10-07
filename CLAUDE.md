@@ -107,8 +107,10 @@ takes VALID when the body returned, INVALID when a precondition rejected the
 case, OVERRUN when the engine ran out of choices, and INTERESTING when the
 body raised anything else. There is no separate "the test itself broke"
 outcome: every non-control exception is a counterexample. A run-level error,
-such as a failed health check or a nondeterministic body, is the engine's own
-verdict, read from `hegel_run_result_status` afterwards.
+such as a failed health check or a body that discards without drawing, is
+the engine's own verdict, read from `hegel_run_result_status` afterwards. A
+nondeterministic body ends in a failure: since libhegel 0.44, the run
+reports FAILED and the failure carries a caveat.
 
 **An origin string groups failures, so it must be stable.** `mark_complete`
 takes one alongside INTERESTING. The ABI documentation is explicit: "Two
@@ -120,15 +122,19 @@ inside the framework that raised. See
 [ADR 0012](docs/adr/0012-build-a-failure-origin-from-the-callers-own-frame.md).
 
 **The test-case setting bounds generation, not the number of times the loop
-runs.** Shrinking draws more cases on top of it. Measured against libhegel
-0.32.5, a run configured for 20 test cases whose body always failed on a drawn
-integer yielded 1003 cases; the same run failing conditionally yielded 109.
-Two things follow. Drive the loop until `hegel_next_test_case` hands back
-nothing, never by counting. And keep per-case work cheap. Anything expensive
-enough to notice, such as reading source to name a drawn value or formatting
-a backtrace, belongs in the single final replay rather than in every shrink
-probe. hegel-rust reaches the same conclusion from the other side, calling
-backtrace capture "the dominant cost of failing-heavy property runs".
+runs.** Shrinking and rejected cases draw more cases on top of it. Measured
+against libhegel 0.45.0, a run configured for 20 test cases whose body
+failed when a drawn integer passed half its range yielded 104 to 123 cases
+over the runs that failed, and one whose body rejected nearly every case,
+with the FilterTooMuch check suppressed, yielded 1040 to 1537. Two things
+follow. Drive the loop until `hegel_next_test_case` hands back nothing, never
+by counting. And keep per-case work cheap. Anything expensive enough to notice, such as reading
+source to name a drawn value or formatting a backtrace, belongs in the cases
+the engine stamps for capture (`hegel_test_case_should_capture`) rather than
+in every shrink probe. hegel-rust reaches the same conclusion from the other
+side, calling backtrace capture "the dominant cost of failing-heavy property
+runs". See
+[ADR 0019](docs/adr/0019-report-failures-from-the-cases-the-engine-stamps.md).
 
 **Free native handles deterministically.** Every `hegel_*_free` function takes
 the context, so the context must outlive every handle allocated from it.
@@ -148,7 +154,9 @@ a different construction. See
 **Wrap compound generators in spans.** The engine shrinks better when it can
 see the structure of a drawn value. A missing span costs nothing at generation
 time and shows up only as a worse counterexample, so the shrink-quality tests
-are the layer that catches it.
+are the layer meant to catch it. Measured against libhegel 0.45.0, the
+duplicate-pair test of arrays of integers still shrinks to `[0, 0]` with every
+span removed, so that test alone no longer shows a span is placed correctly.
 
 **A generator validates its arguments when it is drawn, not when it is built.**
 `integers(min_value: 5, max_value: 1)` returns a generator, and the error
@@ -164,7 +172,8 @@ descriptive substring." Treat a change to one as a change to the interface.
 **A run without a `database_key` disables the example database explicitly.**
 `hegel_settings_set_database_key` is the switch; `hegel_settings_set_database`
 only chooses a directory, defaulting to `./.hegel/examples/`. Measured against
-0.32.5, a run with no key wrote nothing even with that default path in place.
+0.32.5 and again against 0.45.0, a run with no key wrote nothing even with
+that default path in place.
 That is a measurement, not a promise the header makes, and being wrong
 about it puts a directory in a contributor's working copy and nowhere else,
 which is the hardest version of this to notice. So an unkeyed run passes `""`.

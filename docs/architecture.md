@@ -173,7 +173,7 @@ fields.
 
 A drawn string arrives as a pointer and a length, is not NUL-terminated,
 and can hold interior NUL bytes, because the drawn alphabet can include
-U+0000. Read by length. Measured against 0.32.5: an alphabet pinned to
+U+0000. Read by length. Measured against 0.45.0: an alphabet pinned to
 U+0000 produces a three-byte draw that reads as `""` when taken up to the
 first NUL and as three NUL bytes when taken by its reported length. Every
 string observed reports `valid_encoding?` after `force_encoding(UTF-8)`.

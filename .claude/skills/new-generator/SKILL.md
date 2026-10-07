@@ -35,25 +35,24 @@ to `lib/hegel/generators.rb`, four pieces:
    (`assert_includes error.message, "max_value < min_value"`), so keep the
    wording once it ships.
 4. **Compound generators wrap a span, closed by `ensure`.**
-   `ArrayGenerator#do_draw` wraps the whole array in
-   `HEGEL_LABEL_LIST`/`stop_span` and wraps each element in
-   `HEGEL_LABEL_LIST_ELEMENT`/`stop_span`, both inside `ensure`. A missing or
-   misplaced span does not fail a test outright; it shrinks to a
-   larger-than-minimal counterexample instead (see Test 3 below).
+   `ArrayGenerator#do_draw` wraps the whole array in a span labelled with
+   its own `#label`, and each element in a span labelled with the element
+   generator's `#label`, both closed inside `ensure`. A generator built from
+   other generators overrides `#label` to combine its class label with
+   theirs (`combined_label`), computed on the first draw; see ADR 0020. A
+   missing or misplaced span does not fail a test outright; it can shrink
+   to a larger-than-minimal counterexample instead (see Test 3 below).
 
    **Open a span only around a generator that makes more than one native
-   call for one drawn value.** A container with elements opens a pair
-   (`LIST`/`LIST_ELEMENT`, `SET`/`SET_ELEMENT`, `MAP`/`MAP_ENTRY`);
-   `SampledFromGenerator`, `OneOfGenerator`, `OptionalGenerator`, and
-   `TupleGenerator` each open one span around the whole draw.
+   call for one drawn value.** A container with elements opens one span
+   around the whole draw and one around each element (or each key and
+   value pair, for `hashes`); `SampledFromGenerator`, `OneOfGenerator`,
+   `OptionalGenerator`, and `TupleGenerator` each open one span around the
+   whole draw.
 
-   A generator that makes exactly one native call opens none, even when a
-   label with its name sits in the `HEGEL_LABEL_*` table. The header calls
-   those "emitted internally, like every per-draw label": the engine opens
-   them inside its own draw. `UuidsGenerator` is one such case: a label
-   exists, and the generator opens no span. Presence in the table is not
-   the test;
-   how many native calls the draw makes is.
+   A generator that makes exactly one native call opens none: the engine
+   labels the spans around its own draws itself. `UuidsGenerator` is one
+   such case. How many native calls the draw makes decides it.
 
    One that makes **none** opens none either. `DeferredGenerator` forwards
    to whatever `#set` installed and calls nothing itself; hegel-rust,
@@ -69,12 +68,12 @@ writes in a block exactly as it does for one written as a class.
 **A collection that keeps rejecting is already bounded; do not bound it
 again.** `SetGenerator` and `HashGenerator` call
 `TestCase#collection_reject` when a drawn element duplicates one they
-already hold. Measured against 0.32.5: a single collection tolerates a few
-consecutive rejects and then raises `HEGEL_E_ASSUME`, which the run loop
+already hold. Measured against 0.45.0: a single collection raises
+`HEGEL_E_ASSUME` at the fourth consecutive reject, which the run loop
 records as a discarded case; a run that keeps discarding trips libhegel's
-own FilterTooMuch health check and surfaces as `Hegel::Error`, usually
-within a handful of cases and inside a few milliseconds. Neither a retry
-loop nor a timeout belongs inside a generator.
+own FilterTooMuch health check and surfaces as `Hegel::Error`, after 11
+body calls and inside a millisecond. Neither a retry loop nor a timeout
+belongs inside a generator.
 
 **Native handles are freed in `ensure`, never cached on the generator
 instance.** See the comment above `TextGenerator#do_draw`: the handle is
@@ -117,12 +116,13 @@ suite's shape:
    (`test_integers_draws_against_the_real_engine`).
 2. **One test per option**, asserting the drawn value respects it
    (`test_integers_min_value_bounds_the_draw`).
-3. **Composition inside `arrays(...)`** -- the layer that exercises span
-   placement. `test_arrays_composed_with_integers_shrinks_to_the_minimal_duplicate_pair`'s
-   own comment: this shrinks to `[0, 0]` only when `HEGEL_LABEL_LIST` and
-   `HEGEL_LABEL_LIST_ELEMENT` sit correctly; a missing or misplaced span
-   shows up as a larger-than-minimal counterexample, which the `[0, 0]`
-   assertions turn into a failure.
+3. **Composition inside `arrays(...)`** -- the layer meant to exercise span
+   placement, asserting the shrunk value (`[0, 0]` in
+   `test_arrays_composed_with_integers_shrinks_to_the_minimal_duplicate_pair`).
+   Measured against libhegel 0.45.0, that test still shrinks to `[0, 0]`
+   with every span removed, so it shows the composition shrinks well, and
+   not, on its own, that a span is placed correctly. The span tests that
+   record `start_span`/`stop_span` through a Fake pin the placement.
 4. **One test per validation** -- draw-time raise
    (`test_integers_min_value_greater_than_max_value_raises_at_draw_time`),
    plus one proving construction alone does not raise
