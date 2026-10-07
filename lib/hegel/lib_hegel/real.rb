@@ -33,7 +33,7 @@ module Hegel
       end
 
       class TimeStruct < FFI::Struct
-        layout :hour, :uint8, :minute, :uint8, :second, :uint8, :microsecond, :uint32
+        layout :hour, :uint8, :minute, :uint8, :second, :uint8, :nanosecond, :uint32
       end
 
       class DatetimeStruct < FFI::Struct
@@ -94,9 +94,6 @@ module Hegel
         )
         @hegel_settings_set_database_fn = bind(
           "hegel_settings_set_database", [:pointer, :pointer, :string], :int32
-        )
-        @hegel_settings_set_stateful_step_count_fn = bind(
-          "hegel_settings_set_stateful_step_count", [:pointer, :pointer, :int64], :int32
         )
         @hegel_settings_set_report_multiple_failures_fn = bind(
           "hegel_settings_set_report_multiple_failures", [:pointer, :pointer, :bool], :int32
@@ -171,13 +168,22 @@ module Hegel
 
         @hegel_new_state_machine_fn = bind(
           "hegel_new_state_machine",
-          [:pointer, :pointer, :pointer, :size_t, :pointer, :size_t, :pointer], :int32
+          [
+            :pointer, :pointer, :pointer, :pointer, :pointer, :size_t, :pointer, :pointer, :size_t,
+            :int64, :int64, :int64, :pointer, :pointer
+          ], :int32
+        )
+        @hegel_state_machine_next_group_fn = bind(
+          "hegel_state_machine_next_group", [:pointer, :pointer, :pointer, :pointer], :int32
         )
         @hegel_state_machine_next_rule_fn = bind(
-          "hegel_state_machine_next_rule", [:pointer, :pointer, :pointer, :pointer], :int32
+          "hegel_state_machine_next_rule", [:pointer, :pointer, :pointer, :int64, :pointer], :int32
         )
         @hegel_state_machine_rule_rejected_fn = bind(
-          "hegel_state_machine_rule_rejected", [:pointer, :pointer, :pointer], :int32
+          "hegel_state_machine_rule_rejected", [:pointer, :pointer, :pointer, :int64], :int32
+        )
+        @hegel_state_machine_should_check_invariant_fn = bind(
+          "hegel_state_machine_should_check_invariant", [:pointer, :pointer, :pointer, :int64, :pointer], :int32
         )
         @hegel_state_machine_free_fn = bind("hegel_state_machine_free", [:pointer, :pointer], :int32)
 
@@ -213,7 +219,7 @@ module Hegel
         )
 
         @hegel_string_generator_regex_fn = bind(
-          "hegel_string_generator_regex", [:pointer, :string, :bool, :pointer, :pointer], :int32
+          "hegel_string_generator_regex", [:pointer, :pointer, :size_t, :bool, :pointer, :pointer], :int32
         )
         @hegel_string_generator_email_fn = bind("hegel_string_generator_email", [:pointer, :pointer], :int32)
         @hegel_string_generator_url_fn = bind("hegel_string_generator_url", [:pointer, :pointer], :int32)
@@ -330,12 +336,6 @@ module Hegel
       # to NULL, both directly -- no separate pointer to build here.
       def settings_set_database(ctx, s, database)
         code = @hegel_settings_set_database_fn.call(ctx, s, database)
-        LibHegel.check!(self, ctx, code)
-        nil
-      end
-
-      def settings_set_stateful_step_count(ctx, s, n)
-        code = @hegel_settings_set_stateful_step_count_fn.call(ctx, s, n)
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -605,8 +605,8 @@ module Hegel
         LibHegel.decode_integer_le(out_value.read_bytes(len))
       end
 
-      # Opens a span labelled +label+ (one of the HEGEL_LABEL_* constants,
-      # or a caller-defined value that avoids them). Must be paired with
+      # Opens a span labelled +label+, an opaque u64 naming the generator
+      # (see LibHegel.label_from_name). Must be paired with
       # exactly one #stop_span call, per the header.
       def start_span(ctx, tc, label)
         code = @hegel_start_span_fn.call(ctx, tc, label)
@@ -719,12 +719,21 @@ module Hegel
       # with #state_machine_free. +rule_names+ and +invariant_names+ are
       # each an Array of Ruby Strings, packed into the const char *const *
       # arguments hegel_new_state_machine expects by #pack_name_array; see
-      # that method's own comment for how and why. Validating
-      # +rule_names+ as non-empty (the header's own requirement) is left
-      # to the caller, the same division of labor #new_collection leaves
-      # to the caller for its own min_size/max_size ordering.
-      def new_state_machine(ctx, tc, rule_names, invariant_names)
+      # that method's own comment for how and why. +always_check+ holds one
+      # flag per invariant name. Validating +rule_names+ as non-empty (the
+      # header's own requirement) is left to the caller, the same division
+      # of labor #new_collection leaves to the caller for its own
+      # min_size/max_size ordering.
+      #
+      # The machine is always sequential: one concurrency group, equal rule
+      # weights, and a concurrency of exactly 1, so the engine draws no
+      # concurrency level and the drawn level needs no reading. These
+      # bindings drive the engine from one thread, and a concurrent machine
+      # needs one worker thread per drawn level. For the same reason the
+      # rule calls below pass worker index 0, the only worker there is.
+      def new_state_machine(ctx, tc, rule_names, invariant_names, always_check, step_count)
         out = FFI::MemoryPointer.new(:pointer)
+        out_concurrency = FFI::MemoryPointer.new(:int64)
         # _rule_pointers / _invariant_pointers are unread past the call
         # below, the same shape #generate_integer_big's own
         # min_value_ptr/max_value_ptr already have; keeping them as local
@@ -734,39 +743,60 @@ module Hegel
         # same way it would for a block argument the block never reads.
         rule_names_ptr, _rule_pointers = pack_name_array(rule_names)
         invariant_names_ptr, _invariant_pointers = pack_name_array(invariant_names)
+        # A fresh MemoryPointer is zero-filled, which puts every rule in
+        # group 0.
+        rule_groups = FFI::MemoryPointer.new(:int64, rule_names.size)
 
         code = @hegel_new_state_machine_fn.call(
-          ctx, tc, rule_names_ptr, rule_names.size, invariant_names_ptr, invariant_names.size, out
+          ctx, tc, rule_names_ptr, rule_groups, nil, rule_names.size,
+          invariant_names_ptr, pack_flags(always_check), invariant_names.size,
+          1, 1, step_count, out, out_concurrency
         )
         LibHegel.check!(self, ctx, code)
         out.read_pointer
       end
 
-      # Returns the index (in 0...num_rules) of the next stateful-testing
-      # rule to run, or HEGEL_STATE_MACHINE_DONE (-1) once +state_machine+'s
-      # step budget is exhausted -- returned as the raw sentinel value, not
-      # translated to nil. Unlike #next_test_case's out-parameter, which is
-      # NULL (no value) at the equivalent boundary, the header documents
-      # this out-parameter as holding a real value, -1, at that point; a
-      # caller comparing against HEGEL_STATE_MACHINE_DONE is the layer that
-      # should decide what that value means, the same way #run_result_status
-      # hands back its raw HEGEL_RUN_STATUS_* value unexamined.
+      # Starts the machine's next round. Returns the round's group id, or
+      # HEGEL_STATE_MACHINE_DONE once the machine is done, as the raw
+      # value: the caller compares against the sentinel, the same way
+      # #run_result_status hands back its raw HEGEL_RUN_STATUS_* value
+      # unexamined.
+      def state_machine_next_group(ctx, tc, state_machine)
+        out = FFI::MemoryPointer.new(:int64)
+        code = @hegel_state_machine_next_group_fn.call(ctx, tc, state_machine, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_int64
+      end
+
+      # Returns the index (in 0...num_rules) of the next rule to run this
+      # round, or HEGEL_STATE_MACHINE_DONE once the round is over, as the
+      # raw value for the reason #state_machine_next_group gives.
       def state_machine_next_rule(ctx, tc, state_machine)
         out = FFI::MemoryPointer.new(:int64)
-        code = @hegel_state_machine_next_rule_fn.call(ctx, tc, state_machine, out)
+        code = @hegel_state_machine_next_rule_fn.call(ctx, tc, state_machine, 0, out)
         LibHegel.check!(self, ctx, code)
         out.read_int64
       end
 
       # Reports the rule most recently returned by #state_machine_next_rule
-      # as rejected (an assumption failed before it completed), so it does
-      # not count toward the step budget. Raises HEGEL_E_INVALID_ARG (via
-      # LibHegel.check!, translated to Hegel::Error) when no rule is
+      # as rejected (an assumption failed before it completed), so its round
+      # does not count toward the step budget. Raises HEGEL_E_INVALID_ARG
+      # (via LibHegel.check!, translated to Hegel::Error) when no rule is
       # outstanding, per the header.
       def state_machine_rule_rejected(ctx, tc, state_machine)
-        code = @hegel_state_machine_rule_rejected_fn.call(ctx, tc, state_machine)
+        code = @hegel_state_machine_rule_rejected_fn.call(ctx, tc, state_machine, 0)
         LibHegel.check!(self, ctx, code)
         nil
+      end
+
+      # Whether to run the invariant at +index+ at this join point: always
+      # true for an invariant flagged at creation, otherwise a recorded draw
+      # that is true with probability 1 / step_count.
+      def state_machine_should_check_invariant(ctx, tc, state_machine, index)
+        out = FFI::MemoryPointer.new(:bool)
+        code = @hegel_state_machine_should_check_invariant_fn.call(ctx, tc, state_machine, index, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_uint8 != 0
       end
 
       # No-op when +state_machine+ is nil, matching
@@ -902,10 +932,15 @@ module Hegel
       # generator handle (built via #string_generator_text, scoped with
       # Hegel::TestCase#with_text_generator) whose character set constrains the
       # padding and wildcard characters; nil (the default) marshals to NULL,
-      # the header's documented "no particular alphabet" case.
+      # the header's documented "no particular alphabet" case. The pattern
+      # goes over as UTF-8 bytes with a length rather than as a C string, so
+      # a NUL character in it reaches the engine instead of ending it.
       def string_generator_regex(ctx, pattern, fullmatch, alphabet = nil)
         out = FFI::MemoryPointer.new(:pointer)
-        code = @hegel_string_generator_regex_fn.call(ctx, pattern, fullmatch, alphabet, out)
+        bytes = pattern.encode(Encoding::UTF_8)
+        code = @hegel_string_generator_regex_fn.call(
+          ctx, bytes_to_pointer(bytes), bytes.bytesize, fullmatch, alphabet, out
+        )
         LibHegel.check!(self, ctx, code)
         out.read_pointer
       end
@@ -1011,7 +1046,7 @@ module Hegel
       end
 
       # hegel_generate_time. +min_value+/+max_value+ are each an
-      # [hour, minute, second, microsecond] Array; same struct-passing,
+      # [hour, minute, second, nanosecond] Array; same struct-passing,
       # return shape, and validation division of labor as #generate_date
       # above, for Hegel::Generators::TimesGenerator.
       def generate_time(ctx, tc, min_value, max_value)
@@ -1023,10 +1058,10 @@ module Hegel
 
       # hegel_generate_datetime. +min_date+/+max_date+ are each a
       # [year, month, day] Array; +min_time+/+max_time+ are each an
-      # [hour, minute, second, microsecond] Array -- hegel_datetime_t is a
+      # [hour, minute, second, nanosecond] Array -- hegel_datetime_t is a
       # hegel_date_t followed by a hegel_time_t (see DatetimeStruct's own
       # layout, above #initialize). Returns a
-      # [[year, month, day], [hour, minute, second, microsecond]] pair, for
+      # [[year, month, day], [hour, minute, second, nanosecond]] pair, for
       # Hegel::Generators::DatetimesGenerator to build its own Time from.
       def generate_datetime(ctx, tc, min_date, min_time, max_date, max_time)
         out = DatetimeStruct.new
@@ -1043,7 +1078,12 @@ module Hegel
       # FFI::Function, the direct form #initialize's own comment explains
       # the choice of.
       def bind(symbol, arg_types, ret_type)
-        FFI::Function.new(ret_type, arg_types, @handle.find_function(symbol))
+        # find_function answers nil for a symbol the library lacks, and
+        # FFI::Function.new then fails with a TypeError that names no
+        # symbol. An engine built from another release is the usual cause.
+        function = @handle.find_function(symbol) or
+          raise Hegel::Error, "libhegel has no #{symbol}; these bindings need libhegel #{Hegel::LIBHEGEL_VERSION}"
+        FFI::Function.new(ret_type, arg_types, function)
       end
 
       # Copies +bytes+ into a freshly allocated buffer, for
@@ -1092,6 +1132,17 @@ module Hegel
         [array, pointers]
       end
 
+      # Packs +flags+ (an Array of true/false) into a const bool * buffer,
+      # one byte each, or nil for an empty Array, which the header reads as
+      # "all false".
+      def pack_flags(flags)
+        return nil if flags.empty?
+
+        buffer = FFI::MemoryPointer.new(:uint8, flags.size)
+        buffer.write_array_of_uint8(flags.map { |flag| flag ? 1 : 0 })
+        buffer
+      end
+
       # Writes +value+ (a [year, month, day] Array) into +struct+'s own
       # :year/:month/:day fields. Shared by #date_struct, which builds a
       # standalone DateStruct, and #datetime_struct, which writes the same
@@ -1106,13 +1157,13 @@ module Hegel
       end
 
       # The #write_date/#date_struct counterpart for a [hour, minute,
-      # second, microsecond] Array.
+      # second, nanosecond] Array.
       def write_time(struct, value)
-        hour, minute, second, microsecond = value
+        hour, minute, second, nanosecond = value
         struct[:hour] = hour
         struct[:minute] = minute
         struct[:second] = second
-        struct[:microsecond] = microsecond
+        struct[:nanosecond] = nanosecond
       end
 
       # A standalone DateStruct built from +value+, for #generate_date's
@@ -1152,9 +1203,9 @@ module Hegel
       end
 
       # The #read_date counterpart for a struct's :hour/:minute/:second/
-      # :microsecond fields.
+      # :nanosecond fields.
       def read_time(struct)
-        [struct[:hour], struct[:minute], struct[:second], struct[:microsecond]]
+        [struct[:hour], struct[:minute], struct[:second], struct[:nanosecond]]
       end
 
       # Reads +out+'s const char* out-parameter into a Ruby String, or

@@ -27,7 +27,6 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         settings_set_seed: -> { real.settings_set_seed(ctx, nil, 1, true) },
         settings_set_derandomize: -> { real.settings_set_derandomize(ctx, nil, true) },
         settings_set_database: -> { real.settings_set_database(ctx, nil, "") },
-        settings_set_stateful_step_count: -> { real.settings_set_stateful_step_count(ctx, nil, 1) },
         settings_set_report_multiple_failures: -> { real.settings_set_report_multiple_failures(ctx, nil, true) },
         settings_set_database_key: -> { real.settings_set_database_key(ctx, nil, "k") },
         settings_set_phases: -> { real.settings_set_phases(ctx, nil, Hegel::LibHegel::HEGEL_PHASE_ALL) },
@@ -67,16 +66,18 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         generate_date: -> { real.generate_date(ctx, nil, [1, 1, 1], [1, 1, 1]) },
         generate_time: -> { real.generate_time(ctx, nil, [0, 0, 0, 0], [0, 0, 0, 0]) },
         generate_datetime: -> { real.generate_datetime(ctx, nil, [1, 1, 1], [0, 0, 0, 0], [1, 1, 1], [0, 0, 0, 0]) },
-        start_span: -> { real.start_span(ctx, nil, Hegel::LibHegel::HEGEL_LABEL_TUPLE) },
+        start_span: -> { real.start_span(ctx, nil, Hegel::LibHegel.label_from_name("test")) },
         stop_span: -> { real.stop_span(ctx, nil, false) },
         new_collection: -> { real.new_collection(ctx, nil, 0, 1) },
         new_pool: -> { real.new_pool(ctx, nil) },
-        new_state_machine: -> { real.new_state_machine(ctx, nil, ["a"], []) },
+        new_state_machine: -> { real.new_state_machine(ctx, nil, ["a"], [], [], 50) },
         generate_string: -> { real.generate_string(ctx, nil, nil) },
         collection_more: -> { real.collection_more(ctx, nil, nil) },
         collection_reject: -> { real.collection_reject(ctx, nil, nil) },
         pool_add: -> { real.pool_add(ctx, nil, nil) },
+        state_machine_next_group: -> { real.state_machine_next_group(ctx, nil, nil) },
         state_machine_next_rule: -> { real.state_machine_next_rule(ctx, nil, nil) },
+        state_machine_should_check_invariant: -> { real.state_machine_should_check_invariant(ctx, nil, nil, 0) },
         state_machine_rule_rejected: -> { real.state_machine_rule_rejected(ctx, nil, nil) }
       }
 

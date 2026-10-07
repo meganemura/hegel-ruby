@@ -62,8 +62,8 @@ module Hegel
 
     # hegel_verbosity_t, named from hegel.h's enum of the same name. Passed
     # to hegel_settings_set_verbosity.
-    HEGEL_VERBOSITY_QUIET = 0
-    HEGEL_VERBOSITY_NORMAL = 1
+    HEGEL_VERBOSITY_NORMAL = 0
+    HEGEL_VERBOSITY_QUIET = 1
     HEGEL_VERBOSITY_VERBOSE = 2
     HEGEL_VERBOSITY_DEBUG = 3
 
@@ -86,58 +86,10 @@ module Hegel
     HEGEL_HC_TEST_CASES_TOO_LARGE = 4
     HEGEL_HC_LARGE_INITIAL_TEST_CASE = 8
 
-    # hegel_label_t, named from hegel.h's enum of the same name. Passed to
-    # hegel_start_span to identify what kind of structure a span groups.
-    # Copied through HEGEL_LABEL_SET_CHOICE (value 33). The header
-    # describes the last two, HEGEL_LABEL_FRESH_ID and
-    # HEGEL_LABEL_SET_CHOICE, as spans the engine opens itself around a
-    # hegel_pool_add / hegel_pool_generate call; a caller never passes
-    # either to hegel_start_span.
-    #
-    # The header documents that "Libraries may use any stable u64 to
-    # define their own spans." A caller building its own compound
-    # generator on top of this boundary can pick any u64 that does not
-    # collide with the reserved values below.
-    HEGEL_LABEL_LIST = 1
-    HEGEL_LABEL_LIST_ELEMENT = 2
-    HEGEL_LABEL_SET = 3
-    HEGEL_LABEL_SET_ELEMENT = 4
-    HEGEL_LABEL_MAP = 5
-    HEGEL_LABEL_MAP_ENTRY = 6
-    HEGEL_LABEL_TUPLE = 7
-    HEGEL_LABEL_ONE_OF = 8
-    HEGEL_LABEL_OPTIONAL = 9
-    HEGEL_LABEL_FIXED_DICT = 10
-    HEGEL_LABEL_FLAT_MAP = 11
-    HEGEL_LABEL_FILTER = 12
-    HEGEL_LABEL_MAPPED = 13
-    HEGEL_LABEL_SAMPLED_FROM = 14
-    HEGEL_LABEL_ENUM_VARIANT = 15
-    HEGEL_LABEL_FEATURE_FLAG = 16
-    HEGEL_LABEL_REGEX = 17
-    HEGEL_LABEL_EMAIL = 18
-    HEGEL_LABEL_URL = 19
-    HEGEL_LABEL_DOMAIN = 20
-    HEGEL_LABEL_DATE = 21
-    HEGEL_LABEL_TIME = 22
-    HEGEL_LABEL_DATETIME = 23
-    HEGEL_LABEL_UUID = 24
-    HEGEL_LABEL_IP_ADDRESS = 25
-    HEGEL_LABEL_INTEGER = 26
-    HEGEL_LABEL_FLOAT = 27
-    HEGEL_LABEL_BOOLEAN = 28
-    HEGEL_LABEL_BYTES = 29
-    HEGEL_LABEL_STRING = 30
-    HEGEL_LABEL_STATEFUL_RULE = 31
-    HEGEL_LABEL_FRESH_ID = 32
-    HEGEL_LABEL_SET_CHOICE = 33
-
     # HEGEL_STATE_MACHINE_DONE, named from hegel.h's #define of the same
-    # name. hegel_state_machine_next_rule writes this to its
-    # out_rule_index parameter once the current test case's step budget
-    # is exhausted; see LibHegel::Real#state_machine_next_rule for why
-    # that raw sentinel is returned rather than translated to nil.
-    HEGEL_STATE_MACHINE_DONE = -1
+    # name, INT64_MIN. hegel_state_machine_next_group writes it once the
+    # machine is done, and hegel_state_machine_next_rule once the round is.
+    HEGEL_STATE_MACHINE_DONE = -(2**63)
 
     # hegel_new_collection's max_size accepts UINT64_MAX to mean "no upper
     # bound", in the header's own words. Ruby has no fixed-width integer
@@ -172,10 +124,11 @@ module Hegel
       generate_ipv4 generate_ipv6 generate_uuid
       generate_date generate_time generate_datetime
       settings_set_phases settings_set_suppress_health_check settings_set_report_multiple_failures
-      settings_set_database_key settings_set_stateful_step_count
+      settings_set_database_key
       target
       new_pool pool_add pool_generate pool_free
-      new_state_machine state_machine_next_rule state_machine_rule_rejected state_machine_free
+      new_state_machine state_machine_next_group state_machine_next_rule state_machine_rule_rejected
+      state_machine_should_check_invariant state_machine_free
     ].freeze
 
     module_function
@@ -233,6 +186,27 @@ module Hegel
         hegel: loaded libhegel #{loaded} but these bindings were built for #{Hegel::LIBHEGEL_VERSION}; behaviour may differ. Unset HEGEL_LIBHEGEL_PATH to use the bundled engine, or point it at a matching build.
       MESSAGE
     end
+
+    # A span label is an opaque u64 that names the generator which opened
+    # the span. The engine treats two spans with one label as draws of one
+    # generator, and swaps or reorders them when it shrinks. hegel.h defines
+    # hegel_label_from_name as 64-bit FNV-1a over the name's bytes and lets
+    # a binding compute it itself. hegel_label_combine is the same hash over
+    # each label's eight little-endian bytes in order, which hegel-rust
+    # computes the same way. Computing both here saves a native call per
+    # generator built.
+    def label_from_name(name)
+      fnv1a(name.b.bytes)
+    end
+
+    def label_combine(labels)
+      fnv1a(labels.pack("Q<*").bytes)
+    end
+
+    def fnv1a(bytes)
+      bytes.reduce(0xcbf29ce484222325) { |hash, byte| ((hash ^ byte) * 0x100000001b3) & 0xffff_ffff_ffff_ffff }
+    end
+    private_class_method :fnv1a
 
     # hegel_generate_integer_big's own documented convention for
     # min_value/max_value/out_value: two's-complement little-endian signed

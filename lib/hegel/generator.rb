@@ -18,10 +18,33 @@ module Hegel
       raise NotImplementedError, "#{self.class} must implement #do_draw"
     end
 
+    # The span label naming this generator's draws to the engine, which
+    # treats two spans with one label as draws of one generator when it
+    # shrinks. A generator built from others overrides this and combines
+    # its own class label with theirs, so that arrays of integers and
+    # arrays of strings do not share a label.
+    def label
+      self.class.label
+    end
+
+    # The class name, prefixed with this binding's name as hegel.h asks, to
+    # keep clear of the engine's own hegel.<kind> labels.
+    def self.label
+      @label ||= LibHegel.label_from_name("hegel-ruby.#{name}")
+    end
+
+    # Combines this generator's class label with the labels of +parts+, the
+    # generators it draws from. Called at draw time, not at construction,
+    # because a generator validates its arguments when it is drawn.
+    def combined_label(*parts)
+      LibHegel.label_combine([self.class.label, *parts.map(&:label)])
+    end
+    private :combined_label
+
     # Returns a new Generator whose #do_draw runs +block+ on the value this
-    # generator drew, spanned with HEGEL_LABEL_MAPPED so the shrinker
-    # treats the source draw and the transform as one unit (see
-    # hegel-rust's Mapped, src/generators/generators.rs).
+    # generator drew, inside one span so the shrinker treats the source draw
+    # and the transform as one unit (see hegel-rust's Mapped,
+    # src/generators/generators.rs).
     def map(&block)
       Mapped.new(self, block)
     end
@@ -43,8 +66,12 @@ module Hegel
         @block = block
       end
 
+      def label
+        @label ||= combined_label(@source)
+      end
+
       def do_draw(tc)
-        tc.start_span(LibHegel::HEGEL_LABEL_MAPPED)
+        tc.start_span(label)
         @block.call(@source.do_draw(tc))
       ensure
         # discard is always false here: a span is only ever marked
@@ -76,6 +103,10 @@ module Hegel
         @block = block
       end
 
+      def label
+        @label ||= combined_label(@source)
+      end
+
       def do_draw(tc)
         MAX_ATTEMPTS.times do
           # Each variable is set again before it is read, or stays nil, which
@@ -84,7 +115,7 @@ module Hegel
           # exception skips the reassignment.
           accepted = false # mutineer:disable-line statement_removal
           value = nil # mutineer:disable-line statement_removal, boolean_literal
-          tc.start_span(LibHegel::HEGEL_LABEL_FILTER)
+          tc.start_span(label)
           begin
             value = @source.do_draw(tc)
             accepted = @block.call(value)

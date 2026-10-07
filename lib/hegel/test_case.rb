@@ -223,8 +223,8 @@ module Hegel
       @impl.target(@ctx, @handle, value, label)
     end
 
-    # hegel_start_span, labelled with one of the Hegel::LibHegel::
-    # HEGEL_LABEL_* constants. Every compound Hegel::Generator (map, filter,
+    # hegel_start_span, labelled with a generator's label (see
+    # Hegel::Generator#label). Every compound Hegel::Generator (map, filter,
     # arrays) opens one of these around its own draw; see #stop_span.
     def start_span(label)
       @impl.start_span(@ctx, @handle, label)
@@ -431,23 +431,34 @@ module Hegel
     # here rather than on that module, the same reason every other native
     # call is a method on this class: Hegel::Stateful never touches @impl or
     # @ctx directly, only this handle-scoped surface.
-    def new_state_machine(rule_names, invariant_names)
-      @impl.new_state_machine(@ctx, @handle, rule_names, invariant_names)
+    def new_state_machine(rule_names, invariant_names, always_check, step_count)
+      @impl.new_state_machine(@ctx, @handle, rule_names, invariant_names, always_check, step_count)
+    end
+
+    # hegel_state_machine_next_group: starts the next round, or returns
+    # LibHegel::HEGEL_STATE_MACHINE_DONE once the machine is done.
+    def state_machine_next_group(state_machine)
+      @impl.state_machine_next_group(@ctx, @handle, state_machine)
     end
 
     # hegel_state_machine_next_rule: the index (into the +rule_names+
-    # #new_state_machine was given) of the next rule to run, or
-    # LibHegel::HEGEL_STATE_MACHINE_DONE once this test case's step budget
-    # is spent.
+    # #new_state_machine was given) of the next rule to run this round, or
+    # LibHegel::HEGEL_STATE_MACHINE_DONE once the round is over.
     def state_machine_next_rule(state_machine)
       @impl.state_machine_next_rule(@ctx, @handle, state_machine)
     end
 
     # hegel_state_machine_rule_rejected: tells libhegel the rule most
     # recently returned by #state_machine_next_rule stopped early on a
-    # failed assumption, so it does not count toward the step budget.
+    # failed assumption, so its round does not count toward the step budget.
     def state_machine_rule_rejected(state_machine)
       @impl.state_machine_rule_rejected(@ctx, @handle, state_machine)
+    end
+
+    # hegel_state_machine_should_check_invariant: whether to run the
+    # invariant at +index+ at this join point.
+    def state_machine_should_check_invariant(state_machine, index)
+      @impl.state_machine_should_check_invariant(@ctx, @handle, state_machine, index)
     end
 
     # hegel_state_machine_free. Takes no test-case handle, unlike every

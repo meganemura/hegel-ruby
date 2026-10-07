@@ -12,7 +12,7 @@ module Hegel
   class AssumeFailed < Exception
   end
 
-  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stateful_step_count: Integer?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
+  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
   class TestCase
@@ -62,14 +62,18 @@ module Hegel
     def pool_generate: (untyped pool, bool consume) -> Integer
     def pool_free: (untyped pool) -> nil
     def free_pools: () -> void
-    def new_state_machine: (Array[String] rule_names, Array[String] invariant_names) -> untyped
+    def new_state_machine: (Array[String] rule_names, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
+    def state_machine_next_group: (untyped state_machine) -> Integer
     def state_machine_next_rule: (untyped state_machine) -> Integer
     def state_machine_rule_rejected: (untyped state_machine) -> nil
+    def state_machine_should_check_invariant: (untyped state_machine, Integer index) -> bool
     def state_machine_free: (untyped state_machine) -> nil
   end
 
   class Generator
+    def self.label: () -> Integer
     def do_draw: (untyped tc) -> untyped
+    def label: () -> Integer
     def map: () { (untyped) -> untyped } -> Generator
     def filter: () { (untyped) -> boolish } -> Generator
 
@@ -87,6 +91,9 @@ module Hegel
   end
 
   module Generators
+    def self.first_nanosecond: (Array[Integer] parts) -> Array[Integer]
+    def self.last_nanosecond: (Array[Integer] parts) -> Array[Integer]
+
     class BooleanGenerator < Generator
       def initialize: (p: Float) -> void
       def do_draw: (untyped tc) -> bool
@@ -158,6 +165,7 @@ module Hegel
     end
 
     class HashGenerator < Generator
+      ENTRY_LABEL: Integer
       def initialize: (Generator keys, Generator values, min_size: Integer, max_size: Integer?) -> void
       def do_draw: (untyped tc) -> Hash[untyped, untyped]
 
@@ -263,16 +271,26 @@ module Hegel
     include Syntax::Methods
 
     def self.rule: (Symbol | String name) { (TestCase) -> untyped } -> void
-    def self.invariant: (Symbol | String name) { (TestCase) -> untyped } -> void
+    def self.invariant: (Symbol | String name, ?always_run: bool) { (TestCase) -> untyped } -> void
     def self.rule_definitions: () -> Hash[String, Proc]
-    def self.invariant_definitions: () -> Hash[String, Proc]
+    def self.invariant_definitions: () -> Hash[String, Invariant]
+
+    class Invariant
+      attr_reader block: Proc
+      attr_reader always_run: bool
+      def initialize: (block: Proc, always_run: bool) -> void
+    end
   end
 
   module Stateful
-    def self.run: (StateMachine machine, TestCase tc) -> void
-    def self.drive: (StateMachine machine, Hash[String, Proc] rules, Array[String] rule_names, Hash[String, Proc] invariants, untyped state_machine, TestCase tc) -> void
-    def self.apply_rule: (StateMachine machine, Proc block, Hash[String, Proc] invariants, untyped state_machine, TestCase tc) -> void
-    def self.run_invariants: (StateMachine machine, Hash[String, Proc] invariants, TestCase tc) -> void
+    ROUND_LABEL: Integer
+    DEFAULT_STEP_COUNT: Integer
+
+    def self.run: (StateMachine machine, TestCase tc, ?step_count: Integer) -> void
+    def self.drive: (StateMachine machine, Hash[String, Proc] rules, Array[StateMachine::Invariant] invariants, untyped state_machine, TestCase tc) -> void
+    def self.apply_rule: (StateMachine machine, Proc block, untyped state_machine, TestCase tc) -> bool
+    def self.run_invariants: (StateMachine machine, Array[StateMachine::Invariant] invariants, TestCase tc) -> void
+    def self.run_sampled_invariants: (StateMachine machine, Array[StateMachine::Invariant] invariants, untyped state_machine, TestCase tc) -> void
 
     class Pool
       def initialize: (TestCase tc) -> void
@@ -355,7 +373,7 @@ module Hegel
     PHASE_CODES: Hash[Symbol, Integer]
     HEALTH_CHECK_CODES: Hash[Symbol, Integer]
 
-    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool, stateful_step_count: Integer?) -> void
+    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool) -> void
     def self.apply_verbosity: (untyped impl, untyped ctx, untyped settings, Symbol verbosity) -> void
     def self.apply_database: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?) -> void
     def self.apply_phases: (untyped impl, untyped ctx, untyped settings, Array[Symbol] phases) -> void
@@ -377,7 +395,7 @@ module Hegel
       def for: (String? origin) -> [Integer, Integer]
     end
 
-    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stateful_step_count: Integer?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
+    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
     def self.run_and_finish: (untyped impl, untyped ctx, untyped settings, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats) { (TestCase) -> void } -> void
     def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> R } -> R
@@ -433,8 +451,8 @@ module Hegel
     HEGEL_RUN_STATUS_PASSED: Integer
     HEGEL_RUN_STATUS_FAILED: Integer
     HEGEL_RUN_STATUS_ERROR: Integer
-    HEGEL_VERBOSITY_QUIET: Integer
     HEGEL_VERBOSITY_NORMAL: Integer
+    HEGEL_VERBOSITY_QUIET: Integer
     HEGEL_VERBOSITY_VERBOSE: Integer
     HEGEL_VERBOSITY_DEBUG: Integer
     HEGEL_PHASE_EXPLICIT: Integer
@@ -447,39 +465,6 @@ module Hegel
     HEGEL_HC_TOO_SLOW: Integer
     HEGEL_HC_TEST_CASES_TOO_LARGE: Integer
     HEGEL_HC_LARGE_INITIAL_TEST_CASE: Integer
-    HEGEL_LABEL_LIST: Integer
-    HEGEL_LABEL_LIST_ELEMENT: Integer
-    HEGEL_LABEL_SET: Integer
-    HEGEL_LABEL_SET_ELEMENT: Integer
-    HEGEL_LABEL_MAP: Integer
-    HEGEL_LABEL_MAP_ENTRY: Integer
-    HEGEL_LABEL_TUPLE: Integer
-    HEGEL_LABEL_ONE_OF: Integer
-    HEGEL_LABEL_OPTIONAL: Integer
-    HEGEL_LABEL_FIXED_DICT: Integer
-    HEGEL_LABEL_FLAT_MAP: Integer
-    HEGEL_LABEL_FILTER: Integer
-    HEGEL_LABEL_MAPPED: Integer
-    HEGEL_LABEL_SAMPLED_FROM: Integer
-    HEGEL_LABEL_ENUM_VARIANT: Integer
-    HEGEL_LABEL_FEATURE_FLAG: Integer
-    HEGEL_LABEL_REGEX: Integer
-    HEGEL_LABEL_EMAIL: Integer
-    HEGEL_LABEL_URL: Integer
-    HEGEL_LABEL_DOMAIN: Integer
-    HEGEL_LABEL_DATE: Integer
-    HEGEL_LABEL_TIME: Integer
-    HEGEL_LABEL_DATETIME: Integer
-    HEGEL_LABEL_UUID: Integer
-    HEGEL_LABEL_IP_ADDRESS: Integer
-    HEGEL_LABEL_INTEGER: Integer
-    HEGEL_LABEL_FLOAT: Integer
-    HEGEL_LABEL_BOOLEAN: Integer
-    HEGEL_LABEL_BYTES: Integer
-    HEGEL_LABEL_STRING: Integer
-    HEGEL_LABEL_STATEFUL_RULE: Integer
-    HEGEL_LABEL_FRESH_ID: Integer
-    HEGEL_LABEL_SET_CHOICE: Integer
     HEGEL_STATE_MACHINE_DONE: Integer
     HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED: Integer
     HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED: Float
@@ -488,6 +473,8 @@ module Hegel
     def self.with_context: [R] (untyped impl) { (untyped) -> R } -> R
     def self.check!: (untyped impl, untyped ctx, Integer code) -> void
     def self.warn_on_version_mismatch: (untyped impl, untyped ctx, ?io: untyped) -> void
+    def self.label_from_name: (String name) -> Integer
+    def self.label_combine: (Array[Integer] labels) -> Integer
     def self.encode_integer_le: (Integer n) -> String
     def self.decode_integer_le: (String bytes) -> Integer
 
@@ -504,7 +491,6 @@ module Hegel
       def settings_set_seed: (untyped ctx, untyped s, Integer seed, bool has_seed) -> nil
       def settings_set_derandomize: (untyped ctx, untyped s, bool derandomize) -> nil
       def settings_set_database: (untyped ctx, untyped s, String? database) -> nil
-      def settings_set_stateful_step_count: (untyped ctx, untyped s, Integer n) -> nil
       def settings_set_report_multiple_failures: (untyped ctx, untyped s, bool yes) -> nil
       def settings_set_database_key: (untyped ctx, untyped s, String? key) -> nil
       def settings_set_phases: (untyped ctx, untyped s, Integer phases) -> nil
@@ -538,9 +524,11 @@ module Hegel
       def pool_add: (untyped ctx, untyped tc, untyped pool) -> Integer
       def pool_generate: (untyped ctx, untyped tc, untyped pool, bool consume) -> Integer
       def pool_free: (untyped ctx, untyped pool) -> nil
-      def new_state_machine: (untyped ctx, untyped tc, Array[String] rule_names, Array[String] invariant_names) -> untyped
+      def new_state_machine: (untyped ctx, untyped tc, Array[String] rule_names, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
+      def state_machine_next_group: (untyped ctx, untyped tc, untyped state_machine) -> Integer
       def state_machine_next_rule: (untyped ctx, untyped tc, untyped state_machine) -> Integer
       def state_machine_rule_rejected: (untyped ctx, untyped tc, untyped state_machine) -> nil
+      def state_machine_should_check_invariant: (untyped ctx, untyped tc, untyped state_machine, Integer index) -> bool
       def state_machine_free: (untyped ctx, untyped state_machine) -> nil
       def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
       def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) -> untyped

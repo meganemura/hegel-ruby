@@ -291,7 +291,7 @@ class TestGenerators < Minitest::Test
   # The canonical shrink-quality regression check for a compound generator
   # (see docs/adr/0006): "no duplicates" falsified by the smallest possible
   # counterexample, two equal elements. This only shrinks to [0, 0] when
-  # HEGEL_LABEL_LIST and HEGEL_LABEL_LIST_ELEMENT are placed correctly; a
+  # the array span and the per-element spans are placed correctly; a
   # missing or misplaced span still passes this test but shrinks to a
   # larger, non-minimal counterexample instead. Kept as a hand-rolled
   # Hegel.test call, not assert_all_examples: it asserts on the rendered
@@ -407,7 +407,7 @@ class TestGenerators < Minitest::Test
 
   # The tuples analogue of test_arrays_composed_with_integers_shrinks_to_
   # the_minimal_duplicate_pair above: this shrinks to the minimal
-  # duplicate, [[0, 0], [0, 0]], only when HEGEL_LABEL_TUPLE is placed
+  # duplicate, [[0, 0], [0, 0]], only when the tuple span is placed
   # around the whole pair draw; a missing or misplaced span still passes
   # this test but shrinks to a larger, non-minimal counterexample instead.
   def test_arrays_composed_with_tuples_shrinks_to_the_minimal_duplicate_pair
@@ -490,10 +490,10 @@ class TestGenerators < Minitest::Test
   end
 
   # The sets analogue of test_arrays_composed_with_integers_shrinks_to_the_
-  # minimal_duplicate_pair above, proving HEGEL_LABEL_SET/HEGEL_LABEL_SET_
-  # ELEMENT are placed correctly. min_size: 1 forces at least one element
+  # minimal_duplicate_pair above, proving the set span and the per-element
+  # spans are placed correctly. min_size: 1 forces at least one element
   # draw per set (min_size: 0 would let both sets shrink to empty without
-  # ever exercising SET_ELEMENT). Set#inspect's own rendering differs
+  # ever opening an element span). Set#inspect's own rendering differs
   # across supported Ruby versions, so the assertion converts each set to
   # an Array first rather than depending on it.
   def test_arrays_composed_with_sets_shrinks_to_the_minimal_duplicate_pair
@@ -877,7 +877,7 @@ class TestGenerators < Minitest::Test
 
   # The span-placement layer (see the skill's Test 3): a composite value
   # built from two dependent integer draws, composed inside arrays(...),
-  # shrinks to the minimal duplicate pair only when HEGEL_LABEL_FLAT_MAP
+  # shrinks to the minimal duplicate pair only when the composite span
   # wraps the whole composite draw -- a missing or misplaced span still
   # passes but shrinks to a larger, non-minimal counterexample instead
   # (mirrors test_arrays_composed_with_tuples_shrinks_to_the_minimal_duplicate_pair,
@@ -998,72 +998,102 @@ class TestGenerators < Minitest::Test
     fake.span_events
   end
 
-  def test_arrays_do_draw_opens_list_and_list_element_and_closes_both_kept
+  def test_arrays_do_draw_opens_its_own_span_and_one_per_element_and_closes_both_kept
+    generator = arrays(integers)
     assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_LIST], [:start, Hegel::LibHegel::HEGEL_LABEL_LIST_ELEMENT],
-        [:stop, false], [:stop, false]],
-      draw_with_span_recording(arrays(integers))
-    )
-  end
-
-  def test_sets_do_draw_opens_set_and_set_element_and_closes_both_kept
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_SET], [:start, Hegel::LibHegel::HEGEL_LABEL_SET_ELEMENT],
-        [:stop, false], [:stop, false]],
-      draw_with_span_recording(sets(integers))
-    )
-  end
-
-  def test_hashes_do_draw_opens_map_and_map_entry_and_closes_both_kept
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_MAP], [:start, Hegel::LibHegel::HEGEL_LABEL_MAP_ENTRY],
-        [:stop, false], [:stop, false]],
-      draw_with_span_recording(hashes(integers, integers))
-    )
-  end
-
-  def test_tuples_do_draw_opens_and_closes_tuple_kept
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_TUPLE], [:stop, false]],
-      draw_with_span_recording(tuples(integers, integers))
-    )
-  end
-
-  def test_optional_do_draw_opens_and_closes_optional_kept
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_OPTIONAL], [:stop, false]],
-      draw_with_span_recording(optional(integers))
-    )
-  end
-
-  def test_sampled_from_do_draw_opens_and_closes_sampled_from_kept
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_SAMPLED_FROM], [:stop, false]],
-      draw_with_span_recording(sampled_from([1, 2, 3]))
-    )
-  end
-
-  def test_one_of_do_draw_opens_and_closes_one_of_kept
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_ONE_OF], [:stop, false]],
-      draw_with_span_recording(one_of(integers))
-    )
-  end
-
-  def test_ip_addresses_do_draw_opens_and_closes_ip_address_kept
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_IP_ADDRESS], [:stop, false]],
-      draw_with_span_recording(ip_addresses(v6: false))
-    )
-  end
-
-  def test_composite_do_draw_opens_and_closes_flat_map_kept
-    generator = composite { |dtc| dtc.draw(integers) }
-
-    assert_equal(
-      [[:start, Hegel::LibHegel::HEGEL_LABEL_FLAT_MAP], [:stop, false]],
+      [[:start, generator.label], [:start, integers.label], [:stop, false], [:stop, false]],
       draw_with_span_recording(generator)
     )
+  end
+
+  def test_sets_do_draw_opens_its_own_span_and_one_per_element_and_closes_both_kept
+    generator = sets(integers)
+    assert_equal(
+      [[:start, generator.label], [:start, integers.label], [:stop, false], [:stop, false]],
+      draw_with_span_recording(generator)
+    )
+  end
+
+  def test_hashes_do_draw_opens_its_own_span_and_one_per_entry_and_closes_both_kept
+    generator = hashes(integers, booleans)
+    events = draw_with_span_recording(generator)
+
+    assert_equal [:start, generator.label], events[0]
+    assert_equal [[:stop, false], [:stop, false]], events[2..]
+    refute_includes [generator.label, integers.label, booleans.label], events[1][1]
+    refute_equal hashes(booleans, integers).send(:entry_label), events[1][1]
+  end
+
+  def test_tuples_do_draw_opens_and_closes_its_own_span_kept
+    generator = tuples(integers, integers)
+    assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  def test_optional_do_draw_opens_and_closes_its_own_span_kept
+    generator = optional(integers)
+    assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  def test_sampled_from_do_draw_opens_and_closes_its_own_span_kept
+    generator = sampled_from([1, 2, 3])
+    assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  def test_one_of_do_draw_opens_and_closes_its_own_span_kept
+    generator = one_of(integers)
+    assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  def test_ip_addresses_do_draw_opens_and_closes_its_own_span_kept
+    generator = ip_addresses(v6: false)
+    assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  def test_composite_do_draw_opens_and_closes_its_own_span_kept
+    generator = composite { |dtc| dtc.draw(integers) }
+    assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  # ---- labels ----
+
+  # The engine reads two spans with one label as draws of one generator,
+  # so a compound generator's label names its components too.
+  def test_a_compound_label_names_its_components
+    assert_equal arrays(integers).label, arrays(integers, max_size: 3).label
+    refute_equal arrays(integers).label, arrays(text).label
+    refute_equal arrays(integers).label, sets(integers).label
+    refute_equal hashes(integers, text).label, hashes(text, integers).label
+    refute_equal one_of(integers, text).label, one_of(text, integers).label
+    refute_equal optional(integers).label, optional(text).label
+    refute_equal tuples(integers, text).label, tuples(text, integers).label
+  end
+
+  # A leaf generator's label depends on its kind, not on its options or on
+  # the values it picks from.
+  def test_a_leaf_label_names_its_kind
+    assert_equal integers.label, integers(min_value: 0, max_value: 9).label
+    assert_equal sampled_from([1, 2]).label, sampled_from(%w[a b]).label
+    refute_equal integers.label, text.label
+  end
+
+  # Two composites written in different places get different labels.
+  def test_composites_written_apart_get_different_labels
+    first = composite { |dtc| dtc.draw(integers) }
+    second = composite { |dtc| dtc.draw(integers) }
+    refute_equal first.label, second.label
+  end
+
+  # A self-referential deferred generator asks for its own label while
+  # computing it. The nested ask answers with the deferred class's label,
+  # so the computation ends, and the result is the installed generator's.
+  def test_a_self_referential_deferred_label_terminates
+    tree = deferred
+    assert_equal Hegel::Generators::DeferredGenerator.label, tree.label
+
+    tree.set(one_of(integers, arrays(tree)))
+
+    assert_equal tree.label, tree.label
+    refute_equal Hegel::Generators::DeferredGenerator.label, tree.label
   end
 
   # ---- mixin ----

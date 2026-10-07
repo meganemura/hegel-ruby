@@ -48,13 +48,16 @@ module Hegel
         :generate_uuid_code, :generate_date_code, :generate_time_code, :generate_datetime_code,
         :settings_set_phases_code, :settings_set_suppress_health_check_code,
         :settings_set_report_multiple_failures_code, :settings_set_database_key_code,
-        :settings_set_stateful_step_count_code, :target_code,
+        :target_code,
         :new_pool_code, :pool_add_code, :pool_generate_code,
-        :new_state_machine_code, :state_machine_next_rule_code, :state_machine_rule_rejected_code
+        :new_state_machine_code, :state_machine_next_group_code, :state_machine_next_rule_code,
+        :state_machine_rule_rejected_code, :state_machine_should_check_invariant_code
 
-      # Values #pool_add / #pool_generate / #state_machine_next_rule hand
+      # Values #pool_add / #pool_generate / #state_machine_next_group /
+      # #state_machine_next_rule / #state_machine_should_check_invariant hand
       # back on success.
-      attr_writer :pool_add_value, :pool_generate_value, :state_machine_next_rule_value
+      attr_writer :pool_add_value, :pool_generate_value, :state_machine_next_group_value,
+        :state_machine_next_rule_value, :state_machine_should_check_invariant_value
 
       # Values #generate_boolean / #generate_integer / #generate_integer_big
       # hand back on success.
@@ -112,8 +115,7 @@ module Hegel
       # matching hegel_settings_set_seed's two value arguments.
       attr_reader :settings_test_cases_calls, :settings_verbosity_calls, :settings_seed_calls,
         :settings_derandomize_calls, :settings_database_calls, :settings_database_key_calls,
-        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls,
-        :settings_stateful_step_count_calls
+        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls
 
       def initialize
         @version = Hegel::LIBHEGEL_VERSION
@@ -139,7 +141,6 @@ module Hegel
         @settings_phases_calls = []
         @settings_suppress_health_check_calls = []
         @settings_report_multiple_failures_calls = []
-        @settings_stateful_step_count_calls = []
 
         @run_start_code = HEGEL_OK
         @run_start_returns_nil = false
@@ -211,7 +212,6 @@ module Hegel
         @settings_set_suppress_health_check_code = HEGEL_OK
         @settings_set_report_multiple_failures_code = HEGEL_OK
         @settings_set_database_key_code = HEGEL_OK
-        @settings_set_stateful_step_count_code = HEGEL_OK
 
         @target_code = HEGEL_OK
 
@@ -221,9 +221,15 @@ module Hegel
         @pool_generate_code = HEGEL_OK
         @pool_generate_value = 0
         @new_state_machine_code = HEGEL_OK
+        # The machine ends before its first round unless a test says
+        # otherwise, so a test that opens one never loops by accident.
+        @state_machine_next_group_code = HEGEL_OK
+        @state_machine_next_group_value = HEGEL_STATE_MACHINE_DONE
         @state_machine_next_rule_code = HEGEL_OK
         @state_machine_next_rule_value = 0
         @state_machine_rule_rejected_code = HEGEL_OK
+        @state_machine_should_check_invariant_code = HEGEL_OK
+        @state_machine_should_check_invariant_value = true
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -541,12 +547,6 @@ module Hegel
         nil
       end
 
-      def settings_set_stateful_step_count(ctx, _s, n)
-        @settings_stateful_step_count_calls << n
-        LibHegel.check!(self, ctx, @settings_set_stateful_step_count_code)
-        nil
-      end
-
       def target(ctx, _tc, _value, _label)
         LibHegel.check!(self, ctx, @target_code)
         nil
@@ -576,9 +576,14 @@ module Hegel
         nil
       end
 
-      def new_state_machine(ctx, _tc, _rule_names, _invariant_names)
+      def new_state_machine(ctx, _tc, _rule_names, _invariant_names, _always_check, _step_count)
         LibHegel.check!(self, ctx, @new_state_machine_code)
         Object.new
+      end
+
+      def state_machine_next_group(ctx, _tc, _state_machine)
+        LibHegel.check!(self, ctx, @state_machine_next_group_code)
+        @state_machine_next_group_value
       end
 
       def state_machine_next_rule(ctx, _tc, _state_machine)
@@ -589,6 +594,11 @@ module Hegel
       def state_machine_rule_rejected(ctx, _tc, _state_machine)
         LibHegel.check!(self, ctx, @state_machine_rule_rejected_code)
         nil
+      end
+
+      def state_machine_should_check_invariant(ctx, _tc, _state_machine, _index)
+        LibHegel.check!(self, ctx, @state_machine_should_check_invariant_code)
+        @state_machine_should_check_invariant_value
       end
 
       def state_machine_free(_ctx, _state_machine)

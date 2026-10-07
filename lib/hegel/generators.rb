@@ -160,19 +160,23 @@ module Hegel
         @max_size = max_size
       end
 
+      def label
+        @label ||= combined_label(@elements)
+      end
+
       def do_draw(tc)
         raise Hegel::Error, "arrays: min_size must not be negative" if @min_size.negative?
 
         max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
         raise Hegel::Error, "arrays: max_size < min_size" if max_size < @min_size
 
-        # HEGEL_LABEL_LIST around the whole array, HEGEL_LABEL_LIST_ELEMENT
-        # around each element (#draw_element below): the reference binding
-        # (hegel-typescript's drawList) wraps both, and the shrinker needs
-        # both to shrink a compound draw correctly -- a missing or
-        # misplaced span here shows up as a larger-than-minimal
-        # counterexample, not a test failure (see docs/adr/0006).
-        tc.start_span(LibHegel::HEGEL_LABEL_LIST)
+        # One span around the whole array, and one around each element
+        # (#draw_element below) labelled with the element generator's own
+        # label: the shrinker needs both to shrink a compound draw
+        # correctly. A missing or misplaced span here shows up as a
+        # larger-than-minimal counterexample, not a test failure (see
+        # docs/adr/0006).
+        tc.start_span(label)
         begin
           draw_elements(tc, max_size)
         ensure
@@ -194,7 +198,7 @@ module Hegel
       end
 
       def draw_element(tc)
-        tc.start_span(LibHegel::HEGEL_LABEL_LIST_ELEMENT)
+        tc.start_span(@elements.label)
         @elements.do_draw(tc)
       ensure
         tc.stop_span(discard: false)
@@ -225,7 +229,7 @@ module Hegel
       def do_draw(tc)
         raise Hegel::Error, "sampled_from: collection must not be empty" if @collection.empty?
 
-        tc.start_span(LibHegel::HEGEL_LABEL_SAMPLED_FROM)
+        tc.start_span(label)
         begin
           index = tc.generate_integer(0, @collection.size - 1)
           @collection.to_a[index]
@@ -242,10 +246,14 @@ module Hegel
         @generators = generators
       end
 
+      def label
+        @label ||= combined_label(*@generators)
+      end
+
       def do_draw(tc)
         raise Hegel::Error, "one_of: at least one generator is required" if @generators.empty?
 
-        tc.start_span(LibHegel::HEGEL_LABEL_ONE_OF)
+        tc.start_span(label)
         begin
           index = tc.generate_integer(0, @generators.size - 1)
           @generators[index].do_draw(tc)
@@ -263,8 +271,12 @@ module Hegel
         @generator = generator
       end
 
+      def label
+        @label ||= combined_label(@generator)
+      end
+
       def do_draw(tc)
-        tc.start_span(LibHegel::HEGEL_LABEL_OPTIONAL)
+        tc.start_span(label)
         begin
           tc.generate_boolean ? @generator.do_draw(tc) : nil
         ensure
@@ -274,17 +286,21 @@ module Hegel
     end
 
     # Hegel::Syntax::Methods#tuples. Draws each of +generators+ in order
-    # into an Array (Ruby has no tuple type; see docs/adr/0004). The label
-    # table assigns tuples a single span around the whole draw, unlike
-    # arrays/sets/hashes: each position is a distinct generator already,
-    # not repeated draws of one, so there is no per-element span to open.
+    # into an Array (Ruby has no tuple type; see docs/adr/0004). One span
+    # goes around the whole draw, unlike arrays/sets/hashes: each position
+    # is a distinct generator already, not repeated draws of one, so there
+    # is no per-element span to open.
     class TupleGenerator < Generator
       def initialize(generators)
         @generators = generators
       end
 
+      def label
+        @label ||= combined_label(*@generators)
+      end
+
       def do_draw(tc)
-        tc.start_span(LibHegel::HEGEL_LABEL_TUPLE)
+        tc.start_span(label)
         begin
           @generators.map { |generator| generator.do_draw(tc) }
         ensure
@@ -302,13 +318,17 @@ module Hegel
         @max_size = max_size
       end
 
+      def label
+        @label ||= combined_label(@elements)
+      end
+
       def do_draw(tc)
         raise Hegel::Error, "sets: min_size must not be negative" if @min_size.negative?
 
         max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
         raise Hegel::Error, "sets: max_size < min_size" if max_size < @min_size
 
-        tc.start_span(LibHegel::HEGEL_LABEL_SET)
+        tc.start_span(label)
         begin
           draw_elements(tc, max_size)
         ensure
@@ -342,7 +362,7 @@ module Hegel
       end
 
       def draw_element(tc)
-        tc.start_span(LibHegel::HEGEL_LABEL_SET_ELEMENT)
+        tc.start_span(@elements.label)
         @elements.do_draw(tc)
       ensure
         tc.stop_span(discard: false)
@@ -356,11 +376,17 @@ module Hegel
     # nothing, so it is rejected the same way SetGenerator rejects a
     # duplicate element.
     class HashGenerator < Generator
+      ENTRY_LABEL = LibHegel.label_from_name("hegel-ruby.Hegel::Generators::HashGenerator.entry")
+
       def initialize(keys, values, min_size:, max_size:)
         @keys = keys
         @values = values
         @min_size = min_size
         @max_size = max_size
+      end
+
+      def label
+        @label ||= combined_label(@keys, @values)
       end
 
       def do_draw(tc)
@@ -369,7 +395,7 @@ module Hegel
         max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
         raise Hegel::Error, "hashes: max_size < min_size" if max_size < @min_size
 
-        tc.start_span(LibHegel::HEGEL_LABEL_MAP)
+        tc.start_span(label)
         begin
           draw_entries(tc, max_size)
         ensure
@@ -397,12 +423,15 @@ module Hegel
         end
       end
 
-      # Draws the key and its value as one unit inside a single
-      # HEGEL_LABEL_MAP_ENTRY span (the label table gives hashes one span
-      # per entry, not one per key and a second per value), so the
-      # shrinker can retry the whole pair together.
+      # Draws the key and its value as one unit inside a single span, so the
+      # shrinker can retry the whole pair together. The entry label combines
+      # the key and value labels, as the hash's own label does.
+      def entry_label
+        @entry_label ||= LibHegel.label_combine([ENTRY_LABEL, @keys.label, @values.label])
+      end
+
       def draw_entry(tc)
-        tc.start_span(LibHegel::HEGEL_LABEL_MAP_ENTRY)
+        tc.start_span(entry_label)
         [@keys.do_draw(tc), @values.do_draw(tc)]
       ensure
         tc.stop_span(discard: false)
@@ -532,9 +561,8 @@ module Hegel
     # so it raises here rather than reaching hegel_generate_ipv4 or
     # hegel_generate_ipv6 at all.
     #
-    # Spanned with HEGEL_LABEL_IP_ADDRESS around the whole draw, the same
-    # way OptionalGenerator spans its own boolean-then-delegate draw
-    # (see the HEGEL_LABEL_* table): when both families are enabled this
+    # Spanned around the whole draw, the same way OptionalGenerator spans
+    # its own boolean-then-delegate draw: when both families are enabled this
     # generator makes two native calls (the family choice, then the
     # address) to produce one value, and the span is what lets the
     # shrinker retry that pair together instead of the two calls
@@ -548,7 +576,7 @@ module Hegel
       def do_draw(tc)
         raise Hegel::Error, "ip_addresses: v4 and v6 must not both be false" if !@v4 && !@v6
 
-        tc.start_span(LibHegel::HEGEL_LABEL_IP_ADDRESS)
+        tc.start_span(label)
         begin
           draw_address(tc)
         ensure
@@ -578,16 +606,13 @@ module Hegel
     # draws uniform random bits except the nil UUID, per the header; an
     # explicit version forces the RFC 4122 version and variant nibbles.
     #
-    # Opens no span: HEGEL_LABEL_UUID is a per-draw label the engine itself
-    # emits inside hegel_generate_uuid, not something this binding opens --
-    # the header's own comment on HEGEL_LABEL_INTEGER says the same of
-    # hegel_generate_integer/_big ("Emitted internally, like every per-draw
-    # label"). BooleanGenerator, IntegerGenerator, and FloatGenerator each
-    # make exactly one native call to produce their own value the same way
-    # uuids() does here, and each opens no span of its own for the same
-    # reason. A span belongs only around a generator that composes more
-    # than one native call into one draw (see IpAddressesGenerator, whose
-    # family choice and address draw are two calls under one span).
+    # Opens no span: hegel_generate_uuid is one native call, and the engine
+    # labels the spans around its own draws itself. BooleanGenerator,
+    # IntegerGenerator, and FloatGenerator each make exactly one native call
+    # the same way, and open no span of their own for the same reason. A
+    # span belongs only around a generator that composes more than one
+    # native call into one draw (see IpAddressesGenerator, whose family
+    # choice and address draw are two calls under one span).
     class UuidsGenerator < Generator
       def initialize(version:)
         @version = version
@@ -607,13 +632,7 @@ module Hegel
     # own src/test_case.rs names this full_ranges::MIN_DATE/MAX_DATE, "what
     # Hypothesis's dates() spans".
     #
-    # Opens no span: hegel_generate_date makes exactly one native call to
-    # produce its own value, and the header's own comment on
-    # HEGEL_LABEL_REGEX ("callers normally never open this span themselves.
-    # Likewise for the other engine-side compound draws below") covers
-    # HEGEL_LABEL_DATE too, since it sits below REGEX in that same list --
-    # the same one-native-call, no-span-of-our-own reasoning UuidsGenerator's
-    # own comment already gives for HEGEL_LABEL_UUID.
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
     class DatesGenerator < Generator
       MIN_DATE = Date.new(1, 1, 1)
       MAX_DATE = Date.new(9999, 12, 31)
@@ -635,6 +654,22 @@ module Hegel
       end
     end
 
+    # Since libhegel 0.36 the engine draws a time of day in whole
+    # nanoseconds. times and datetimes keep microseconds, because hegel-rust,
+    # hegel-cpp, and hegel-typescript do not agree on a finer precision. A
+    # bound's microsecond widens to every nanosecond inside it, and the
+    # drawn value rounds down, so each microsecond in range stays equally
+    # likely and both bounds stay reachable.
+    def self.first_nanosecond(parts)
+      hour, minute, second, microsecond = parts
+      [hour, minute, second, microsecond * 1000]
+    end
+
+    def self.last_nanosecond(parts)
+      hour, minute, second, microsecond = parts
+      [hour, minute, second, (microsecond * 1000) + 999]
+    end
+
     # Hegel::Syntax::Methods#times. A time of day String, "HH:MM:SS.ffffff",
     # in [min_value, max_value] (also "HH:MM:SS.ffffff" Strings), defaulting
     # to the conventional full day (00:00:00.000000 through 23:59:59.999999
@@ -651,9 +686,7 @@ module Hegel
     # representation, both for symmetry with the return value and because
     # it is the only representation available on the input side either.
     #
-    # Opens no span, for the same reason DatesGenerator does not (one
-    # native call, HEGEL_LABEL_TIME sits below HEGEL_LABEL_REGEX in the same
-    # header list).
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
     class TimesGenerator < Generator
       MIDNIGHT = "00:00:00.000000"
       LAST_MICROSECOND = "23:59:59.999999"
@@ -672,8 +705,10 @@ module Hegel
         max_parts = parse(@max_value || LAST_MICROSECOND, "max_value")
         raise Hegel::Error, "times: max_value < min_value" if (max_parts <=> min_parts).negative?
 
-        hour, minute, second, microsecond = tc.generate_time(min_parts, max_parts)
-        format("%02d:%02d:%02d.%06d", hour, minute, second, microsecond)
+        hour, minute, second, nanosecond = tc.generate_time(
+          Generators.first_nanosecond(min_parts), Generators.last_nanosecond(max_parts)
+        )
+        format("%02d:%02d:%02d.%06d", hour, minute, second, nanosecond / 1000)
       end
 
       private
@@ -712,9 +747,7 @@ module Hegel
     # converting to UTC first, so a caller who wants a specific wall-clock
     # bound does not have to convert it themselves.
     #
-    # Opens no span, for the same reason DatesGenerator does not (one
-    # native call, HEGEL_LABEL_DATETIME sits below HEGEL_LABEL_REGEX in the
-    # same header list).
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
     class DatetimesGenerator < Generator
       MIN_DATETIME = Time.utc(1, 1, 1, 0, 0, 0, 0)
       MAX_DATETIME = Time.utc(9999, 12, 31, 23, 59, 59, 999_999)
@@ -729,13 +762,13 @@ module Hegel
         max_value = @max_value || MAX_DATETIME
         raise Hegel::Error, "datetimes: max_value < min_value" if max_value < min_value
 
-        date, time = tc.generate_datetime(
+        date, (hour, minute, second, nanosecond) = tc.generate_datetime(
           [min_value.year, min_value.month, min_value.day],
-          [min_value.hour, min_value.min, min_value.sec, min_value.usec],
+          Generators.first_nanosecond([min_value.hour, min_value.min, min_value.sec, min_value.usec]),
           [max_value.year, max_value.month, max_value.day],
-          [max_value.hour, max_value.min, max_value.sec, max_value.usec]
+          Generators.last_nanosecond([max_value.hour, max_value.min, max_value.sec, max_value.usec])
         )
-        Time.utc(*date, *time)
+        Time.utc(*date, hour, minute, second, nanosecond / 1000)
       end
     end
 
@@ -746,24 +779,24 @@ module Hegel
     # a draw surface (BlockTestCase below) and can call #draw on it any
     # number of times.
     #
-    # Spanned with HEGEL_LABEL_FLAT_MAP, not a label of its own: the header
-    # documents that label as the span around "a `flat_map` / monadic
-    # dependent draw", and a composite block is exactly that shape -- one
-    # or more draws, each free to depend on values the block already
-    # built, folded into a single result. No composite-specific label
-    # exists in the table this binding draws from (see lib_hegel.rb); if a
-    # true flat_map combinator is added later it can share this label, or
-    # the table can grow a dedicated one (hegel.h documents that a library
-    # may mint its own stable u64).
+    # One span goes around the block's draws. Its label names the block by
+    # where it is written, so two different composites do not share a
+    # label, the way hegel-rust's compose! labels each body by its source.
     class CompositeGenerator < Generator
       def initialize(&block)
         @block = block
       end
 
+      def label
+        @label ||= LibHegel.label_combine(
+          [self.class.label, LibHegel.label_from_name(Array(@block&.source_location).join(":"))]
+        )
+      end
+
       def do_draw(tc)
         raise Hegel::Error, "composite: block is required" unless @block
 
-        tc.start_span(LibHegel::HEGEL_LABEL_FLAT_MAP)
+        tc.start_span(label)
         begin
           @block.call(BlockTestCase.new(tc))
         ensure
@@ -826,7 +859,7 @@ module Hegel
     #
     # Opens no span: #do_draw makes no native call of its own, only
     # forwarding to whatever #set installed (one_of, above, already opens
-    # its own HEGEL_LABEL_ONE_OF span around that draw). This is the same
+    # its own span around that draw). This is the same
     # "a generator opens a span only around more than one native call it
     # makes itself" rule UuidsGenerator's own comment gives for a
     # generator that makes exactly one -- applied here to a generator that
@@ -849,6 +882,22 @@ module Hegel
         raise Hegel::Error, "deferred: set called more than once" if @inner
 
         @inner = generator
+      end
+
+      # The installed generator's label. A self-referential definition asks
+      # for its own label while computing it, so a nested call answers with
+      # this class's label and the cycle ends there, as hegel-rust's
+      # DeferredGenerator does.
+      def label
+        return @label if @label
+        return self.class.label if @inner.nil? || @resolving
+
+        begin
+          @resolving = true
+          @label = @inner.label
+        ensure
+          @resolving = false
+        end
       end
 
       def do_draw(tc)

@@ -82,10 +82,11 @@ class TestGenerator < Minitest::Test
   # Fake (no health check), the discarded case just ends the run normally,
   # so only the recorded spans matter here.
   def test_filter_opens_and_discards_one_span_per_rejected_attempt
-    fake = span_recording_fake
+    generator = integers.filter { |_| false }
+    fake = span_recording_fake(generator.label => :filter)
     fake.test_case_count = 1
 
-    Hegel.test(impl: fake) { |tc| tc.draw(integers.filter { |_| false }) }
+    Hegel.test(impl: fake) { |tc| tc.draw(generator) }
 
     filter_spans = fake.spans.select { |kind,| kind == :filter }
     assert_equal [[:filter, :start], [:filter, :stop, true]] * Hegel::Generator::Filtered::MAX_ATTEMPTS,
@@ -101,7 +102,8 @@ class TestGenerator < Minitest::Test
   # exception reaches the caller, which runs +block+ twice -- once live,
   # once on replay -- recording the same discarded span both times.
   def test_filter_discards_the_span_when_the_source_draw_raises
-    fake = span_recording_fake
+    generator = RaisingGenerator.new.filter { |_| true }
+    fake = span_recording_fake(generator.label => :filter)
     fake.test_case_count = 1
     fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
     fake.failure_count = 1
@@ -109,41 +111,48 @@ class TestGenerator < Minitest::Test
     fake.failure_blobs = ["blob"]
 
     assert_raises(RuntimeError) do
-      Hegel.test(impl: fake) { |tc| tc.draw(RaisingGenerator.new.filter { |_| true }) }
+      Hegel.test(impl: fake) { |tc| tc.draw(generator) }
     end
 
     assert_equal [[:filter, :start], [:filter, :stop, true]] * 2, fake.spans.select { |kind,| kind == :filter }
   end
 
-  # Mapped#do_draw wraps its whole span in HEGEL_LABEL_MAPPED, distinct
-  # from Filtered's HEGEL_LABEL_FILTER, so the shrinker can tell a #map
-  # transform from a #filter retry.
-  def test_map_opens_a_span_labelled_mapped_around_the_source_draw
-    fake = span_recording_fake
+  # Mapped#do_draw wraps its whole draw in one span with its own label.
+  def test_map_opens_a_span_with_its_own_label_around_the_source_draw
+    generator = integers.map { |n| n }
+    fake = span_recording_fake(generator.label => :mapped)
     fake.test_case_count = 1
 
-    Hegel.test(impl: fake) { |tc| tc.draw(integers.map { |n| n }) }
+    Hegel.test(impl: fake) { |tc| tc.draw(generator) }
 
     assert_equal [[:mapped, :start], [:mapped, :stop, false]], fake.spans.select { |kind,| kind == :mapped }
+  end
+
+  # The engine reads two spans with one label as draws of one generator.
+  # A label therefore names the generator's shape: map of integers and
+  # filter of integers differ, map of integers and map of text differ, and
+  # two separately built maps of integers agree.
+  def test_a_label_names_the_combinator_and_its_source
+    assert_equal integers.map { |n| n }.label, integers.map { |n| n + 1 }.label
+    refute_equal integers.map { |n| n }.label, integers.filter { |_| true }.label
+    refute_equal integers.map { |n| n }.label, text.map { |s| s }.label
+    refute_equal integers.label, integers.map { |n| n }.label
   end
 
   private
 
   # A Fake that records every hegel_start_span / hegel_stop_span call as
-  # [:filter, :start], [:filter, :stop, discard], [:mapped, :start], or
-  # [:mapped, :stop, discard], keyed off the label so a test can isolate
-  # Filtered's spans from Mapped's without reading the raw HEGEL_LABEL_*
-  # constant at each assertion site. hegel_stop_span always closes the
-  # span #start_span most recently opened (see Hegel::TestCase#stop_span),
-  # so a label stack, not the discard argument alone, says which span each
-  # stop belongs to.
-  def span_recording_fake
+  # [name, :start] or [name, :stop, discard], where +names+ maps a label to
+  # the name a test asserts on. hegel_stop_span always closes the span
+  # #start_span most recently opened (see Hegel::TestCase#stop_span), so a
+  # label stack, not the discard argument alone, says which span each stop
+  # belongs to.
+  def span_recording_fake(names)
     spans = []
     open_labels = []
     fake = Class.new(Hegel::LibHegel::Fake) do
       define_method(:start_span) do |ctx, tc, label|
-        name = {Hegel::LibHegel::HEGEL_LABEL_FILTER => :filter, Hegel::LibHegel::HEGEL_LABEL_MAPPED => :mapped}
-          .fetch(label, label)
+        name = names.fetch(label, label)
         open_labels << name
         spans << [name, :start]
         super(ctx, tc, label)

@@ -23,6 +23,10 @@ module Hegel
     # class's.
     include Syntax::Methods
 
+    # One declared invariant: its block, and whether it runs after every
+    # round rather than when the engine samples it.
+    Invariant = Data.define(:block, :always_run)
+
     class << self
       # Declares a rule named +name+: an action the engine may pick to run
       # at any step. +block+ runs via #instance_exec against the machine
@@ -33,11 +37,14 @@ module Hegel
         declare(:@rules, "rule", name, block)
       end
 
-      # Declares an invariant named +name+, checked once before the first
-      # rule runs and again after every rule that completes without its own
-      # assumption failing. Same block/argument contract as #rule.
-      def invariant(name, &block)
-        declare(:@invariants, "invariant", name, block)
+      # Declares an invariant named +name+, checked before the first rule
+      # runs, after the last, and in between at the join points where the
+      # engine samples it: each one with probability 1 / step_count, so
+      # about once per full-length test case. +always_run+ checks it at
+      # every join point instead, the name hegel-rust and hegel-java give
+      # the same option. Same block/argument contract as #rule.
+      def invariant(name, always_run: false, &block)
+        declare(:@invariants, "invariant", name, Invariant.new(block: block, always_run: always_run))
       end
 
       # name => block, in declaration order, this class's own declarations
@@ -47,7 +54,7 @@ module Hegel
         merged_definitions(:@rules, :rule_definitions)
       end
 
-      # The invariant analogue of #rule_definitions.
+      # The invariant analogue of #rule_definitions: name => Invariant.
       def invariant_definitions
         merged_definitions(:@invariants, :invariant_definitions)
       end
@@ -62,12 +69,12 @@ module Hegel
       # reads an ancestor's table, so a subclass re-declaring an inherited
       # name is the ordinary "redefine a method" case the ADR calls out,
       # not this one.
-      def declare(ivar, kind, name, block)
+      def declare(ivar, kind, name, definition)
         table = instance_variable_get(ivar) || instance_variable_set(ivar, {})
         name = name.to_s
         raise Hegel::Error, "hegel: #{kind} #{name.inspect} is already declared on #{self}" if table.key?(name)
 
-        table[name] = block
+        table[name] = definition
       end
 
       # Shared by #rule_definitions/#invariant_definitions: this class's own

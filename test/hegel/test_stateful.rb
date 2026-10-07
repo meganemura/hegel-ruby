@@ -118,9 +118,9 @@ class TestStateful < Minitest::Test
 
   # Only one rule and one invariant: with a single rule the engine always
   # picks it, so what shrinking has to find is purely the minimal *count*
-  # of pushes, one clean test of the HEGEL_LABEL_STATEFUL_RULE span's
+  # of pushes, one clean test of the round span's
   # placement (the shrink-quality role test/hegel/test_generators.rb's own
-  # composed-with-arrays tests play for HEGEL_LABEL_LIST/LIST_ELEMENT; see
+  # composed-with-arrays tests play for the array and element spans; see
   # the class comment there and the real-engine-tests skill's "Shrinking is
   # what makes a span test bite").
   class OverflowStackMachine < Hegel::StateMachine
@@ -216,32 +216,44 @@ class TestStateful < Minitest::Test
     assert_includes output.string, "(0 discarded)"
   end
 
-  # #invariant_checks counts every invariant call this machine sees
-  # (initial plus one per successful rule); #successful_rules counts only
-  # completed rule applications. The property under test --
-  # invariant_checks == 1 + successful_rules -- is checked inside the
-  # Hegel.test body itself, per test case, so a violation surfaces as this
-  # run's own failure rather than needing a separate counter comparison
-  # after the fact.
+  # #always_checks counts the calls of an invariant declared always_run:
+  # true; #sampled_checks those of one left to the engine's sampling;
+  # #successful_rules counts completed rule applications. With one rule
+  # that never rejects, a round is one rule. The always-run invariant runs
+  # initially, after every round, and finally. The sampled one runs
+  # initially, finally, and after whichever rounds the engine samples. Both
+  # properties are checked inside the Hegel.test body, per test case.
   class CountingMachine < Hegel::StateMachine
-    attr_reader :invariant_checks, :successful_rules
+    attr_reader :always_checks, :sampled_checks, :successful_rules
 
     def initialize
-      @invariant_checks = 0
+      @always_checks = 0
+      @sampled_checks = 0
       @successful_rules = 0
     end
 
     rule(:step) { |_tc| @successful_rules += 1 }
 
-    invariant(:count) { @invariant_checks += 1 }
+    invariant(:always, always_run: true) { @always_checks += 1 }
+    invariant(:sampled) { @sampled_checks += 1 }
   end
 
-  def test_invariant_runs_once_initially_and_once_per_successful_rule
+  def test_an_always_run_invariant_runs_initially_after_every_round_and_finally
     Hegel.test(test_cases: 3, verbosity: :quiet) do |tc|
       machine = CountingMachine.new
       Hegel::Stateful.run(machine, tc)
-      unless machine.invariant_checks == 1 + machine.successful_rules
-        raise "invariant_checks (#{machine.invariant_checks}) != 1 + successful_rules (#{machine.successful_rules})"
+      unless machine.always_checks == 2 + machine.successful_rules
+        raise "always_checks (#{machine.always_checks}) != 2 + successful_rules (#{machine.successful_rules})"
+      end
+    end
+  end
+
+  def test_a_sampled_invariant_runs_initially_finally_and_at_most_once_per_round
+    Hegel.test(test_cases: 3, verbosity: :quiet) do |tc|
+      machine = CountingMachine.new
+      Hegel::Stateful.run(machine, tc)
+      unless (2..(2 + machine.successful_rules)).cover?(machine.sampled_checks)
+        raise "sampled_checks (#{machine.sampled_checks}) outside 2..#{2 + machine.successful_rules}"
       end
     end
   end
@@ -274,18 +286,29 @@ class TestStateful < Minitest::Test
     rule(:step) { |_tc| @steps += 1 }
   end
 
-  # hegel.h documents hegel_settings_set_stateful_step_count's n as both the
-  # minimum and the maximum: "each test case runs at least one step and at
-  # most n". With n = 1 and a rule that never rejects, #steps is exactly 1
-  # on every case, not just bounded by 1 -- the strongest claim this
-  # setting supports without also asserting against an unseeded run (the
-  # real-engine-tests skill's "Do not assert that a search got luckier").
-  def test_stateful_step_count_bounds_the_number_of_steps_per_case
-    Hegel.test(stateful_step_count: 1, test_cases: 5, verbosity: :quiet) do |tc|
+  # hegel.h documents hegel_new_state_machine's step_count as both bounds:
+  # "every case runs at least one round and at most step_count". With 1 and
+  # a rule that never rejects, #steps is exactly 1 on every case, not just
+  # bounded by 1 -- the strongest claim this option supports without also
+  # asserting against an unseeded run (the real-engine-tests skill's "Do
+  # not assert that a search got luckier").
+  def test_step_count_bounds_the_number_of_steps_per_case
+    Hegel.test(test_cases: 5, verbosity: :quiet) do |tc|
       machine = StepCountMachine.new
-      Hegel::Stateful.run(machine, tc)
+      Hegel::Stateful.run(machine, tc, step_count: 1)
       raise "expected exactly 1 step, got #{machine.steps}" unless machine.steps == 1
     end
+  end
+
+  # The engine has no default step count and rejects one below 1.
+  def test_a_step_count_below_one_raises
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 1, verbosity: :quiet) do |tc|
+        Hegel::Stateful.run(StepCountMachine.new, tc, step_count: 0)
+      end
+    end
+
+    assert_includes error.message, "HEGEL_E_INVALID_ARG"
   end
 
   class ImmediateFailureMachine < Hegel::StateMachine
@@ -351,16 +374,16 @@ class TestStateful < Minitest::Test
     rule(:step) { |tc| @behavior.call(tc) }
   end
 
-  # #drive opens a span before every hegel_state_machine_next_rule call,
-  # including the one that completes normally; #apply_rule's else branch
-  # then closes it without discarding.
+  # #drive opens a span around each round, and closes it without
+  # discarding when the round's rule completes. The span that the round
+  # after the last one opens closes the same way when the machine ends.
   def test_a_completed_rule_opens_a_span_and_closes_it_without_discarding
     fake = stateful_recording_fake([0])
 
     Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(ScriptedRuleMachine.new { |_tc| }, tc) }
 
-    assert_includes fake.spans, [:start, Hegel::LibHegel::HEGEL_LABEL_STATEFUL_RULE]
-    assert_includes fake.spans, [:stop, false]
+    round = [:start, Hegel::Stateful::ROUND_LABEL]
+    assert_equal [round, [:stop, false], round, [:stop, false]], fake.spans
   end
 
   # tc.assume(false) inside a rule discards that rule's span and tells
@@ -371,7 +394,8 @@ class TestStateful < Minitest::Test
 
     Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(ScriptedRuleMachine.new { |tc| tc.reject }, tc) }
 
-    assert_includes fake.spans, [:stop, true]
+    round = [:start, Hegel::Stateful::ROUND_LABEL]
+    assert_equal [round, [:stop, true], round, [:stop, false]], fake.spans
     assert_equal 1, fake.rejected_calls
   end
 
@@ -590,30 +614,36 @@ class TestStateful < Minitest::Test
 
   private
 
-  # A Fake that runs the rule at each index in +rule_indices+, in order,
-  # then reports HEGEL_STATE_MACHINE_DONE, and records every
-  # hegel_start_span / hegel_stop_span / hegel_state_machine_rule_rejected
-  # call this test case's own state machine makes. The step counter resets
-  # on every hegel_new_state_machine call, not just once, so a failing
-  # run's replay (a second, separate state machine) runs the same rule
-  # sequence again instead of finding nothing left and ending early.
+  # A Fake that runs one round per index in +rule_indices+, each round
+  # running the rule at that index once, then ends the machine. It records
+  # every hegel_start_span / hegel_stop_span /
+  # hegel_state_machine_rule_rejected call the test case's state machine
+  # makes. The round counter resets on every hegel_new_state_machine call,
+  # so a second state machine runs the same rounds again.
   def stateful_recording_fake(rule_indices)
     spans = []
     rejected_calls = 0
     fake = Class.new(Hegel::LibHegel::Fake) do
-      define_method(:new_state_machine) do |ctx, tc, rule_names, invariant_names|
-        @step = 0
-        super(ctx, tc, rule_names, invariant_names)
+      define_method(:new_state_machine) do |ctx, tc, *rest|
+        @round = 0
+        @pulled = false
+        super(ctx, tc, *rest)
       end
 
-      define_method(:state_machine_next_rule) do |ctx, tc, state_machine|
+      define_method(:state_machine_next_group) do |ctx, _tc, _state_machine|
+        Hegel::LibHegel.check!(self, ctx, @state_machine_next_group_code)
+        (@round < rule_indices.length) ? 0 : Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE
+      end
+
+      define_method(:state_machine_next_rule) do |ctx, _tc, _state_machine|
         Hegel::LibHegel.check!(self, ctx, @state_machine_next_rule_code)
-        if @step < rule_indices.length
-          index = rule_indices[@step]
-          @step += 1
-          index
-        else
+        if @pulled
+          @pulled = false
+          @round += 1
           Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE
+        else
+          @pulled = true
+          rule_indices[@round]
         end
       end
 
