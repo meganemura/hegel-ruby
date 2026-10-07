@@ -27,8 +27,8 @@ so the engine draws over every nanosecond inside the bounds. The drawn
 nanosecond rounds down to a microsecond, so every microsecond in range
 stays reachable, both bounds included. The engine does not draw
 nanoseconds uniformly, so the microseconds are not equally likely either:
-measured against libhegel 0.45.0, 2000 draws over four microseconds gave
-1437, 284, 162, and 117.
+measured against libhegel 0.45.0, two runs of 2000 draws over four
+microseconds gave 1437, 284, 162, and 117, and 1428, 296, 153, and 123.
 
 A `datetimes` bound with a fraction of a microsecond narrows to the whole
 microseconds inside the range: the lower bound rounds up and the upper
