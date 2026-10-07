@@ -41,6 +41,10 @@ reproduces this way too. When no replay fails, `Hegel.test` raises
 `Hegel::Error` and names both causes: a fixed bug, or a body whose failure
 did not recur.
 
+A body that rejects its input with `tc.assume` or `tc.reject` before it
+draws anything now raises `Hegel::Error` ("Unsatisfiable"). Before, the
+run stopped after that one case and passed.
+
 ### Settings
 
 A keyword left `nil` now takes its value from the engine's settings
@@ -61,6 +65,10 @@ under `(?i)` and `(?a)`, and its pattern may now hold a NUL character.
 `times` and `datetimes` keep microsecond precision. The engine now draws
 nanoseconds, and the binding rounds each one down. See
 [ADR 0022](docs/adr/0022-keep-microsecond-times-over-a-nanosecond-engine.md).
+
+A `datetimes` bound with a fraction of a microsecond could produce a value
+outside it, because only the bound's whole microseconds reached the
+engine. The lower bound now rounds up and the upper rounds down.
 
 ### Other changes
 
