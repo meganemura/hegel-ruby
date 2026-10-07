@@ -10,34 +10,18 @@ permissions:
   contents: read
 
 jobs:
-  select:
-    name: Select the platform matrix
-    runs-on: ubuntu-latest
-    outputs:
-      os: ${{ steps.select.outputs.os }}
-    steps:
-      # A pull request runs on Linux x64 alone, so that feedback stays fast.
-      # A push to main runs every platform that gets a platform-specific gem,
-      # because such a gem is only as good as the platform it was tested on.
-      - id: select
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = pull_request ]; then
-            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
-          else
-            echo 'os=["ubuntu-latest","ubuntu-24.04-arm","macos-latest","windows-latest","windows-11-arm"]' >> "$GITHUB_OUTPUT"
-          fi
-
   test:
-    needs: select
     name: Ruby ${{ matrix.ruby }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.select.outputs.os) }}
+        # Every platform that gets a platform-specific gem, on pull requests
+        # as well as on main. A gem is only as good as the platform it was
+        # tested on, and a commit on main cannot be rewritten once the
+        # repository is public, so a platform failure has to show up before
+        # the merge.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm]
         # Every Ruby from the gem's floor, 3.4 (docs/adr/0017), to the newest.
         ruby: ["3.4", "4.0"]
 
@@ -67,8 +51,8 @@ jobs:
       - name: Run the tests and the linter
         run: bundle exec rake
 
-  # Mutation testing over lib/ takes about a minute, so it runs in full on
-  # every push and pull request, on one platform. It fails on a survivor that
+  # Mutation testing over lib/ took 17 minutes on the libhegel 0.45.0 move,
+  # so it runs in full on every push and pull request, on one platform. It fails on a survivor that
   # test/mutation-baseline.json does not list (docs/adr/0018).
   mutation:
     name: Mutation testing against the baseline
