@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-07
+
 The floor is Ruby 3.4. A project on Ruby 3.3 stays on 0.1.1. See
 [ADR 0017](docs/adr/0017-raise-the-ruby-floor-to-3-4.md).
 
@@ -118,5 +120,6 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.2.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.2.0
 [0.1.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.1.1
 [0.1.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.1.0
