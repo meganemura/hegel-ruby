@@ -406,7 +406,7 @@ module Hegel
     def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
     def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
-    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc, ?record: bool) { (TestCase) -> R } -> R
+    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc) { (TestCase) -> R } -> R
     def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
     def self.keep_capture: (Hash[String, Capture] captures, String origin, Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
     def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, output: untyped) -> nil

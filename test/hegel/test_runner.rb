@@ -723,6 +723,31 @@ class TestRunner < Minitest::Test
     assert_equal "first", error.message
   end
 
+  # Between two unstamped failures under one origin, the newer one is kept,
+  # as hegel-rust keeps the newer of two captures of the same rank.
+  def test_a_later_unstamped_failure_replaces_an_earlier_unstamped_one
+    fake = failing_fake
+    fake.test_case_count = 2
+    fake.should_capture = [false, false]
+    messages = %w[first second]
+
+    error = assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise messages.shift } }
+
+    assert_equal "second", error.message
+  end
+
+  # Reading the capture stamp can fail. The test-case handle is still
+  # freed, so the context can be freed after it.
+  def test_a_failed_capture_stamp_read_still_frees_the_test_case
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 1
+    fake.test_case_should_capture_code = Hegel::LibHegel::HEGEL_E_INVALID_HANDLE
+
+    assert_raises(Hegel::Error) { Hegel.test(impl: fake) { |_tc| } }
+
+    assert_equal 1, fake.freed_test_cases.size
+  end
+
   # With no stamped case for its origin, an unstamped failure still gives
   # the run an exception to re-raise, and a report with no drawn values.
   def test_an_unstamped_failure_is_reported_when_nothing_was_stamped

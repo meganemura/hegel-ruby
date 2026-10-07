@@ -32,9 +32,10 @@ from before 0.44.0, or has not moved its report yet.
 
 The runner reads the stamp when each case starts. Only a stamped case
 records its draws. A failing case keeps its exception and its entries
-under its origin. A later stamped case replaces an earlier one, and an
-unstamped case fills only an origin that nothing captured yet. hegel-rust
-ranks its captures the same way.
+under its origin. A newer capture replaces an older one, except that an
+unstamped case never replaces a stamped one. hegel-rust ranks its captures
+the same way: a newer capture replaces an older one of the same rank or
+lower.
 
 After the run, each failure is reported from the capture under its
 origin. No blob is replayed.

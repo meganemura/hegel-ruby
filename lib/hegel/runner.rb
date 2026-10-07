@@ -68,9 +68,9 @@ module Hegel
     # many of those were discarded) the first time that origin's exception
     # was classified INTERESTING. That snapshot is the failure report's own
     # "Falsified after N test cases (M discarded)" line: the generation
-    # phase's counts, not the shrink phase's -- #drive's own comment
-    # measured the shrink phase at roughly 50x more iterations for a
-    # similarly sized run, and counting those into N would answer a
+    # phase's counts, not the shrink phase's. Measured against libhegel
+    # 0.45.0, a run that failed after 2 generated cases called the body 60
+    # to 75 times in all, and counting those into N would answer a
     # different question than the report claims to.
     class GenerationStats
       def initialize
@@ -203,12 +203,16 @@ module Hegel
     # context to be freed first, so one skipped release does not stop at one
     # leak -- it fails the context's release too, at the end of a run that
     # had already gone wrong enough to raise in here.
-    def with_test_case(impl, ctx, tc, record: false)
-      test_case = TestCase.new(impl, ctx, tc, record: record)
+    #
+    # The case records its draws only when the engine stamped it for
+    # capture. The stamp is read in here, inside the `ensure`, so the handle
+    # is freed even when reading it raises.
+    def with_test_case(impl, ctx, tc)
+      test_case = TestCase.new(impl, ctx, tc, record: impl.test_case_should_capture(ctx, tc))
       yield test_case
     ensure
       begin
-        test_case.free_pools
+        test_case&.free_pools
       ensure
         impl.test_case_free(ctx, tc)
       end
@@ -216,17 +220,16 @@ module Hegel
 
     # Runs +block+ against one test-case handle, classifies the outcome,
     # counts it into +stats+, keeps a failure in +captures+, and reports the
-    # outcome with hegel_mark_complete. The case records its draws only when
-    # the engine stamped it for capture: a stamped case's failure is what a
-    # report shows, and naming a drawn value costs a read of the caller's
-    # source, which every shrink probe would otherwise pay for. A fatal
+    # outcome with hegel_mark_complete. Only a stamped case records its
+    # draws (see #with_test_case): a stamped case's failure is what a report
+    # shows, and naming a drawn value costs a read of the caller's source,
+    # which every shrink probe would otherwise pay for. A fatal
     # exception (#classify re-raises those before returning) skips the rest
     # and still reaches #with_test_case's own `ensure`, so the handle is
     # freed either way; its owner is this loop, not hegel_run_free (see
     # #run_and_finish's comment above).
     def run_case(impl, ctx, tc, stats, captures, &block)
-      record = impl.test_case_should_capture(ctx, tc)
-      with_test_case(impl, ctx, tc, record: record) do |test_case|
+      with_test_case(impl, ctx, tc) do |test_case|
         status, origin, exception, entries = classify(test_case, &block)
         stats.record(status, origin)
         keep_capture(captures, origin, exception, entries) if status == LibHegel::HEGEL_STATUS_INTERESTING
@@ -234,15 +237,16 @@ module Hegel
       end
     end
 
-    # Keeps the newest stamped capture for each origin. The engine runs
+    # Keeps the newest capture for each origin, except that an unstamped
+    # failure (+entries+ nil) never replaces a stamped one. The engine runs
     # every failure it reports once more at the end of the run, stamped, so
     # the last stamped capture is that final replay, and an earlier stamped
-    # one only stands in when the final replay was dry. An unstamped failure
-    # (+entries+ nil) fills an origin nothing captured yet, so the run still
-    # has an exception to re-raise, and never replaces a stamped capture.
-    # hegel-rust ranks its captures the same way.
+    # one only stands in when the final replay was dry. An unstamped capture
+    # still gives the run an exception to re-raise when nothing was stamped.
+    # hegel-rust ranks its captures the same way: a newer capture replaces
+    # an older one of the same rank or lower.
     def keep_capture(captures, origin, exception, entries)
-      return if entries.nil? && captures.key?(origin)
+      return if entries.nil? && captures[origin]&.entries
 
       captures[origin] = Capture.new(exception, entries)
     end
