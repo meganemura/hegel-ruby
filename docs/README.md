@@ -25,6 +25,11 @@ An index of the design records for `hegel-ruby`.
 - [0016: Run mutation testing with mutineer](adr/0016-run-mutation-testing-with-mutineer.md)
 - [0017: Raise the Ruby floor to 3.4](adr/0017-raise-the-ruby-floor-to-3-4.md)
 - [0018: Gate mutation testing on a committed baseline](adr/0018-gate-mutation-testing-on-a-committed-baseline.md)
+- [0019: Report failures from the cases the engine stamps](adr/0019-report-failures-from-the-cases-the-engine-stamps.md)
+- [0020: Derive span labels from generator names](adr/0020-derive-span-labels-from-generator-names.md)
+- [0021: Run a state machine in rounds, with its own step count](adr/0021-run-a-state-machine-in-rounds-with-its-own-step-count.md)
+- [0022: Keep microsecond times over a nanosecond engine](adr/0022-keep-microsecond-times-over-a-nanosecond-engine.md)
+- [0023: Leave unset settings to the engine's profile](adr/0023-leave-unset-settings-to-the-engines-profile.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.

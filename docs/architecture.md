@@ -15,6 +15,9 @@ wrapping the engine's whole draw surface, and the run loop.
 What exists beyond that: the failure report, which names drawn values by
 reading the caller's own source, interleaves them with whatever `tc.note`
 recorded, and prints a blob that `Hegel.test(reproduce_failure:)` replays.
+The report comes from the cases the engine stamps for capture during the
+run; see
+[ADR 0019](adr/0019-report-failures-from-the-cases-the-engine-stamps.md).
 The generator layer covers twenty-five generators composing through `map`
 and `filter`, reachable bare through `Hegel::Syntax::Methods`. A test case
 can discard itself with `tc.assume` or `tc.reject`. A run can be shaped by
@@ -27,9 +30,11 @@ database keywords.
 `Hegel::Stateful.run` drives a `Hegel::StateMachine`'s rules and invariants,
 drawing values an earlier rule produced back out of a
 `Hegel::Stateful::Pool`. [ADR 0010](adr/0010-declare-stateful-rules-with-a-class-macro.md)
-decides how a machine declares its rules and
+decides how a machine declares its rules,
 [ADR 0011](adr/0011-let-the-test-case-own-every-pool-drawn-from-it.md) who
-frees a pool.
+frees a pool, and
+[ADR 0021](adr/0021-run-a-state-machine-in-rounds-with-its-own-step-count.md)
+how its rounds, step count, and invariants run.
 
 Every feature this binding set out to cover now has a Ruby surface. What
 remains open is not a feature but a measurement, and
@@ -116,9 +121,9 @@ the other. See
 ## A rule's own control flow
 
 Inside a stateful rule, `tc.assume(false)` means something narrower than it
-does in a test body. `Hegel::Stateful` catches it, tells libhegel the rule
-was rejected so the attempt does not spend a step, and draws another rule;
-the test case continues. `Hegel::Runner.classify` never sees it, and no case
+does in a test body. `Hegel::Stateful` catches it and tells libhegel the
+rule was rejected, so its round does not count toward the step budget, and
+the machine starts another round; the test case continues. `Hegel::Runner.classify` never sees it, and no case
 is discarded.
 
 A rule is also the one place in this library where a process-ending
