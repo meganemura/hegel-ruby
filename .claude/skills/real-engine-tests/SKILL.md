@@ -7,8 +7,8 @@ description: "Hazards in tests that drive the real libhegel engine, rather than 
 
 Every rule here was first measured against libhegel 0.32.5, each after a
 test passed or failed for a reason nobody predicted, and measured again
-against 0.45.0. None of them is in `hegel.h`. For generator-specific test
-shapes, see the `new-generator` skill instead; this covers what the engine does to a test regardless of
+against 0.45.0. Each one was found by running the engine. For
+generator-specific test shapes, see the `new-generator` skill instead; this covers what the engine does to a test regardless of
 what is being drawn.
 
 ## The run stops early if a case has nothing to vary

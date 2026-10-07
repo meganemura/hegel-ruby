@@ -248,6 +248,22 @@ class TestStateful < Minitest::Test
     end
   end
 
+  # The flags reach the engine: over a seeded run, the sampled invariant
+  # runs fewer times in total than the always-run one. A machine whose
+  # flags all arrived as always-run would run both equally often.
+  def test_a_sampled_invariant_runs_less_often_than_an_always_run_one
+    always = 0
+    sampled = 0
+    Hegel.test(test_cases: 20, verbosity: :quiet, seed: 1, derandomize: true) do |tc|
+      machine = CountingMachine.new
+      Hegel::Stateful.run(machine, tc)
+      always += machine.always_checks
+      sampled += machine.sampled_checks
+    end
+
+    assert_operator sampled, :<, always
+  end
+
   def test_a_sampled_invariant_runs_initially_finally_and_at_most_once_per_round
     Hegel.test(test_cases: 3, verbosity: :quiet) do |tc|
       machine = CountingMachine.new

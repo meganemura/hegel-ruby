@@ -325,9 +325,10 @@ body; `assume`/`reject` discard from anywhere in the block.
 `note` records a message for the eventual failure report, interleaved with
 draws in the order both were called. Pass a message directly, or a block.
 The block form is evaluated only on the cases the engine stamps for the
-report, its final replay of each failure and the replays that first
-confirm one, so it is the cheaper choice when building the message itself
-costs something. Passing both, or neither, raises `Hegel::Error`:
+report: its final replay of each failure, the replays that first confirm
+one, every replay of a `reproduce_failure:` blob, and, for a
+nondeterministic body, the replays that confirm it. So it is the cheaper
+choice when building the message itself costs something. Passing both, or neither, raises `Hegel::Error`:
 
 ```ruby
 output = StringIO.new

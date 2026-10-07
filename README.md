@@ -261,8 +261,9 @@ rules one test case runs; 50 is the default.
 
 `Hegel.test` takes keywords for the rest: `test_cases`, `seed`,
 `derandomize`, `verbosity`, `phases`, `suppress_health_check`, and
-`report_multiple_failures`. Each one left unset takes its value from the
-engine's settings profile. That is libhegel's own default, unless a
+`report_multiple_failures`. `report_multiple_failures` defaults to `false`.
+Each of the others left unset takes its value from the engine's settings
+profile. That is libhegel's own default, unless a
 `hegel.toml` or a `HEGEL_*` environment variable says otherwise. On a CI
 server the engine picks its `ci` profile, which derandomizes the run and
 turns the example database off.
