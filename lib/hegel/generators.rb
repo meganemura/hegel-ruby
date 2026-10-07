@@ -754,10 +754,10 @@ module Hegel
         raise Hegel::Error, "datetimes: max_value < min_value" if max_value < min_value
 
         # A drawn value has whole microseconds, so a bound with a fraction of
-        # one narrows to the whole microseconds inside the range: the lower
-        # bound rounds up and the upper rounds down, keeping each bound's zone.
+        # one narrows to the whole microseconds inside the range. The lower
+        # bound rounds up, in its own zone; the upper bound's #usec below
+        # already drops its fraction.
         min_value = min_value.ceil(6)
-        max_value = max_value.floor(6)
         date, (hour, minute, second, nanosecond) = tc.generate_datetime(
           [min_value.year, min_value.month, min_value.day],
           Generators.first_nanosecond([min_value.hour, min_value.min, min_value.sec, min_value.usec]),
