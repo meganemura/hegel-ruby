@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+Each platform gem carries `libhegel` 0.45.1, up from 0.45.0. A caller has
+nothing to change. The engine now reads a NULL string buffer with length
+zero as the empty string, and it rejects a NULL buffer with a nonzero
+length. These bindings send neither case, so a drawn value does not
+change: `from_regex("", fullmatch: true)` draws `""` on both engines.
+
 ## [0.2.0] - 2026-10-07
 
 The floor is Ruby 3.4. A project on Ruby 3.3 stays on 0.1.1. See

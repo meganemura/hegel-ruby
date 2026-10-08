@@ -613,6 +613,15 @@ class TestGenerators < Minitest::Test
     assert_all_examples(from_regex("[a-z]{3}", fullmatch: true)) { |v| v.match?(/\A[a-z]{3}\z/) }
   end
 
+  # An empty pattern goes to the engine as a zero-length buffer. Since
+  # libhegel 0.45.1 the engine reads a NULL pointer with length zero as the
+  # empty pattern, and it rejects a NULL pointer with a nonzero length.
+  # FFI::MemoryPointer.new(0) is not NULL, so this binding sends neither
+  # case, and the empty pattern fully matches only the empty string.
+  def test_from_regex_empty_pattern_fullmatch_draws_the_empty_string
+    assert_all_examples(from_regex("", fullmatch: true)) { |v| v == "" }
+  end
+
   # Construction alone must not raise (a Regexp is a legal, if useless,
   # argument to build a generator from); only the draw below does.
   def test_from_regex_pattern_must_be_a_string_raises_at_draw_time
