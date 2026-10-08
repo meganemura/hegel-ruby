@@ -30,6 +30,7 @@ An index of the design records for `hegel-ruby`.
 - [0021: Run a state machine in rounds, with its own step count](adr/0021-run-a-state-machine-in-rounds-with-its-own-step-count.md)
 - [0022: Keep microsecond times over a nanosecond engine](adr/0022-keep-microsecond-times-over-a-nanosecond-engine.md)
 - [0023: Leave unset settings to the engine's profile](adr/0023-leave-unset-settings-to-the-engines-profile.md)
+- [0024: Release when a merge changes the gem version](adr/0024-release-when-a-merge-changes-the-gem-version.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.
