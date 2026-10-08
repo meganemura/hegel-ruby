@@ -5,5 +5,5 @@ module Hegel
   # Hegel::VERSION (the gem's own release): hegel-go and hegel-typescript keep
   # the two separate too, so bumping the pinned engine can land as its own
   # commit without also releasing a new gem version.
-  LIBHEGEL_VERSION = "0.45.0"
+  LIBHEGEL_VERSION = "0.45.1"
 end

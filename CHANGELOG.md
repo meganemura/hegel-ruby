@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-08
+
+Each platform gem carries `libhegel` 0.45.1, up from 0.45.0. A caller has
+nothing to change. The engine now reads a NULL string buffer with length
+zero as the empty string, and it rejects a NULL buffer with a nonzero
+length. These bindings send neither case, so a drawn value does not
+change: `from_regex("", fullmatch: true)` draws `""` on both engines.
+
 ## [0.2.0] - 2026-10-07
 
 The floor is Ruby 3.4. A project on Ruby 3.3 stays on 0.1.1. See
@@ -120,6 +128,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.2.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.2.1
 [0.2.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.2.0
 [0.1.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.1.1
 [0.1.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.1.0
