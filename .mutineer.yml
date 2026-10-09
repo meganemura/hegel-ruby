@@ -5,12 +5,12 @@
 ignore:
   # Hegel::Runner.classify: no caller reads a VALID, INVALID, or OVERRUN
   # tuple past its first two elements.
-  - eac06d24fce1 # VALID, third element
-  - 1ace6e4d964a # VALID, fourth element
-  - 851e2a26fe07 # INVALID, third element
-  - b87d844edf98 # INVALID, fourth element
-  - 5fdc10ff5a64 # OVERRUN, third element
-  - 8b4fbf8bd123 # OVERRUN, fourth element
+  - 6f5a56541400 # VALID, third element
+  - 87afa9403063 # VALID, fourth element
+  - 6dd4d55ae010 # INVALID, third element
+  - 825623e39444 # INVALID, fourth element
+  - b03a50a3cba2 # OVERRUN, third element
+  - d605791ba4d8 # OVERRUN, fourth element
   # Hegel::TestCase#generate_boolean: has_forced is false, so the engine
   # ignores the forced argument's value.
-  - 5dd711d063ac # forced
+  - 6f98b301248a # forced
