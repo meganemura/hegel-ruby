@@ -6,6 +6,9 @@
 
 ### Engine: libhegel 0.45.1 (was 0.45.0)
 
+The [libhegel 0.45.1 release notes](https://github.com/hegeldev/hegel-rust/releases/tag/libhegel-v0.45.1)
+describe the engine changes.
+
 Each platform gem carries `libhegel` 0.45.1. A caller has nothing to
 change. The engine now reads a NULL string buffer with length zero as the
 empty string, and it rejects a NULL buffer with a nonzero length. These
@@ -15,6 +18,11 @@ bindings send neither case, so a drawn value does not change:
 ## [0.2.0] - 2026-10-07
 
 ### Engine: libhegel 0.45.0 (was 0.32.5)
+
+The [libhegel 0.45.0 release notes](https://github.com/hegeldev/hegel-rust/releases/tag/libhegel-v0.45.0)
+describe 0.45.0 alone. The
+[engine changelog](https://github.com/hegeldev/hegel-rust/blob/libhegel-v0.45.0/hegel-c/CHANGELOG.md)
+describes each engine release after 0.32.5, up to 0.45.0.
 
 Each platform gem carries `libhegel` 0.45.0. The engine changed its C
 interface in several places between the two, and these bindings follow
