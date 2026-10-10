@@ -177,7 +177,10 @@ jobs:
       # from the publish job, so the release carries the exact files that
       # were published, and no artifact action is needed to pass them on. A
       # gem can take a moment to become downloadable after its push, so
-      # each fetch is retried.
+      # each fetch is retried for up to ten minutes. The file on disk
+      # decides success, not the exit status: for 0.2.1, `gem fetch`
+      # printed "Could not find a valid gem" and the loop moved on at once,
+      # so no retry ran.
       - name: Fetch every published gem
         env:
           TAG: ${{ needs.check.outputs.tag }}
@@ -186,15 +189,21 @@ jobs:
           mkdir pkg
           cd pkg
           for platform in ruby arm64-darwin x86_64-linux aarch64-linux x64-mingw-ucrt aarch64-mingw-ucrt; do
-            for attempt in 1 2 3 4 5 6; do
-              if gem fetch hegeltest --version "$version" --platform "$platform"; then
+            if [ "$platform" = ruby ]; then
+              file="hegeltest-${version}.gem"
+            else
+              file="hegeltest-${version}-${platform}.gem"
+            fi
+            for attempt in $(seq 1 20); do
+              gem fetch hegeltest --version "$version" --platform "$platform" || true
+              if [ -f "$file" ]; then
                 break
               fi
-              if [ "$attempt" -eq 6 ]; then
-                echo "could not fetch hegeltest $version for $platform" >&2
+              if [ "$attempt" -eq 20 ]; then
+                echo "could not fetch $file" >&2
                 exit 1
               fi
-              sleep 10
+              sleep 30
             done
           done
           set -- *.gem
