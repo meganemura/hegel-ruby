@@ -31,6 +31,12 @@ Design decisions belong in `docs/` as architecture records. A new decision gets
 a new record; a changed decision supersedes the old record rather than editing
 it, so the history stays readable.
 
+A release that moves the pinned libhegel opens its CHANGELOG section with the
+heading `### Engine: libhegel <new> (was <old>)`, before anything else in that
+section, and says under it what the move changes for a caller, or that it
+changes nothing. A caller who reads one release's notes, or the GitHub release
+built from them, then sees the engine move first.
+
 Write comments that record why: a constraint, or an alternative that got
 rejected. The code already states what it does. Another repository's agent
 instructions bind that repository: when hegel-rust's own instructions and this

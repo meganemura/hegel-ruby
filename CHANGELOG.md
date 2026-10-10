@@ -4,20 +4,26 @@
 
 ## [0.2.1] - 2026-10-08
 
-Each platform gem carries `libhegel` 0.45.1, up from 0.45.0. A caller has
-nothing to change. The engine now reads a NULL string buffer with length
-zero as the empty string, and it rejects a NULL buffer with a nonzero
-length. These bindings send neither case, so a drawn value does not
-change: `from_regex("", fullmatch: true)` draws `""` on both engines.
+### Engine: libhegel 0.45.1 (was 0.45.0)
+
+Each platform gem carries `libhegel` 0.45.1. A caller has nothing to
+change. The engine now reads a NULL string buffer with length zero as the
+empty string, and it rejects a NULL buffer with a nonzero length. These
+bindings send neither case, so a drawn value does not change:
+`from_regex("", fullmatch: true)` draws `""` on both engines.
 
 ## [0.2.0] - 2026-10-07
 
+### Engine: libhegel 0.45.0 (was 0.32.5)
+
+Each platform gem carries `libhegel` 0.45.0. The engine changed its C
+interface in several places between the two, and these bindings follow
+each change. The sections below list what that changes for a caller.
+
+### Ruby
+
 The floor is Ruby 3.4. A project on Ruby 3.3 stays on 0.1.1. See
 [ADR 0017](docs/adr/0017-raise-the-ruby-floor-to-3-4.md).
-
-Each platform gem carries `libhegel` 0.45.0, up from 0.32.5. The engine
-changed its C interface in several places between the two, and these
-bindings follow each change.
 
 ### Changes a caller has to make
 
