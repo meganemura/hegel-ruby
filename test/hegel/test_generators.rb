@@ -471,12 +471,12 @@ class TestGenerators < Minitest::Test
 
   # sets(just(1), min_size: 5) asks for 5 distinct values out of a domain
   # of exactly one: every attempt past the first is a duplicate, forever.
-  # Measured against libhegel 0.45.0: #collection_reject itself gives up
+  # Measured against libhegel 0.45.4: #collection_reject itself gives up
   # at the fourth consecutive reject on one collection and raises
   # HEGEL_E_ASSUME (Hegel::AssumeFailed), which Hegel::Runner.classify
   # turns into a discarded (INVALID) test case, not a hang -- and because
   # every test case discards the same way, libhegel's own FilterTooMuch
-  # health check then ends the whole run as Hegel::Error after 11 body
+  # health check then ends the whole run as Hegel::Error after 50 body
   # calls. Timeout.timeout is a second, independent
   # guard: if a future change reintroduces an unbounded retry loop instead,
   # this fails with Timeout::Error in 5 seconds rather than hanging the

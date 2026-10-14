@@ -494,12 +494,12 @@ expose) are not available in this binding; `codec:`, `min_codepoint:`, and
 `max_codepoint:` are the alphabet controls it exposes today.
 
 Other generators cover most character-set jobs. These results were measured
-with libhegel 0.45.0:
+with libhegel 0.45.4:
 
 | Job | Generator | Measured output |
 |---|---|---|
-| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"ぁ"`, `"Hわ9ごう"`; 30 draws all matched the pattern |
-| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"\u008FBՔ\u0014੐C"`; 30 draws contained no comma, tab, or newline |
+| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"0"`, `"ぢ3"`, `"るJこ"`; 30 draws all matched the pattern |
+| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"\u0010ùóR'<"`; 30 draws contained no comma, tab, or newline |
 | A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character of 100 draws was in U+0300 through U+036F |
 | An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | 30 draws, each built only from `ß`, `a`, and `İ` |
 
@@ -1219,10 +1219,17 @@ value already in the shape you need):
 
 ```ruby
 result = Hegel.test(test_cases: 20, suppress_health_check: [:filter_too_much], verbosity: :quiet) do |tc|
-  tc.draw(integers.filter { |_n| false })
+  tc.draw(integers(min_value: 0, max_value: 1_000_000).filter(&:zero?))
 end
 result # => nil
 ```
+
+The suppressed check does not let a run pass with no valid input. A
+predicate that never holds, such as `integers.filter { |_n| false }`,
+still raises `Hegel::Error`, with a message that starts with
+`"Unsatisfiable: unable to satisfy the test's assumptions."` Since libhegel
+0.45.2, the engine ends every run that generates no valid test case this
+way.
 
 ## Gotchas
 

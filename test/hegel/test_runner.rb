@@ -1040,8 +1040,8 @@ class TestRunner < Minitest::Test
   # health check turns the run into an ERROR (Hegel::Error) after 50
   # rejections; suppressed, the same property runs to completion. test_cases
   # is kept small (20) because Hegel::AssumeFailed / #reject cases do not
-  # count against that budget (measured against libhegel 0.45.0, this shape
-  # calls the body 1040 to 1537 times at a budget of 20), so a larger budget
+  # count against that budget (measured against libhegel 0.45.4, this shape
+  # calls the body 475 to 1607 times at a budget of 20), so a larger budget
   # would only cost more wall time without exercising a different branch.
   def test_suppress_health_check_filter_too_much_against_the_real_engine
     body = lambda do |tc|
@@ -1057,6 +1057,23 @@ class TestRunner < Minitest::Test
     result = Hegel.test(test_cases: 20, suppress_health_check: [:filter_too_much], verbosity: :quiet,
       output: StringIO.new, &body)
     assert_nil result
+  end
+
+  # The suppressed check does not make a run pass when no case is valid.
+  # Since libhegel 0.45.2 the engine ends such a run as Unsatisfiable,
+  # whatever health checks are suppressed. 0.45.1 passed it. The body
+  # draws before it rejects, so that the run does not stop after one case
+  # (see test_assume_false_discards_the_case_and_counts_toward_discarded).
+  def test_suppressed_filter_too_much_still_fails_a_run_with_no_valid_case
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 20, suppress_health_check: [:filter_too_much], verbosity: :quiet,
+        output: StringIO.new) do |tc|
+        tc.draw_integer(0, 1_000_000)
+        tc.reject
+      end
+    end
+
+    assert_includes error.message, "Unsatisfiable"
   end
 
   # phases: [:generate] against the real engine: the header documents a

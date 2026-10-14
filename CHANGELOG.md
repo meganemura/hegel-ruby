@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-14
+
+### Engine: libhegel 0.45.4 (was 0.45.1)
+
+The [libhegel 0.45.4 release notes](https://github.com/hegeldev/hegel-rust/releases/tag/libhegel-v0.45.4)
+describe 0.45.4 alone. The
+[engine changelog](https://github.com/hegeldev/hegel-rust/blob/libhegel-v0.45.4/hegel-c/CHANGELOG.md)
+describes each engine release after 0.45.1, up to 0.45.4.
+
+Each platform gem carries `libhegel` 0.45.4. The engine only adds to its C
+interface, and these bindings do not use the additions. The engine
+changes these results for a caller:
+
+- A run that generates no valid test case now raises `Hegel::Error` with a
+  message that starts with `Unsatisfiable`, also when
+  `suppress_health_check:` holds `:filter_too_much` or
+  `:test_cases_too_large`. Before, such a run passed. A test that rejects
+  every case and expects to pass must now draw at least one valid case.
+- `from_regex` records each drawn string as one choice that the pattern
+  constrains. A failure shrinks inside the pattern, so
+  `from_regex("(?:bbbb|a)", fullmatch: true)` now shrinks to `"a"`, where
+  it stopped at `"bbbb"` before. The example database drops a failure that
+  an earlier engine saved for a `from_regex` draw, so the first run after
+  the update does not replay it.
+- `from_regex` rejects a look-behind of variable width, such as
+  `(?<=a*)b`, with `Hegel::Error`, as Python's `re` does.
+- `\w`, `\d`, `\s`, and case-insensitive matching in `from_regex` follow
+  Unicode 17.0. Before, they followed Unicode 15.1.
+- A run stops when its test-case budget or its budget of invalid cases is
+  spent. Before, it could also stop after ten rejected cases in a row that
+  it had seen before.
+
 ## [0.2.1] - 2026-10-08
 
 ### Engine: libhegel 0.45.1 (was 0.45.0)
@@ -142,6 +174,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.3.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.0
 [0.2.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.2.1
 [0.2.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.2.0
 [0.1.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.1.1
