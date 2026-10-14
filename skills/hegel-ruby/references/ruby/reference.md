@@ -1219,10 +1219,17 @@ value already in the shape you need):
 
 ```ruby
 result = Hegel.test(test_cases: 20, suppress_health_check: [:filter_too_much], verbosity: :quiet) do |tc|
-  tc.draw(integers.filter { |_n| false })
+  tc.draw(integers(min_value: 0, max_value: 1_000_000).filter(&:zero?))
 end
 result # => nil
 ```
+
+The suppressed check does not let a run pass with no valid input. A
+predicate that never holds, such as `integers.filter { |_n| false }`,
+still raises `Hegel::Error`, with a message that starts with
+`"Unsatisfiable: unable to satisfy the test's assumptions."` Since libhegel
+0.45.2, the engine ends every run that generates no valid test case this
+way.
 
 ## Gotchas
 

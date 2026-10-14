@@ -46,6 +46,17 @@ an INVALID case does not spend the budget the way a VALID one does. Keep
 `test_cases:` small in any test that filters, or the suite slows down for
 no added coverage.
 
+## A run with no valid case fails, whatever is suppressed
+
+Since 0.45.2, a run that generates no valid test case ends as
+Unsatisfiable, which `Hegel.test` raises as `Hegel::Error`. Suppressing
+`:filter_too_much` or `:test_cases_too_large` does not change that.
+Measured against 0.45.1, a body that drew and then rejected every case,
+with `:filter_too_much` suppressed, passed; against 0.45.4 one such run
+raised after 459 rejected inputs. A test that wants a filtering run to pass needs a
+property that the engine can satisfy now and then, such as a drawn integer
+that is zero.
+
 ## Body calls are cases pulled, plus the engine's replays of a failure
 
 The engine runs every failure it reports once more before the run ends,

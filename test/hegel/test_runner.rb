@@ -1059,6 +1059,23 @@ class TestRunner < Minitest::Test
     assert_nil result
   end
 
+  # The suppressed check does not make a run pass when no case is valid.
+  # Since libhegel 0.45.2 the engine ends such a run as Unsatisfiable,
+  # whatever health checks are suppressed. 0.45.1 passed it. The body
+  # draws before it rejects, so that the run does not stop after one case
+  # (see test_assume_false_discards_the_case_and_counts_toward_discarded).
+  def test_suppressed_filter_too_much_still_fails_a_run_with_no_valid_case
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 20, suppress_health_check: [:filter_too_much], verbosity: :quiet,
+        output: StringIO.new) do |tc|
+        tc.draw_integer(0, 1_000_000)
+        tc.reject
+      end
+    end
+
+    assert_includes error.message, "Unsatisfiable"
+  end
+
   # phases: [:generate] against the real engine: the header documents a
   # dropped phase as a no-op rather than an error (measured directly: a run
   # missing HEGEL_PHASE_TARGET still returns HEGEL_OK from its first
