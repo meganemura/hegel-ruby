@@ -471,7 +471,7 @@ class TestGenerators < Minitest::Test
 
   # sets(just(1), min_size: 5) asks for 5 distinct values out of a domain
   # of exactly one: every attempt past the first is a duplicate, forever.
-  # Measured against libhegel 0.45.4: #collection_reject itself gives up
+  # Measured against libhegel 0.45.7: #collection_reject itself gives up
   # at the fourth consecutive reject on one collection and raises
   # HEGEL_E_ASSUME (Hegel::AssumeFailed), which Hegel::Runner.classify
   # turns into a discarded (INVALID) test case, not a hang -- and because
@@ -630,6 +630,17 @@ class TestGenerators < Minitest::Test
     assert_kind_of Hegel::Generator, generator
     error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
     assert_includes error.message, "must be a String"
+  end
+
+  # Since libhegel 0.45.7 the engine refuses to build a regex generator for
+  # a pattern that no string matches, so the draw raises and names the
+  # pattern. Measured against 0.45.4, the same run raised Unsatisfiable
+  # instead, which does not point at the pattern.
+  def test_from_regex_pattern_that_matches_nothing_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 20, verbosity: :quiet, output: StringIO.new) { |tc| tc.draw(from_regex("(?!)")) }
+    end
+    assert_includes error.message, "matches no string"
   end
 
   # ---- emails ----

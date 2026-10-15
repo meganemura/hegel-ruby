@@ -134,10 +134,10 @@ inside the framework that raised. See
 
 **The test-case setting bounds generation, not the number of times the loop
 runs.** Shrinking and rejected cases draw more cases on top of it. Measured
-against libhegel 0.45.4, a run configured for 20 test cases whose body
-failed when a drawn integer passed half its range yielded 96 to 119 cases
+against libhegel 0.45.7, a run configured for 20 test cases whose body
+failed when a drawn integer passed half its range yielded 96 to 122 cases
 over the runs that failed, and one whose body rejected nearly every case,
-with the FilterTooMuch check suppressed, yielded 475 to 1607. Two things
+with the FilterTooMuch check suppressed, yielded 913 to 1818. Two things
 follow. Drive the loop until `hegel_next_test_case` hands back nothing, never
 by counting. And keep per-case work cheap. Anything expensive enough to notice, such as reading
 source to name a drawn value or formatting a backtrace, belongs in the cases
