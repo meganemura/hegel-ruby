@@ -744,6 +744,13 @@ translated): `from_regex(/[a-z]{3}/)` raises `Hegel::Error` at draw time,
 Regexp"`. Pass `my_regexp.source` explicitly for a pattern confirmed to
 need no flags and to use only syntax the two grammars share.
 
+A pattern that no string matches, such as `"(?!)"`, also raises
+`Hegel::Error` at draw time. The engine writes the message, and it names
+the pattern: `from_regex("(?!)")` raises
+`"HEGEL_E_INVALID_ARG (-5): regex pattern \"(?!)\" matches no string the
+generator can produce"`. Since libhegel 0.45.7 the engine makes this
+check.
+
 ### `emails`
 
 An RFC 5321/5322 email address `String`.
