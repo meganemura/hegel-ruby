@@ -494,12 +494,12 @@ expose) are not available in this binding; `codec:`, `min_codepoint:`, and
 `max_codepoint:` are the alphabet controls it exposes today.
 
 Other generators cover most character-set jobs. These results were measured
-with libhegel 0.45.4:
+with libhegel 0.45.7:
 
 | Job | Generator | Measured output |
 |---|---|---|
-| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"0"`, `"ぢ3"`, `"るJこ"`; 30 draws all matched the pattern |
-| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"\u0010ùóR'<"`; 30 draws contained no comma, tab, or newline |
+| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"0"`, `"お"`, `"Dぷぎ"`; 30 draws all matched the pattern |
+| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"âb¤"`; 30 draws contained no comma, tab, or newline |
 | A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character of 100 draws was in U+0300 through U+036F |
 | An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | 30 draws, each built only from `ß`, `a`, and `İ` |
 
@@ -512,14 +512,13 @@ inputs and reported this health check:
 
 ```
 FailedHealthCheck: FilterTooMuch — it looks like this test is filtering out
-too many inputs. 50 inputs were filtered out by assume() while only 0 valid
-inputs were generated. If this is expected, suppress the check with
-suppress_health_check = [HealthCheck::FilterTooMuch].
+too many inputs. 50 inputs were rejected by assume() or a filter while only
+0 valid inputs were generated. If this is expected, suppress the
+FilterTooMuch health check with the suppress_health_check setting.
 ```
 
-The engine writes that last sentence in its own naming. This binding takes
-the same setting as `suppress_health_check: [:filter_too_much]`, listed in
-[Settings](#settings).
+This binding takes that setting as
+`suppress_health_check: [:filter_too_much]`, listed in [Settings](#settings).
 
 Unconfigured `text` draws from a much wider Unicode range. In 200 draws of
 `text(min_size: 1, max_size: 4)`, the results included emoji, private-use

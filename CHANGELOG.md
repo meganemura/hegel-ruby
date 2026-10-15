@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.45.7 (was 0.45.4)
+
+The [libhegel 0.45.7 release notes](https://github.com/hegeldev/hegel-rust/releases/tag/libhegel-v0.45.7)
+describe 0.45.7 alone. The
+[engine changelog](https://github.com/hegeldev/hegel-rust/blob/libhegel-v0.45.7/hegel-c/CHANGELOG.md)
+describes each engine release after 0.45.4, up to 0.45.7.
+
+Each platform gem carries `libhegel` 0.45.7. The engine only adds to its C
+interface, and these bindings do not use the addition. A caller has nothing
+to change in code. The engine changes these messages for a caller:
+
+- `from_regex` with a pattern that no string matches, such as `"(?!)"`,
+  raises `Hegel::Error` with a message that names the pattern and says
+  that it `matches no string`. Before, the run raised `Hegel::Error` with
+  a message that starts with `Unsatisfiable`.
+- The FilterTooMuch health check message says how to suppress the check
+  with the `suppress_health_check` setting, and it says "rejected by
+  assume() or a filter". Before, it showed Rust syntax. The
+  `FailedHealthCheck:` and `Unsatisfiable` prefixes do not change.
+
 ## [0.3.0] - 2026-10-14
 
 ### Engine: libhegel 0.45.4 (was 0.45.1)
