@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.45.13 (was 0.45.7)
+
+The [libhegel 0.45.13 release notes](https://github.com/hegeldev/hegel-rust/releases/tag/libhegel-v0.45.13)
+describe 0.45.13 alone. The
+[engine changelog](https://github.com/hegeldev/hegel-rust/blob/libhegel-v0.45.13/hegel-c/CHANGELOG.md)
+describes each engine release after 0.45.7, up to 0.45.13.
+
+Each platform gem carries `libhegel` 0.45.13. The engine only adds to its C
+interface, and these bindings do not use the addition. A caller has nothing
+to change in code. The engine changes these results for a caller:
+
+- A run with a `seed:` can draw different values than it did before. The
+  engine changed how it copies values between spans that have the same
+  label, and how it draws an integer from a range wider than 128 bits.
+- A failure that depends on an integer that is a multiple of a number, such
+  as 6, shrinks to the smallest such value more often. Before, the shrinker
+  could stop at a larger multiple, such as 78.
+- A run of 1,000 test cases or more starts to use `target` scores soon
+  after it starts. Before, it started after half of the test cases.
+- The `note:` line with the engine's nondeterminism caveat shows only for a
+  failure that the engine saw pass at least one time. Before, every failure
+  of a run that the engine treated as nondeterministic showed it.
+- `reproduce_failure:` stops a replay when the test body draws differently
+  from the recorded choices. If no replay reproduces the failure, the run
+  raises `Hegel::Error` with the message that says that the blob did not
+  reproduce a failure, and the engine writes one line to standard error
+  that names the position where the draws left the recorded choices.
+  Before, the engine continued the replay with new draws and could report a
+  different failure as the failure of the blob.
+
 ## [0.3.1] - 2026-10-15
 
 ### Engine: libhegel 0.45.7 (was 0.45.4)
