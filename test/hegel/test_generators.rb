@@ -471,7 +471,7 @@ class TestGenerators < Minitest::Test
 
   # sets(just(1), min_size: 5) asks for 5 distinct values out of a domain
   # of exactly one: every attempt past the first is a duplicate, forever.
-  # Measured against libhegel 0.45.7: #collection_reject itself gives up
+  # Measured against libhegel 0.45.13: #collection_reject itself gives up
   # at the fourth consecutive reject on one collection and raises
   # HEGEL_E_ASSUME (Hegel::AssumeFailed), which Hegel::Runner.classify
   # turns into a discarded (INVALID) test case, not a hang -- and because

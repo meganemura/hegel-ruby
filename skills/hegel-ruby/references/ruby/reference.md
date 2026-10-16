@@ -494,12 +494,12 @@ expose) are not available in this binding; `codec:`, `min_codepoint:`, and
 `max_codepoint:` are the alphabet controls it exposes today.
 
 Other generators cover most character-set jobs. These results were measured
-with libhegel 0.45.7:
+with libhegel 0.45.13:
 
 | Job | Generator | Measured output |
 |---|---|---|
-| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"0"`, `"お"`, `"Dぷぎ"`; 30 draws all matched the pattern |
-| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"âb¤"`; 30 draws contained no comma, tab, or newline |
+| Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"0"`, `"ん"`, `"Dす"`; 30 draws all matched the pattern |
+| Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"áö"`; 30 draws contained no comma, tab, or newline |
 | A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character of 100 draws was in U+0300 through U+036F |
 | An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | 30 draws, each built only from `ß`, `a`, and `İ` |
 
