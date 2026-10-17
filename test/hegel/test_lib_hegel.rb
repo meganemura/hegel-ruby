@@ -22,7 +22,7 @@ class TestLibHegel < Minitest::Test
   end
 
   # The header calls every string libhegel returns valid UTF-8, and
-  # FFI::Pointer#read_string labels what it reads ASCII-8BIT. Left that way,
+  # FFI::Pointer#read_bytes labels what it reads ASCII-8BIT. Left that way,
   # a caller who matches an error message against a pattern of their own
   # gets Encoding::CompatibilityError instead of an answer. That is not
   # hypothetical: the message this test provokes carries an em dash, so
@@ -603,15 +603,15 @@ class TestLibHegel < Minitest::Test
     assert_nil fake.failure_reproduction_blob(ctx, failure)
   end
 
-  def test_real_collection_free_string_generator_free_and_generate_string_result_free_are_no_ops_on_nil
+  def test_real_collection_free_string_generator_free_and_owned_string_free_are_no_ops_on_nil
     real = Hegel::LibHegel::Real.new
     assert_nil real.collection_free(nil, nil)
     assert_nil real.string_generator_free(nil, nil)
-    assert_nil real.generate_string_result_free(nil, nil)
+    assert_nil real.owned_string_free(nil, nil)
   end
 
   # #generate_bytes_result_free's own no-op-on-nil contract, the
-  # #generate_string_result_free twin the test above already pins.
+  # #owned_string_free twin the test above already pins.
   def test_real_generate_bytes_result_free_is_a_no_op_on_nil
     real = Hegel::LibHegel::Real.new
     assert_nil real.generate_bytes_result_free(nil, nil)
@@ -916,14 +916,14 @@ class TestLibHegel < Minitest::Test
     end
   end
 
-  # hegel_generate_string's result is documented as not NUL-terminated
-  # and possibly containing interior NUL bytes, since the drawn alphabet
-  # can include U+0000. Forcing min_codepoint: 0, max_codepoint: 0 draws
-  # from an alphabet of exactly U+0000, so a correct implementation reads
-  # every byte via len; reading through a NUL-terminated string accessor
-  # (no length, stopping at the first NUL) would instead return an empty
-  # string. The database is disabled ("") so the run leaves nothing on
-  # disk.
+  # hegel_generate_string's result is documented as possibly containing
+  # interior NUL bytes, since the drawn alphabet can include U+0000; its
+  # trailing NUL marks only the end. Forcing min_codepoint: 0,
+  # max_codepoint: 0 draws from an alphabet of exactly U+0000, so a
+  # correct implementation reads every byte via len; reading through a
+  # NUL-terminated string accessor (no length, stopping at the first NUL)
+  # would instead return an empty string. The database is disabled ("")
+  # so the run leaves nothing on disk.
   def test_real_generate_string_reads_the_full_length_including_interior_nul_bytes
     real = Hegel::LibHegel::Real.new
 
@@ -1517,6 +1517,49 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # Since libhegel 0.46 a string input is a hegel_string_t, a pointer and a
+  # length, so an interior NUL reaches the engine. hegel_target refuses a
+  # label it already saw in the same test case, which makes it the probe:
+  # the two labels below differ only after the NUL, and the engine accepts
+  # both, then refuses the first again. A binding that cut a label at its
+  # first NUL would send "a" twice, and the second call would be refused.
+  # Measured against libhegel 0.45.13, the bindings for that release raised
+  # ArgumentError ("string contains null byte") for the first label.
+  def test_real_string_inputs_keep_an_interior_nul
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      assert_nil real.target(ctx, tc, 1.0, "a\0b")
+      assert_nil real.target(ctx, tc, 1.0, "a\0c")
+      error = assert_raises(Hegel::Error) { real.target(ctx, tc, 1.0, "a\0b") }
+      assert_includes error.message, "at most once per test case"
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
   # hegel_target has no effect unless HEGEL_PHASE_TARGET is enabled, which
   # it is by default; this only confirms the call itself succeeds inside a
   # live test case. The database is disabled ("") so the run leaves
@@ -1681,6 +1724,47 @@ class TestLibHegel < Minitest::Test
       assert rejected_once
       assert_includes(1..3, completed_rounds)
       real.state_machine_free(ctx, state_machine)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
+  # #pack_name_array writes each name into its own hegel_string_t slot. The
+  # engine refuses a name that is not valid UTF-8, so a bad name first and a
+  # good name last is refused only when both reach their own slots. A packing
+  # that wrote every name over slot 0 would leave the good name there and an
+  # empty slot after it, which the engine accepts. The database is disabled
+  # ("") so the run leaves nothing on disk.
+  def test_real_new_state_machine_reads_each_rule_name_from_its_own_slot
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      error = assert_raises(Hegel::Error) do
+        real.new_state_machine(ctx, tc, ["\xFF".b, "good_rule"], [], [], 50)
+      end
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
 
       real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
       real.test_case_free(ctx, tc)

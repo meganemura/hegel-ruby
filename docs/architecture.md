@@ -171,12 +171,16 @@ fields.
 
 ## Answered
 
-A drawn string arrives as a pointer and a length, is not NUL-terminated,
-and can hold interior NUL bytes, because the drawn alphabet can include
-U+0000. Read by length. Measured against 0.45.0: an alphabet pinned to
-U+0000 produces a three-byte draw that reads as `""` when taken up to the
-first NUL and as three NUL bytes when taken by its reported length. Every
-string observed reports `valid_encoding?` after `force_encoding(UTF-8)`.
+A drawn string arrives as a pointer and a length, and can hold interior
+NUL bytes, because the drawn alphabet can include U+0000. Read by length.
+Before libhegel 0.46 the string had no NUL terminator. Since 0.46 every
+string the engine hands back is a `hegel_string_t` with a trailing NUL that
+its length excludes, but an interior NUL still ends the string early for a
+reader that stops at the first NUL. Measured against 0.45.0: an alphabet
+pinned to U+0000 produces a three-byte draw that reads as `""` when taken
+up to the first NUL and as three NUL bytes when taken by its reported
+length. Every string observed reports `valid_encoding?` after
+`force_encoding(UTF-8)`.
 
 Prism recovers a draw's assignment target through a method chain, an
 instance-variable assignment, and an assignment spanning several lines.
