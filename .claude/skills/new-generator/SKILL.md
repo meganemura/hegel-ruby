@@ -69,11 +69,11 @@ writes in a block exactly as it does for one written as a class.
 **A collection that keeps rejecting is already bounded; do not bound it
 again.** `SetGenerator` and `HashGenerator` call
 `TestCase#collection_reject` when a drawn element duplicates one they
-already hold. Measured against 0.45.13: a single collection raises
+already hold. Measured against 0.47.1: a single collection raises
 `HEGEL_E_ASSUME` at the fourth consecutive reject, which the run loop
 records as a discarded case; a run that keeps discarding trips libhegel's
 own FilterTooMuch health check and surfaces as `Hegel::Error`, after 50
-body calls and in 7 to 10 milliseconds. Neither a retry loop nor a timeout
+body calls and in 9 to 19 milliseconds. Neither a retry loop nor a timeout
 belongs inside a generator.
 
 **Native handles are freed in `ensure`, never cached on the generator
