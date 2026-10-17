@@ -1740,6 +1740,47 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # #pack_name_array writes each name into its own hegel_string_t slot. The
+  # engine refuses a name that is not valid UTF-8, so a bad name first and a
+  # good name last is refused only when both reach their own slots. A packing
+  # that wrote every name over slot 0 would leave the good name there and an
+  # empty slot after it, which the engine accepts. The database is disabled
+  # ("") so the run leaves nothing on disk.
+  def test_real_new_state_machine_reads_each_rule_name_from_its_own_slot
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      error = assert_raises(Hegel::Error) do
+        real.new_state_machine(ctx, tc, ["\xFF".b, "good_rule"], [], [], 50)
+      end
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
   # hegel_new_state_machine's invariant_names accepts an empty array (the
   # header's documented "no invariants" case), which #pack_name_array maps
   # to NULL/0 -- this exercises that branch, distinct from
