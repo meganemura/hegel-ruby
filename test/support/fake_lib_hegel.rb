@@ -497,7 +497,7 @@ module Hegel
         @generate_string_value
       end
 
-      def generate_string_result_free(_ctx, _result)
+      def owned_string_free(_ctx, _result)
         nil
       end
 

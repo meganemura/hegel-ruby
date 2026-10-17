@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.47.1 (was 0.45.13)
+
+The [libhegel 0.47.1 release notes](https://github.com/hegeldev/hegel-rust/releases/tag/libhegel-v0.47.1)
+describe 0.47.1 alone. The
+[engine changelog](https://github.com/hegeldev/hegel-rust/blob/libhegel-v0.47.1/hegel-c/CHANGELOG.md)
+describes each engine release after 0.45.13, up to 0.47.1.
+
+Each platform gem carries `libhegel` 0.47.1. The engine changes its C
+interface: every string is now a `hegel_string_t`, a pointer and a length.
+These bindings follow that change. A caller has nothing to change in code.
+The engine move changes these results for a caller:
+
+- A run with the default `report_multiple_failures: false` that finds more
+  than one distinct failure shrinks only the smallest of them and reports
+  it. Before, the engine shrank each failure and then reported one. The
+  example database keeps every distinct failure, as found. Such a run calls
+  the test body fewer times: for a body with two distinct failures and
+  `test_cases: 100`, 73 to 131 calls over 20 seeded runs, where 0.45.13
+  made 157 to 202. Both versions reported the same failure in each run.
+- A string that holds a NUL character, such as a `target` label or a
+  `database:` path, reaches the engine whole. Before, it raised
+  `ArgumentError` ("string contains null byte") from the `ffi` gem.
+
 ## [0.3.2] - 2026-10-16
 
 ### Engine: libhegel 0.45.13 (was 0.45.7)

@@ -544,7 +544,7 @@ module Hegel
       def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) -> untyped
       def string_generator_free: (untyped ctx, untyped generator) -> nil
       def generate_string: (untyped ctx, untyped tc, untyped generator) -> String
-      def generate_string_result_free: (untyped ctx, untyped result) -> nil
+      def owned_string_free: (untyped ctx, untyped result) -> nil
       def generate_bytes: (untyped ctx, untyped tc, Integer min_size, Integer max_size) -> String
       def generate_bytes_result_free: (untyped ctx, untyped result) -> nil
       def string_generator_regex: (untyped ctx, String pattern, bool fullmatch, ?untyped alphabet) -> untyped

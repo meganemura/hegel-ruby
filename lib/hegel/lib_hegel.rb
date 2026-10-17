@@ -118,7 +118,7 @@ module Hegel
       start_span stop_span
       new_collection collection_more collection_reject collection_free
       generate_float
-      string_generator_text string_generator_free generate_string generate_string_result_free
+      string_generator_text string_generator_free generate_string owned_string_free
       generate_bytes generate_bytes_result_free
       string_generator_regex string_generator_email string_generator_url string_generator_domain
       generate_ipv4 generate_ipv6 generate_uuid
