@@ -31,6 +31,7 @@ An index of the design records for `hegel-ruby`.
 - [0022: Keep microsecond times over a nanosecond engine](adr/0022-keep-microsecond-times-over-a-nanosecond-engine.md)
 - [0023: Leave unset settings to the engine's profile](adr/0023-leave-unset-settings-to-the-engines-profile.md)
 - [0024: Release when a merge changes the gem version](adr/0024-release-when-a-merge-changes-the-gem-version.md)
+- [0025: Copy each string input into a hegel_string_t](adr/0025-copy-each-string-input-into-a-hegel-string-t.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.

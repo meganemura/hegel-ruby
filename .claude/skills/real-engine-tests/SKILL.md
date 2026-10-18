@@ -32,16 +32,16 @@ end
 
 ## `test_cases` is a generation budget, not an iteration count
 
-Measured against 0.45.13 over 30 runs, a run configured for 20 test cases
-whose body failed when a drawn integer passed half its range took 98 to
-123 iterations over the 18 runs that failed; each of the 12 runs that found
+Measured against 0.47.1 over 30 runs, a run configured for 20 test cases
+whose body failed when a drawn integer passed half its range took 101 to
+126 iterations over the 21 runs that failed; each of the 9 runs that found
 no failure took exactly 20. Never write a loop, or an assertion, that
 counts iterations.
 
 The budget counts differently again under filtering. With
 `suppress_health_check: [:filter_too_much]`, a property that rejects
-almost every case called the body **640 to 1923** times against a budget
-of 20, and 2438 to 4255 against 50, over 30 runs of each against 0.45.13:
+almost every case called the body **811 to 1847** times against a budget
+of 20, and 2399 to 3765 against 50, over 30 runs of each against 0.47.1:
 an INVALID case does not spend the budget the way a VALID one does. Keep
 `test_cases:` small in any test that filters, or the suite slows down for
 no added coverage.
@@ -52,7 +52,7 @@ Since 0.45.2, a run that generates no valid test case ends as
 Unsatisfiable, which `Hegel.test` raises as `Hegel::Error`. Suppressing
 `:filter_too_much` or `:test_cases_too_large` does not change that.
 Measured against 0.45.1, a body that drew and then rejected every case,
-with `:filter_too_much` suppressed, passed; against 0.45.13 each of 5 such
+with `:filter_too_much` suppressed, passed; against 0.47.1 each of 5 such
 runs raised after 459 rejected inputs. A test that wants a filtering run to pass needs a
 property that the engine can satisfy now and then, such as a drawn integer
 that is zero.

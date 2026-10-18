@@ -40,17 +40,19 @@ module Hegel
         layout :date, DateStruct, :time, TimeStruct
       end
 
-      # hegel_generate_string_result_t and hegel_generate_bytes_result_t are
-      # both `{ char *data; size_t len; }` in hegel-c/include/hegel.h --
-      # byte-for-byte the same layout under two names, one per element type
-      # the two calls draw. One Ruby struct mirrors both; #generate_string
-      # and #generate_bytes each pass a fresh instance as the out-parameter
-      # and read it back through their own method below.
-      class RawResultStruct < FFI::Struct
+      # hegel_string_t (`{ const char *data; size_t len; }`), and
+      # hegel_generate_bytes_result_t (`{ uint8_t *data; size_t len; }`),
+      # from hegel-c/include/hegel.h: the same layout under two names. Since
+      # libhegel 0.46 every string crosses the ABI as a hegel_string_t: by
+      # value for an ordinary input, through a nullable pointer for an
+      # optional input, and as a struct the engine writes for an output.
+      # hegel_owned_string_t, which #generate_string reads, is a typedef of
+      # hegel_string_t. One Ruby struct mirrors all of them.
+      class StringStruct < FFI::Struct
         layout :data, :pointer, :len, :size_t
       end
 
-      private_constant :DateStruct, :TimeStruct, :DatetimeStruct, :RawResultStruct
+      private_constant :DateStruct, :TimeStruct, :DatetimeStruct, :StringStruct
 
       # Opens +path+ (default: Hegel::Locate.resolve) and binds the
       # functions this boundary calls. Immediately after, opens a context
@@ -75,7 +77,7 @@ module Hegel
 
         @hegel_context_new_fn = bind("hegel_context_new", [], :pointer)
         @hegel_context_free_fn = bind("hegel_context_free", [:pointer], :int32)
-        @hegel_context_last_error_fn = bind("hegel_context_last_error", [:pointer], :pointer)
+        @hegel_context_last_error_fn = bind("hegel_context_last_error", [:pointer], StringStruct.by_value)
         @hegel_version_fn = bind("hegel_version", [:pointer, :pointer], :int32)
 
         @hegel_settings_new_fn = bind("hegel_settings_new", [:pointer, :pointer], :int32)
@@ -93,13 +95,13 @@ module Hegel
           "hegel_settings_set_derandomize", [:pointer, :pointer, :bool], :int32
         )
         @hegel_settings_set_database_fn = bind(
-          "hegel_settings_set_database", [:pointer, :pointer, :string], :int32
+          "hegel_settings_set_database", [:pointer, :pointer, :pointer], :int32
         )
         @hegel_settings_set_report_multiple_failures_fn = bind(
           "hegel_settings_set_report_multiple_failures", [:pointer, :pointer, :bool], :int32
         )
         @hegel_settings_set_database_key_fn = bind(
-          "hegel_settings_set_database_key", [:pointer, :pointer, :string], :int32
+          "hegel_settings_set_database_key", [:pointer, :pointer, :pointer], :int32
         )
         @hegel_settings_set_phases_fn = bind(
           "hegel_settings_set_phases", [:pointer, :pointer, :uint32], :int32
@@ -112,7 +114,7 @@ module Hegel
           "hegel_run_start", [:pointer, :pointer, :pointer, :pointer, :pointer], :int32
         )
         @hegel_run_start_blob_fn = bind(
-          "hegel_run_start_blob", [:pointer, :pointer, :string, :pointer, :pointer, :pointer], :int32
+          "hegel_run_start_blob", [:pointer, :pointer, StringStruct.by_value, :pointer, :pointer, :pointer], :int32
         )
         @hegel_next_test_case_fn = bind("hegel_next_test_case", [:pointer, :pointer, :pointer], :int32)
         @hegel_test_case_should_capture_fn = bind(
@@ -120,8 +122,8 @@ module Hegel
         )
         @hegel_run_free_fn = bind("hegel_run_free", [:pointer, :pointer], :int32)
         @hegel_test_case_free_fn = bind("hegel_test_case_free", [:pointer, :pointer], :int32)
-        @hegel_mark_complete_fn = bind("hegel_mark_complete", [:pointer, :pointer, :uint32, :string], :int32)
-        @hegel_target_fn = bind("hegel_target", [:pointer, :pointer, :double, :string], :int32)
+        @hegel_mark_complete_fn = bind("hegel_mark_complete", [:pointer, :pointer, :uint32, :pointer], :int32)
+        @hegel_target_fn = bind("hegel_target", [:pointer, :pointer, :double, StringStruct.by_value], :int32)
 
         @hegel_run_result_fn = bind("hegel_run_result", [:pointer, :pointer, :pointer], :int32)
         @hegel_run_result_free_fn = bind("hegel_run_result_free", [:pointer, :pointer], :int32)
@@ -159,7 +161,7 @@ module Hegel
         )
         @hegel_collection_more_fn = bind("hegel_collection_more", [:pointer, :pointer, :pointer, :pointer], :int32)
         @hegel_collection_reject_fn = bind(
-          "hegel_collection_reject", [:pointer, :pointer, :pointer, :string], :int32
+          "hegel_collection_reject", [:pointer, :pointer, :pointer, :pointer], :int32
         )
         @hegel_collection_free_fn = bind("hegel_collection_free", [:pointer, :pointer], :int32)
 
@@ -196,14 +198,14 @@ module Hegel
           [:pointer, :pointer, :uint32, :double, :double, :bool, :bool, :bool, :bool, :double, :pointer], :int32
         )
 
-        # hegel_string_generator_text takes 14 arguments past ctx; the
-        # last 8 (categories_len through exclude_characters_len) are the
-        # category and explicit-character filter parameters this task
-        # does not wire up (see #string_generator_text).
+        # hegel_string_generator_text takes 12 arguments past ctx; the
+        # last 6 (categories through exclude_characters) are the category
+        # and explicit-character filter parameters this binding does not
+        # wire up (see #string_generator_text).
         @hegel_string_generator_text_fn = bind(
           "hegel_string_generator_text",
-          [:pointer, :uint64, :uint64, :string, :uint32, :uint32,
-            :pointer, :size_t, :pointer, :size_t, :pointer, :size_t, :pointer, :size_t,
+          [:pointer, :uint64, :uint64, :pointer, :uint32, :uint32,
+            :pointer, :size_t, :pointer, :size_t, StringStruct.by_value, StringStruct.by_value,
             :pointer],
           :int32
         )
@@ -211,9 +213,7 @@ module Hegel
         @hegel_generate_string_fn = bind(
           "hegel_generate_string", [:pointer, :pointer, :pointer, :pointer], :int32
         )
-        @hegel_generate_string_result_free_fn = bind(
-          "hegel_generate_string_result_free", [:pointer, :pointer], :int32
-        )
+        @hegel_owned_string_free_fn = bind("hegel_owned_string_free", [:pointer, :pointer], :int32)
 
         @hegel_generate_bytes_fn = bind(
           "hegel_generate_bytes", [:pointer, :pointer, :uint64, :uint64, :pointer], :int32
@@ -223,7 +223,7 @@ module Hegel
         )
 
         @hegel_string_generator_regex_fn = bind(
-          "hegel_string_generator_regex", [:pointer, :pointer, :size_t, :bool, :pointer, :pointer], :int32
+          "hegel_string_generator_regex", [:pointer, StringStruct.by_value, :bool, :pointer, :pointer], :int32
         )
         @hegel_string_generator_email_fn = bind("hegel_string_generator_email", [:pointer, :pointer], :int32)
         @hegel_string_generator_url_fn = bind("hegel_string_generator_url", [:pointer, :pointer], :int32)
@@ -273,18 +273,18 @@ module Hegel
       # before returning, since the header documents that buffer as
       # borrowed and invalidated by the next call taking the same context.
       def context_last_error(ctx)
-        utf8(@hegel_context_last_error_fn.call(ctx))
+        read_string(@hegel_context_last_error_fn.call(ctx))
       end
 
       # Returns the loaded engine's version string, or raises the
       # exception LibHegel.check! translates this call's result code to.
       def version(ctx)
-        out = FFI::MemoryPointer.new(:pointer)
+        out = StringStruct.new
         code = @hegel_version_fn.call(ctx, out)
         # This call takes only ctx and this method's own out argument; neither
         # makes the real engine return anything but HEGEL_OK.
         LibHegel.check!(self, ctx, code) # mutineer:disable-line statement_removal
-        utf8(out.read_pointer)
+        read_string(out)
       end
 
       # Returns a settings handle initialized from the engine's resolved
@@ -334,11 +334,11 @@ module Hegel
       end
 
       # +database+ may be nil (libhegel's own default path) or a String,
-      # including "" to disable the database. Declared :string below, so a
-      # Ruby String marshals as a const char* to its bytes and nil marshals
-      # to NULL, both directly -- no separate pointer to build here.
+      # including "" to disable the database. The header takes an optional
+      # string here, so nil goes over as a NULL pointer and "" as a pointer
+      # to an empty string; see #optional_string.
       def settings_set_database(ctx, s, database)
-        code = @hegel_settings_set_database_fn.call(ctx, s, database)
+        code = @hegel_settings_set_database_fn.call(ctx, s, optional_string(database))
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -350,10 +350,10 @@ module Hegel
       end
 
       # +key+ may be nil, which the header documents as clearing the key
-      # (the default); nil marshals to NULL for this :string argument, the
+      # (the default); nil goes over as NULL through #optional_string, the
       # same as #settings_set_database's own nilable database argument.
       def settings_set_database_key(ctx, s, key)
-        code = @hegel_settings_set_database_key_fn.call(ctx, s, key)
+        code = @hegel_settings_set_database_key_fn.call(ctx, s, optional_string(key))
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -393,7 +393,7 @@ module Hegel
       # version.
       def run_start_blob(ctx, settings, blob)
         out = FFI::MemoryPointer.new(:pointer)
-        code = @hegel_run_start_blob_fn.call(ctx, settings, blob, nil, nil, out)
+        code = @hegel_run_start_blob_fn.call(ctx, settings, string_view(blob), nil, nil, out)
         LibHegel.check!(self, ctx, code)
         out.read_pointer
       end
@@ -442,9 +442,9 @@ module Hegel
       # +origin+ must be non-nil only when +status+ is
       # HEGEL_STATUS_INTERESTING, per the header; this layer neither builds
       # nor validates that string, only passes through what the caller
-      # supplies. nil marshals to NULL for this :string argument.
+      # supplies. nil goes over as NULL through #optional_string.
       def mark_complete(ctx, tc, status, origin)
-        code = @hegel_mark_complete_fn.call(ctx, tc, status, origin)
+        code = @hegel_mark_complete_fn.call(ctx, tc, status, optional_string(origin))
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -456,7 +456,7 @@ module Hegel
       # checked here, matching how this layer leaves every other
       # argument-shape rule to the engine's own HEGEL_E_INVALID_ARG.
       def target(ctx, tc, value, label)
-        code = @hegel_target_fn.call(ctx, tc, value, label)
+        code = @hegel_target_fn.call(ctx, tc, value, string_view(label))
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -538,10 +538,10 @@ module Hegel
       # returning, since it is owned by the failure and only valid until
       # #failure_free.
       def failure_origin(ctx, f)
-        out = FFI::MemoryPointer.new(:pointer)
+        out = StringStruct.new
         code = @hegel_failure_origin_fn.call(ctx, f, out)
         LibHegel.check!(self, ctx, code)
-        utf8(out.read_pointer)
+        read_string(out)
       end
 
       # Returns nil when libhegel produced no reproduction blob for this
@@ -659,12 +659,12 @@ module Hegel
       end
 
       # Tells libhegel the last element +collection+ produced is invalid.
-      # +why+ is an optional human-readable reason (nil marshals to NULL
-      # for this :string argument, which the header allows); the header
+      # +why+ is an optional human-readable reason (nil goes over as NULL
+      # through #optional_string, which the header allows); the header
       # documents it as validated but reserved for future rejection
       # diagnostics, unused today.
       def collection_reject(ctx, tc, collection, why = nil)
-        code = @hegel_collection_reject_fn.call(ctx, tc, collection, why)
+        code = @hegel_collection_reject_fn.call(ctx, tc, collection, optional_string(why))
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -733,9 +733,9 @@ module Hegel
 
       # Returns a caller-owned state-machine handle, released separately
       # with #state_machine_free. +rule_names+ and +invariant_names+ are
-      # each an Array of Ruby Strings, packed into the const char *const *
-      # arguments hegel_new_state_machine expects by #pack_name_array; see
-      # that method's own comment for how and why. +always_check+ holds one
+      # each an Array of Ruby Strings, packed into the hegel_string_t arrays
+      # hegel_new_state_machine expects by #pack_name_array; see that
+      # method's own comment for how and why. +always_check+ holds one
       # flag per invariant name. Validating +rule_names+ as non-empty (the
       # header's own requirement) is left to the caller, the same division
       # of labor #new_collection leaves to the caller for its own
@@ -840,17 +840,18 @@ module Hegel
 
       # Returns a caller-owned string generator handle, released
       # separately with #string_generator_free (or scoped with
-      # Hegel::TestCase#with_text_generator). +categories+,
-      # +exclude_categories+, +include_characters+, and
-      # +exclude_characters+ are always passed as NULL/0 below: this call
-      # only wires up the codepoint-range constraints of the 14-argument
-      # bind; the category and explicit-character filter arguments are a
-      # later generator's scope, layered on top of this same bind.
+      # Hegel::TestCase#with_text_generator). +categories+ and
+      # +exclude_categories+ are always passed as NULL/0 below, and
+      # +include_characters+ and +exclude_characters+ as empty strings:
+      # this call only wires up the codepoint-range constraints of the
+      # 12-argument bind; the category and explicit-character filter
+      # arguments are a later generator's scope, layered on top of this
+      # same bind.
       def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF)
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_string_generator_text_fn.call(
-          ctx, min_size, max_size, codec, min_codepoint, max_codepoint,
-          nil, 0, nil, 0, nil, 0, nil, 0,
+          ctx, min_size, max_size, optional_string(codec), min_codepoint, max_codepoint,
+          nil, 0, nil, 0, StringStruct.new, StringStruct.new,
           out
         )
         LibHegel.check!(self, ctx, code)
@@ -867,47 +868,46 @@ module Hegel
         nil
       end
 
-      # Returns a drawn String, force-encoded as UTF-8 (this codec's
-      # alphabet), copying exactly the returned +len+ bytes rather than
-      # reading a NUL-terminated buffer: the header documents it as not
-      # NUL-terminated and possibly containing interior NUL bytes, since
-      # the drawn alphabet can include U+0000.
+      # Returns a drawn String, labelled UTF-8 by #read_string. The draw can
+      # hold interior NUL bytes, since the drawn alphabet can include
+      # U+0000, so #read_string copies exactly the returned +len+ bytes.
       #
       # The native buffer is released in +ensure+ via
-      # #generate_string_result_free, called directly from here rather
+      # #owned_string_free, called directly from here rather
       # than left to the caller: nothing outside this file may hold or
       # read the raw struct (ffi is confined to this file), so unlike
       # #new_collection or #string_generator_text, the freeable handle
       # here never leaves this method. Freeing is safe even when the draw
       # above raised: +out+ starts zero-filled (FFI::Struct.new allocates
       # cleared memory) and libhegel only writes into it on success, so
-      # the struct #generate_string_result_free sees here is always
+      # the struct #owned_string_free sees here is always
       # either a completed draw or the all-zero state the header
       # documents as already safe to free.
       def generate_string(ctx, tc, generator)
-        out = RawResultStruct.new
+        out = StringStruct.new
         code = @hegel_generate_string_fn.call(ctx, tc, generator, out)
         LibHegel.check!(self, ctx, code)
-        out[:data].read_bytes(out[:len]).force_encoding(Encoding::UTF_8)
+        read_string(out)
       ensure
-        generate_string_result_free(ctx, out)
+        owned_string_free(ctx, out)
       end
 
-      # No-op when +result+ is nil, matching
-      # hegel_generate_string_result_free's documented no-op-on-NULL
-      # contract (also safe on an already-freed, zeroed struct); not
-      # translated, for the same reason as #context_free.
-      def generate_string_result_free(ctx, result)
+      # No-op when +result+ is nil, matching hegel_owned_string_free's
+      # documented no-op-on-NULL contract (also safe on an already-freed,
+      # zeroed struct); not translated, for the same reason as
+      # #context_free. Before libhegel 0.46 this call was
+      # hegel_generate_string_result_free.
+      def owned_string_free(ctx, result)
         # Removing this call only leaks native memory; Ruby has no way to
         # observe the leak.
-        @hegel_generate_string_result_free_fn.call(ctx, result) # mutineer:disable-line statement_removal
+        @hegel_owned_string_free_fn.call(ctx, result) # mutineer:disable-line statement_removal
         nil
       end
 
       # Returns drawn bytes as a String, read via +len+ the same way
       # #generate_string reads its own out-parameter: the header gives no
-      # NUL-termination guarantee for this buffer either, so the length is
-      # what makes the copy exact.
+      # NUL-termination guarantee for this buffer, so the length is what
+      # makes the copy exact.
       #
       # Unlike #generate_string, the result is never force-encoded.
       # hegel_generate_bytes_result_t is documented as a byte buffer, not
@@ -923,7 +923,7 @@ module Hegel
       # header documents hegel_generate_bytes_result_free as safe on an
       # already-freed (zeroed) struct too.
       def generate_bytes(ctx, tc, min_size, max_size)
-        out = RawResultStruct.new
+        out = StringStruct.new
         code = @hegel_generate_bytes_fn.call(ctx, tc, min_size, max_size, out)
         LibHegel.check!(self, ctx, code)
         out[:data].read_bytes(out[:len])
@@ -953,9 +953,8 @@ module Hegel
       # a NUL character in it reaches the engine instead of ending it.
       def string_generator_regex(ctx, pattern, fullmatch, alphabet = nil)
         out = FFI::MemoryPointer.new(:pointer)
-        bytes = pattern.encode(Encoding::UTF_8)
         code = @hegel_string_generator_regex_fn.call(
-          ctx, bytes_to_pointer(bytes), bytes.bytesize, fullmatch, alphabet, out
+          ctx, string_view(pattern.encode(Encoding::UTF_8)), fullmatch, alphabet, out
         )
         LibHegel.check!(self, ctx, code)
         out.read_pointer
@@ -1103,8 +1102,8 @@ module Hegel
       end
 
       # Copies +bytes+ into a freshly allocated buffer, for
-      # #generate_integer_big's min_value/max_value: a const uint8_t*
-      # argument libhegel reads from, the opposite direction of an
+      # #generate_integer_big's min_value/max_value and for #write_string:
+      # input bytes libhegel reads from, the opposite direction of an
       # out-parameter buffer (which libhegel writes into, and the caller
       # then reads).
       def bytes_to_pointer(bytes)
@@ -1113,21 +1112,50 @@ module Hegel
         ptr
       end
 
-      # Packs +names+ (an Array of Ruby Strings) into a const char *const *
-      # for #new_state_machine's rule_names/invariant_names arguments: one
-      # address per name, written into a single buffer via
-      # write_array_of_pointer.
+      # Writes +string+'s bytes into +struct+, a StringStruct, as a borrowed
+      # hegel_string_t input. The bytes go over with their length and no
+      # terminator, so an interior NUL reaches the engine. An empty string
+      # gets a zero-size buffer: the header accepts any pointer for a
+      # length of zero.
       #
-      # Returns [pointer, kept_alive]. FFI::MemoryPointer.from_string
-      # copies each name into a fresh native buffer that Ruby object owns
-      # -- unlike a pointer built straight off a Ruby String's own bytes,
-      # nothing here depends on the original +names+ Strings staying live
-      # -- so what must stay live until the native call reads them is the
-      # per-name FFI::MemoryPointer array itself; write_array_of_pointer
-      # only copies the addresses those objects report, not a reference to
-      # the objects, so the caller keeping +kept_alive+ as a live local for
-      # the length of the call is what keeps the buffers each one owns
-      # from being garbage-collected first.
+      # FFI::Struct keeps a reference to a pointer it stores in a field, so
+      # the copied buffer lives as long as +struct+ does. Measured on ffi
+      # 1.17.4: after a full GC, a WeakRef to a buffer held only by a struct
+      # field is still alive, and one to a buffer with no holder is not. A
+      # caller keeps the struct live for the native call by passing it as an
+      # argument.
+      def write_string(struct, string)
+        struct[:data] = bytes_to_pointer(string)
+        struct[:len] = string.bytesize
+        struct
+      end
+
+      # A hegel_string_t for an ordinary input argument, passed by value.
+      def string_view(string)
+        write_string(StringStruct.new, string)
+      end
+
+      # A pointer to a hegel_string_t for an optional input argument: nil
+      # for an absent value, which marshals to NULL, and a struct
+      # otherwise. The header separates the two cases: NULL means absent,
+      # and a pointer to an empty string means present and empty. "" for
+      # #settings_set_database depends on that difference.
+      def optional_string(string)
+        string && string_view(string)
+      end
+
+      # Packs +names+ (an Array of Ruby Strings) into a contiguous array of
+      # hegel_string_t for #new_state_machine's rule_names/invariant_names
+      # arguments: one StringStruct per name, each written in place over
+      # its own slot of a single buffer.
+      #
+      # Returns [pointer, kept_alive]. #write_string copies each name into
+      # a fresh native buffer -- nothing here depends on the original
+      # +names+ Strings staying live -- and each slot's struct holds a
+      # reference to that buffer. The array buffer holds only addresses,
+      # not references, so the caller keeping +kept_alive+ (the slot
+      # structs) as a live local for the length of the call is what keeps
+      # the buffers each one owns from being garbage-collected first.
       #
       # Empty +names+ maps to [nil, []] -- NULL and (by the caller passing
       # names.size, 0) the header's own contract for invariant_names' "no
@@ -1142,10 +1170,11 @@ module Hegel
         # hegel_new_state_machine reads zero names either way.
         return [nil, []] if names.empty? # mutineer:disable-line statement_removal
 
-        pointers = names.map { |name| FFI::MemoryPointer.from_string(name) }
-        array = FFI::MemoryPointer.new(:pointer, names.size)
-        array.write_array_of_pointer(pointers)
-        [array, pointers]
+        array = FFI::MemoryPointer.new(StringStruct, names.size)
+        slots = names.each_with_index.map do |name, i|
+          write_string(StringStruct.new(array + (i * StringStruct.size)), name)
+        end
+        [array, slots]
       end
 
       # Packs +flags+ (an Array of true/false) into a const bool * buffer,
@@ -1222,26 +1251,29 @@ module Hegel
         [struct[:hour], struct[:minute], struct[:second], struct[:nanosecond]]
       end
 
-      # Reads +out+'s const char* out-parameter into a Ruby String, or
-      # returns nil if libhegel left it NULL. Shared by #run_result_error,
-      # #failure_reproduction_blob, and #failure_caveat, the out-parameters
-      # the header documents as nullable, so both branches only need to be
-      # exercised once between the call sites rather than at each one.
+      # Reads +out+'s const hegel_string_t* out-parameter into a Ruby
+      # String, or returns nil if libhegel left it NULL. Shared by
+      # #run_result_error, #failure_reproduction_blob, and #failure_caveat,
+      # the out-parameters the header documents as nullable, so both
+      # branches only need to be exercised once between the call sites
+      # rather than at each one.
       def nullable_out_string(out)
         ptr = out.read_pointer
-        ptr.null? ? nil : utf8(ptr)
+        ptr.null? ? nil : read_string(StringStruct.new(ptr))
       end
 
-      # Reads the NUL-terminated string at +pointer+ and labels it UTF-8.
-      # The header calls every string libhegel hands back valid UTF-8, but
-      # FFI::Pointer#read_string labels what it reads ASCII-8BIT. A caller
-      # who matches an error message against a pattern of their own then
-      # gets Encoding::CompatibilityError rather than an answer, and the
-      # engine's own messages do carry characters outside ASCII: the
-      # FilterTooMuch health check writes an em dash into the sentence a
-      # caller is most likely to read.
-      def utf8(pointer)
-        pointer.read_string.force_encoding(Encoding::UTF_8)
+      # Copies the +len+ bytes at +struct+'s data pointer and labels them
+      # UTF-8. The header calls every string libhegel hands back valid
+      # UTF-8, but FFI::Pointer#read_bytes labels what it reads ASCII-8BIT.
+      # A caller who matches an error message against a pattern of their
+      # own then gets Encoding::CompatibilityError rather than an answer,
+      # and the engine's own messages do carry characters outside ASCII:
+      # the FilterTooMuch health check writes an em dash into the sentence
+      # a caller is most likely to read. The length decides the copy, not
+      # the trailing NUL the header also promises, since a string can hold
+      # an interior NUL.
+      def read_string(struct)
+        struct[:data].read_bytes(struct[:len]).force_encoding(Encoding::UTF_8)
       end
     end
   end
