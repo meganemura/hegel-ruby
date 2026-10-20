@@ -4,8 +4,8 @@
 
 - [Setup](#setup)
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
-- [Settings](#settings): `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `output:` `reproduce_failure:`
-- [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`
+- [Settings](#settings): `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
+- [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
 - [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
@@ -151,12 +151,19 @@ the reproduction line.
 | `phases` | `Array` of `Symbol` or `nil` | `nil` (libhegel's own default: every phase) | Which run phases to enable: `:explicit`, `:reuse`, `:generate`, `:target`, `:shrink` |
 | `suppress_health_check` | `Array` of `Symbol` or `nil` | `nil` (no suppression) | Which health checks to turn off: `:filter_too_much`, `:too_slow`, `:test_cases_too_large`, `:large_initial_test_case` |
 | `report_multiple_failures` | `true`/`false` | `false` | `true` summarizes every distinct failure into one `Hegel::Error` instead of re-raising a single failure's own exception |
+| `stop_on_first_failure` | `true`/`false` or `nil` | `nil` (libhegel's own default: `true`) | `false` keeps generating after a failure and spends the whole `test_cases` budget before reporting |
+| `print_blob` | `true`/`false` or `nil` | `nil` (libhegel's own default: `true`) | `false` leaves the `reproduce_failure:` line out of the failure report |
+| `show_statistics` | `true`/`false` or `nil` | `nil` (libhegel's own default: `false`) | `true` prints the statistics `event` and `event_value` recorded, on stderr, at the end of the run |
+| `nondeterminism_strictness` | `Symbol` or `nil` | `nil` (libhegel's own default: `:quiet`) | How a run reacts to a test that behaves differently on a replay: `:quiet`, `:warn` (print a notice), or `:error` (raise `Hegel::Error`) |
+| `backend` | `Symbol` or `nil` | `nil` (libhegel's own default: `:default`) | `:urandom` takes fresh entropy on every draw, for Antithesis; `:default` is the seeded generator |
 | `output` | `IO` | `$stderr` | Where a failure report is written |
 | `reproduce_failure` | `String` or `nil` | `nil` | Replays the blob as a run until a replay fails, instead of running a full property |
 
 `nil` means the same thing for `test_cases`, `seed`, `derandomize`,
-`verbosity`, `phases`, and `suppress_health_check`: do not call the matching
-libhegel setter, and let the engine's settings profile decide. That is
+`verbosity`, `phases`, `suppress_health_check`, `stop_on_first_failure`,
+`print_blob`, `show_statistics`, `nondeterminism_strictness`, and `backend`:
+do not call the matching libhegel setter, and let the engine's settings
+profile decide. That is
 libhegel's own default, unless a `hegel.toml` or a `HEGEL_*` environment
 variable (such as `HEGEL_TEST_CASES`) sets the value. On a CI server the
 engine picks its `ci` profile, which derandomizes the run, turns the example
@@ -253,6 +260,8 @@ written to it.
 | `reject` | `reject` | Discard this test case unconditionally |
 | `note` | `note(message = nil, &block)` | Record `message` (or the block's return value) for the failure report, interleaved with draws in call order |
 | `target` | `target(value, label: "")` | Feed `value` to libhegel's own hill-climbing search between generation rounds |
+| `event` | `event(label)` | Record `label` for the statistics that `show_statistics: true` prints |
+| `event_value` | `event_value(label, value)` | Record a numeric `value` under `label` for the same statistics |
 
 ```ruby
 result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
@@ -375,6 +384,24 @@ Hegel.test(test_cases: 5, verbosity: :quiet) { |tc| tc.target(1, label: "score")
 # raises Hegel::Error, "HEGEL_E_INVALID_ARG (-5): tc.target(2, label=\"score\")
 # would overwrite previous tc.target(_, label=\"score\"); each label can be
 # observed at most once per test case"
+```
+
+`event` and `event_value` record what a test reached, for the statistics
+that `show_statistics: true` prints on stderr at the end of the run. `event`
+counts the share of generated test cases that recorded a label. `event_value`
+summarizes the values recorded under a label, which can be recorded any
+number of times per test case. Neither steers generation, and neither
+appears in the failure report. A non-finite `value` raises `Hegel::Error`:
+
+```ruby
+Hegel.test(show_statistics: true) do |tc|
+  xs = tc.draw(arrays(integers))
+  tc.event("empty") if xs.empty?
+  tc.event_value("size", xs.size)
+end
+# Statistics (over 100 test cases):
+#   * empty: 6.0% of test cases
+#   * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
 ```
 
 ## Generator Reference

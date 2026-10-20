@@ -272,6 +272,11 @@ rules that one test case runs; 50 is the default.
 | `phases` | Which engine phases run, such as generation and shrinking |
 | `suppress_health_check` | Which health checks to turn off |
 | `report_multiple_failures` | Report each distinct failure; `false` by default |
+| `stop_on_first_failure` | `false` spends the whole `test_cases` budget before reporting |
+| `print_blob` | `false` leaves the reproduction line out of the failure report |
+| `show_statistics` | Print what `tc.event` and `tc.event_value` recorded, at the end of the run |
+| `nondeterminism_strictness` | `:quiet`, `:warn`, or `:error` when the test behaves differently on a replay |
+| `backend` | `:default`, or `:urandom` to take fresh entropy on every draw |
 | `database_key` | Turn the example database on for this property |
 | `database` | The directory of the example database |
 | `reproduce_failure` | Replay one failure from the blob in its report |
@@ -294,6 +299,24 @@ the key, and not the directory, turns it on.
 
 Inside a test, `tc.note` records a message that the failure report prints, and
 `tc.target` tells Hegel which inputs to search toward.
+
+`tc.event` and `tc.event_value` check that a test reaches the cases you care
+about. With `show_statistics: true`, the engine prints how often each event
+happened and a summary of each value. The numbers change from run to run:
+
+```ruby
+Hegel.test(show_statistics: true) do |tc|
+  xs = tc.draw(arrays(integers))
+  tc.event("empty") if xs.empty?
+  tc.event_value("size", xs.size)
+end
+```
+
+```
+Statistics (over 100 test cases):
+  * empty: 6.0% of test cases
+  * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
+```
 
 ## Agent skill
 

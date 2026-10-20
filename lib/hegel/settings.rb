@@ -41,11 +41,27 @@ module Hegel
       large_initial_test_case: LibHegel::HEGEL_HC_LARGE_INITIAL_TEST_CASE
     }.freeze
 
+    # Hegel.test's nondeterminism_strictness: values, mapped to hegel.h's
+    # hegel_nondeterminism_strictness_t.
+    NONDETERMINISM_STRICTNESS_CODES = {
+      quiet: LibHegel::HEGEL_NONDETERMINISM_QUIET,
+      warn: LibHegel::HEGEL_NONDETERMINISM_WARN,
+      error: LibHegel::HEGEL_NONDETERMINISM_ERROR
+    }.freeze
+
+    # Hegel.test's backend: values, mapped to hegel.h's hegel_backend_t.
+    BACKEND_CODES = {
+      default: LibHegel::HEGEL_BACKEND_DEFAULT,
+      urandom: LibHegel::HEGEL_BACKEND_URANDOM
+    }.freeze
+
     module_function
 
     # Applies every one of Hegel.test's settings keywords to +settings+ via
-    # +impl+. +test_cases+, +seed+, +derandomize+, +verbosity+, +phases+, and
-    # +suppress_health_check+ all skip their setter when left nil.
+    # +impl+. +test_cases+, +seed+, +derandomize+, +verbosity+, +phases+,
+    # +suppress_health_check+, +stop_on_first_failure+, +print_blob+,
+    # +show_statistics+, +nondeterminism_strictness+, and +backend+ all skip
+    # their setter when left nil.
     # +database+/+database_key+ follow #apply_database's own table, called
     # unconditionally since even the nil/nil case has a setter to call (see
     # its comment). +report_multiple_failures+ is called unconditionally too,
@@ -54,7 +70,8 @@ module Hegel
     # own comment for why that default departs from every other keyword's
     # nil-means-engine-default rule.
     def apply(impl, ctx, settings, test_cases:, seed:, derandomize:, verbosity:, database:, database_key:, phases:,
-      suppress_health_check:, report_multiple_failures:)
+      suppress_health_check:, report_multiple_failures:, stop_on_first_failure:, print_blob:,
+      show_statistics:, nondeterminism_strictness:, backend:)
       impl.settings_set_test_cases(ctx, settings, test_cases) unless test_cases.nil?
       impl.settings_set_seed(ctx, settings, seed, true) unless seed.nil?
       impl.settings_set_derandomize(ctx, settings, derandomize) unless derandomize.nil?
@@ -63,16 +80,30 @@ module Hegel
       apply_phases(impl, ctx, settings, phases) unless phases.nil?
       apply_suppress_health_check(impl, ctx, settings, suppress_health_check) unless suppress_health_check.nil?
       impl.settings_set_report_multiple_failures(ctx, settings, report_multiple_failures)
+      unless stop_on_first_failure.nil?
+        impl.settings_set_stop_on_first_failure(ctx, settings, stop_on_first_failure)
+      end
+      impl.settings_set_print_blob(ctx, settings, print_blob) unless print_blob.nil?
+      impl.settings_set_show_statistics(ctx, settings, show_statistics) unless show_statistics.nil?
+      unless nondeterminism_strictness.nil?
+        code = lookup(NONDETERMINISM_STRICTNESS_CODES, nondeterminism_strictness, "nondeterminism_strictness")
+        impl.settings_set_nondeterminism_strictness(ctx, settings, code)
+      end
+      impl.settings_set_backend(ctx, settings, lookup(BACKEND_CODES, backend, "backend")) unless backend.nil?
     end
 
     # Split from #apply so the VERBOSITY_CODES lookup (one of several
     # keywords that can fail) is not buried inside the top-level sequence.
     def apply_verbosity(impl, ctx, settings, verbosity)
-      code = VERBOSITY_CODES.fetch(verbosity) do
-        raise Hegel::Error,
-          "hegel: unknown verbosity #{verbosity.inspect}; expected one of #{VERBOSITY_CODES.keys.inspect}"
+      impl.settings_set_verbosity(ctx, settings, lookup(VERBOSITY_CODES, verbosity, "verbosity"))
+    end
+
+    # The code +codes+ maps +value+ to, or a Hegel::Error naming +keyword+
+    # and the accepted values.
+    def lookup(codes, value, keyword)
+      codes.fetch(value) do
+        raise Hegel::Error, "hegel: unknown #{keyword} #{value.inspect}; expected one of #{codes.keys.inspect}"
       end
-      impl.settings_set_verbosity(ctx, settings, code)
     end
 
     # docs/adr/0009-turn-the-example-database-on-with-a-key.md decides this
@@ -148,12 +179,7 @@ module Hegel
           "hegel: #{keyword} expects one or more of #{codes.keys.inspect}, got an empty Array"
       end
 
-      values.reduce(0) do |mask, value|
-        code = codes.fetch(value) do
-          raise Hegel::Error, "hegel: unknown #{keyword} #{value.inspect}; expected one of #{codes.keys.inspect}"
-        end
-        mask | code
-      end
+      values.reduce(0) { |mask, value| mask | lookup(codes, value, keyword) }
     end
   end
 end

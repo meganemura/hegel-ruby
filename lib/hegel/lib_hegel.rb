@@ -67,6 +67,17 @@ module Hegel
     HEGEL_VERBOSITY_VERBOSE = 2
     HEGEL_VERBOSITY_DEBUG = 3
 
+    # hegel_nondeterminism_strictness_t, named from hegel.h's enum of the
+    # same name. Passed to hegel_settings_set_nondeterminism_strictness.
+    HEGEL_NONDETERMINISM_QUIET = 0
+    HEGEL_NONDETERMINISM_WARN = 1
+    HEGEL_NONDETERMINISM_ERROR = 2
+
+    # hegel_backend_t, named from hegel.h's enum of the same name. Passed to
+    # hegel_settings_set_backend.
+    HEGEL_BACKEND_DEFAULT = 1
+    HEGEL_BACKEND_URANDOM = 2
+
     # hegel_phase_t, named from hegel.h's enum of the same name. A bitwise
     # OR of these is passed to hegel_settings_set_phases; the default is
     # HEGEL_PHASE_ALL.
@@ -124,8 +135,10 @@ module Hegel
       generate_ipv4 generate_ipv6 generate_uuid
       generate_date generate_time generate_datetime
       settings_set_phases settings_set_suppress_health_check settings_set_report_multiple_failures
-      settings_set_database_key
-      target
+      settings_set_database_key settings_set_stop_on_first_failure settings_set_print_blob
+      settings_get_print_blob settings_set_show_statistics settings_set_nondeterminism_strictness
+      settings_set_backend
+      target event event_value
       new_pool pool_add pool_generate pool_free
       new_state_machine state_machine_next_group state_machine_next_rule state_machine_rule_rejected
       state_machine_should_check_invariant state_machine_free

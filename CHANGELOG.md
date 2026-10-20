@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Settings
+
+`Hegel.test` takes five more keywords, with the names and meanings of
+hegel-rust's `Settings` methods. Each one left `nil` takes its value from
+the engine's settings profile, like the other keywords.
+
+- `stop_on_first_failure: false` keeps generating after a failure and
+  spends the whole `test_cases` budget before reporting.
+- `print_blob: false` leaves the `reproduce_failure:` line out of the
+  failure report. Left `nil`, a profile or `HEGEL_PRINT_BLOB` decides.
+- `show_statistics: true` makes the engine print, at the end of the run,
+  what `tc.event` and `tc.event_value` recorded.
+- `nondeterminism_strictness:` takes `:quiet`, `:warn`, or `:error`.
+  `:error` ends a run whose test behaves differently on a replay with
+  `Hegel::Error`.
+- `backend:` takes `:default` or `:urandom`.
+
+### Test cases
+
+`tc.event(label)` and `tc.event_value(label, value)` record what a test
+reached, for the statistics that `show_statistics: true` prints. They follow
+hegel-rust's `TestCase#event` and `TestCase#event_value`.
+
 ## [0.3.4] - 2026-10-20
 
 ### Engine: libhegel 0.47.2 (was 0.47.1)

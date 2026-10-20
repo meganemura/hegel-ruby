@@ -223,6 +223,24 @@ module Hegel
       @impl.target(@ctx, @handle, value, label)
     end
 
+    # hegel_event: records +label+ for the end-of-run statistics report,
+    # which shows the fraction of generation-phase test cases that recorded
+    # it. The engine prints that report only under +show_statistics: true+.
+    # The argument order follows hegel-rust's TestCase#event.
+    def event(label)
+      @impl.event(@ctx, @handle, label)
+    end
+
+    # hegel_event_value: records +value+ under +label+ for the same report,
+    # which summarizes the distribution of each label's values. Unlike
+    # #target, one label can be recorded any number of times per test case,
+    # and it does not steer generation. +value+ must be finite; the engine
+    # raises otherwise, the same as for #target. The argument order follows
+    # hegel-rust's TestCase#event_value.
+    def event_value(label, value)
+      @impl.event_value(@ctx, @handle, label, value)
+    end
+
     # hegel_start_span, labelled with a generator's label (see
     # Hegel::Generator#label). Every compound Hegel::Generator (map, filter,
     # arrays) opens one of these around its own draw; see #stop_span.
