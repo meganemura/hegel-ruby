@@ -3,6 +3,7 @@
 require_relative "hegel/version"
 require_relative "hegel/errors"
 require_relative "hegel/runner"
+require_relative "hegel/test_location"
 require_relative "hegel/generator"
 require_relative "hegel/generators"
 require_relative "hegel/syntax/methods"
@@ -79,7 +80,8 @@ module Hegel
       database: database, database_key: database_key, phases: phases, suppress_health_check: suppress_health_check,
       report_multiple_failures: report_multiple_failures, stop_on_first_failure: stop_on_first_failure,
       print_blob: print_blob, show_statistics: show_statistics, nondeterminism_strictness: nondeterminism_strictness,
-      backend: backend, output: output, reproduce_failure: reproduce_failure, &block)
+      backend: backend, output: output, reproduce_failure: reproduce_failure,
+      test_location: TestLocation.from_locations(caller_locations(1)), &block)
   end
 
   # The Hegel::LibHegel::Real instance #test uses by default, built once and

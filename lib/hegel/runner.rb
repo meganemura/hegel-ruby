@@ -117,6 +117,9 @@ module Hegel
     # with its class and backtrace intact), so a hegel.toml profile or a
     # HEGEL_* variable does not get to turn it off by accident.
     #
+    # +test_location+ is a Hegel::TestLocation. It is identity rather than a
+    # setting, so it goes to the engine here and not through Settings.apply.
+    #
     # +reproduce_failure+, when given, starts the run from that blob instead
     # (see LibHegel::Real#run_start_blob): the engine replays it rather than
     # exploring, and the same loop below drives the replay.
@@ -128,7 +131,7 @@ module Hegel
     # `ensure` by the code that opened it, innermost first: hegel_context_free
     # requires every other handle taken from the context to be freed first,
     # and Ruby's GC gives finalizers no ordering guarantee to rely on instead.
-    def run(impl:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
+    def run(impl:, test_location:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
       phases: nil, suppress_health_check: nil, report_multiple_failures: false, stop_on_first_failure: nil,
       print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil, backend: nil,
       output: $stderr, reproduce_failure: nil, &block)
@@ -141,6 +144,8 @@ module Hegel
             suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures,
             stop_on_first_failure: stop_on_first_failure, print_blob: print_blob, show_statistics: show_statistics,
             nondeterminism_strictness: nondeterminism_strictness, backend: backend)
+          impl.settings_set_test_location(ctx, settings, test_location.file, test_location.begin_line,
+            test_location.class_name, test_location.function)
           # Read back rather than taken from the keyword, so that a profile
           # or HEGEL_PRINT_BLOB decides when the keyword is nil.
           print_blob = impl.settings_get_print_blob(ctx, settings)
