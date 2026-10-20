@@ -889,6 +889,170 @@ class TestGenerators < Minitest::Test
     end
   end
 
+  # ---- date_strings, time_strings, datetime_strings ----
+
+  DATE_STRING = /\A\d{4}-\d{2}-\d{2}\z/
+  TIME_STRING = /\A\d{2}:\d{2}:\d{2}(\.\d{9})?\z/
+  DATETIME_STRING = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{9})?\z/
+
+  def parse_date_string(string)
+    string.split("-").map(&:to_i)
+  end
+
+  def parse_time_string(string)
+    clock, fraction = string.split(".")
+    hour, minute, second = clock.split(":").map(&:to_i)
+    [hour, minute, second, fraction.to_i]
+  end
+
+  def parse_datetime_string(string)
+    date, time = string.split("T")
+    parse_date_string(date) + parse_time_string(time)
+  end
+
+  def test_date_strings_draws_against_the_real_engine
+    assert_all_examples(date_strings) { |v| v.match?(DATE_STRING) && Date.valid_date?(*parse_date_string(v)) }
+  end
+
+  def test_time_strings_draws_against_the_real_engine
+    assert_all_examples(time_strings) { |v| v.match?(TIME_STRING) }
+  end
+
+  def test_datetime_strings_draws_against_the_real_engine
+    assert_all_examples(datetime_strings) { |v| v.match?(DATETIME_STRING) }
+  end
+
+  def test_time_strings_reach_nanosecond_precision
+    value = find_any(time_strings) { |v| v.include?(".") && !v.end_with?("000") }
+    assert_match(/\.\d{9}\z/, value)
+  end
+
+  def test_time_strings_reach_a_whole_second
+    assert_match(/\A\d{2}:\d{2}:\d{2}\z/, find_any(time_strings) { |v| !v.include?(".") })
+  end
+
+  def test_datetime_strings_shrink_to_the_millennium
+    assert_equal "2000-01-01T00:00:00", minimal(datetime_strings) { true }
+  end
+
+  def test_datetime_strings_are_naive
+    assert_all_examples(datetime_strings) { |v| !v.include?("+") && !v.include?("Z") }
+  end
+
+  def test_date_strings_shrink_to_the_first_year_after_2000
+    assert_equal 2001, parse_date_string(minimal(date_strings) { |v| parse_date_string(v)[0] > 2000 })[0]
+  end
+
+  def test_date_strings_shrink_to_the_last_year_before_2000
+    assert_equal 1999, parse_date_string(minimal(date_strings) { |v| parse_date_string(v)[0] < 2000 })[0]
+  end
+
+  def test_date_strings_reach_every_month
+    (1..12).each do |month|
+      find_any(date_strings) { |v| parse_date_string(v)[1] == month }
+    end
+  end
+
+  def test_time_strings_reach_midnight
+    find_any(time_strings) { |v| parse_time_string(v)[0, 3] == [0, 0, 0] }
+  end
+
+  def test_time_strings_shrink_to_the_first_hour_after_midnight
+    assert_equal 1, parse_time_string(minimal(time_strings) { |v| parse_time_string(v)[0] != 0 })[0]
+  end
+
+  def test_time_strings_reach_and_miss_the_minute
+    find_any(time_strings) { |v| parse_time_string(v)[2].zero? }
+    find_any(time_strings) { |v| !parse_time_string(v)[2].zero? }
+  end
+
+  def test_time_strings_shrink_to_midnight
+    assert_equal "00:00:00", minimal(time_strings) { true }
+  end
+
+  def test_time_strings_are_naive
+    assert_all_examples(time_strings) { |v| !v.include?("+") && !v.include?("Z") }
+  end
+
+  def test_datetime_strings_compose_inside_arrays
+    assert_equal ["2000-01-01T00:00:00"] * 2, minimal(arrays(datetime_strings, min_size: 2, max_size: 2)) { true }
+  end
+
+  class ArgumentRecordingFake < Hegel::LibHegel::Fake
+    attr_reader :calls
+
+    def initialize
+      super
+      @calls = []
+    end
+
+    def generate_date(ctx, tc, min_value, max_value)
+      @calls << [:date, min_value, max_value]
+      super
+    end
+
+    def generate_time(ctx, tc, min_value, max_value)
+      @calls << [:time, min_value, max_value]
+      super
+    end
+
+    def generate_datetime(ctx, tc, min_date, min_time, max_date, max_time)
+      @calls << [:datetime, min_date, min_time, max_date, max_time]
+      super
+    end
+  end
+
+  def draw_recording_arguments(generator, **values)
+    fake = ArgumentRecordingFake.new
+    values.each { |name, value| fake.public_send(:"#{name}=", value) }
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+    [generator.do_draw(tc), fake.calls]
+  end
+
+  def test_date_strings_pad_every_field_and_ask_for_years_1_through_9999
+    value, calls = draw_recording_arguments(date_strings, generate_date_value: [1, 2, 3])
+
+    assert_equal "0001-02-03", value
+    assert_equal [[:date, [1, 1, 1], [9999, 12, 31]]], calls
+  end
+
+  def test_date_strings_keep_a_four_digit_year
+    value, = draw_recording_arguments(date_strings, generate_date_value: [9999, 12, 31])
+
+    assert_equal "9999-12-31", value
+  end
+
+  def test_time_strings_omit_the_fraction_for_a_whole_second
+    value, calls = draw_recording_arguments(time_strings, generate_time_value: [1, 2, 3, 0])
+
+    assert_equal "01:02:03", value
+    assert_equal [[:time, [0, 0, 0, 0], [23, 59, 59, 999_999_999]]], calls
+  end
+
+  def test_time_strings_print_nine_digits_for_a_nonzero_nanosecond
+    assert_equal "01:02:03.000000007", draw_recording_arguments(time_strings, generate_time_value: [1, 2, 3, 7]).first
+    assert_equal "23:59:59.999999999",
+      draw_recording_arguments(time_strings, generate_time_value: [23, 59, 59, 999_999_999]).first
+    assert_equal "01:02:03.123456000", draw_recording_arguments(time_strings, generate_time_value: [1, 2, 3, 123_456_000]).first
+  end
+
+  def test_datetime_strings_join_date_and_time_with_t_over_the_full_range
+    value, calls = draw_recording_arguments(
+      datetime_strings, generate_datetime_value: [[24, 3, 17], [13, 45, 6, 123_456_789]]
+    )
+
+    assert_equal "0024-03-17T13:45:06.123456789", value
+    assert_equal [[:datetime, [1, 1, 1], [0, 0, 0, 0], [9999, 12, 31], [23, 59, 59, 999_999_999]]], calls
+    assert_equal "0001-01-01T00:00:00",
+      draw_recording_arguments(datetime_strings, generate_datetime_value: [[1, 1, 1], [0, 0, 0, 0]]).first
+  end
+
+  def test_date_time_strings_open_no_span
+    [date_strings, time_strings, datetime_strings].each do |generator|
+      assert_empty draw_with_span_recording(generator)
+    end
+  end
+
   # ---- composite ----
 
   def test_composite_draws_against_the_real_engine

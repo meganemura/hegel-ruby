@@ -152,6 +152,23 @@ module Hegel
         Generators::DatetimesGenerator.new(min_value: min_value, max_value: max_value)
       end
 
+      # A "YYYY-MM-DD" String, years 1 through 9999. Takes no options.
+      def date_strings
+        Generators::DateStringsGenerator.new
+      end
+
+      # An "HH:MM:SS" String, with ".fffffffff" appended when the
+      # nanosecond is not zero. Takes no options.
+      def time_strings
+        Generators::TimeStringsGenerator.new
+      end
+
+      # A "YYYY-MM-DDTHH:MM:SS[.fffffffff]" String, years 1 through 9999.
+      # Takes no options.
+      def datetime_strings
+        Generators::DatetimeStringsGenerator.new
+      end
+
       # A value built from imperative code: +block+ receives a draw
       # surface and may call #draw on it any number of times to assemble
       # one value (see Generators::CompositeGenerator).
