@@ -44,9 +44,9 @@ module Hegel
       end
 
       # An Array of values from +elements+, with [min_size, max_size]
-      # entries.
-      def arrays(elements, min_size: 0, max_size: nil)
-        Generators::ArrayGenerator.new(elements, min_size: min_size, max_size: max_size)
+      # entries. With unique: true, no two entries are equal.
+      def arrays(elements, min_size: 0, max_size: nil, unique: false)
+        Generators::ArrayGenerator.new(elements, min_size: min_size, max_size: max_size, unique: unique)
       end
 
       # Always +value+, drawing nothing.

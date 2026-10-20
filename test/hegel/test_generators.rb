@@ -61,6 +61,22 @@ class SequenceRecordingFake < SpanRecordingFake
   end
 end
 
+# The Fake accepts #collection_reject and forgets it; the reason a
+# generator gives is only visible through a subclass that remembers it.
+class RejectRecordingFake < Hegel::LibHegel::Fake
+  attr_reader :rejections
+
+  def initialize
+    super
+    @rejections = []
+  end
+
+  def collection_reject(ctx, tc, collection, why = nil)
+    @rejections << why
+    super
+  end
+end
+
 class TestGenerators < Minitest::Test
   include HegelDirectoryGuard
   include Hegel::Syntax::Methods
@@ -362,6 +378,80 @@ class TestGenerators < Minitest::Test
   # names an exact length, not an empty range.
   def test_arrays_max_size_equals_min_size_returns_that_length
     assert_all_examples(arrays(integers, min_size: 3, max_size: 3)) { |v| v.length == 3 }
+  end
+
+  def test_arrays_unique_has_no_duplicates
+    assert_all_examples(arrays(integers(min_value: 0, max_value: 20), unique: true)) { |v| v.uniq == v }
+  end
+
+  def test_arrays_unique_false_can_hold_duplicates
+    assert find_any(arrays(integers(min_value: 0, max_value: 1), min_size: 2)) { |v| v.uniq != v }
+  end
+
+  # A generator that drew min_size elements and dropped the repeats would
+  # return fewer, and one that appended a repeat would break the
+  # uniqueness; three slots over a domain of three values leave one
+  # arrangement each way.
+  def test_arrays_unique_reaches_min_size_over_a_domain_of_exactly_that_size
+    assert_all_examples(arrays(sampled_from([0, 1, 2]), min_size: 3, max_size: 3, unique: true)) { |v| v.sort == [0, 1, 2] }
+  end
+
+  def test_arrays_unique_with_min_size_holds_both_bounds
+    assert_all_examples(arrays(integers, min_size: 5, max_size: 8, unique: true)) do |v|
+      v.length.between?(5, 8) && v.uniq == v
+    end
+  end
+
+  def test_arrays_unique_shrinks_to_the_smallest_distinct_values
+    assert_equal [0, 1, -1], minimal(arrays(integers, unique: true)) { |v| v.length >= 3 }
+  end
+
+  def test_arrays_unique_shrinks_over_sampled_from_to_the_first_values
+    assert_equal [0, 1, 2], minimal(arrays(sampled_from((0..9).to_a), min_size: 3, unique: true)) { |_| true }
+  end
+
+  def test_arrays_unique_shrinks_using_negative_values
+    result = minimal(arrays(integers(min_value: -10, max_value: 10), max_size: 5, unique: true), test_cases: 1000) do |v|
+      v.length >= 5
+    end
+
+    assert_equal [-2, -1, 0, 1, 2], result.sort
+  end
+
+  def test_arrays_unique_rejects_a_repeated_element_with_the_duplicate_element_reason
+    fake = RejectRecordingFake.new
+    fake.collection_more_count = 3
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+    assert_equal [0], arrays(integers, unique: true).do_draw(tc)
+    assert_equal ["duplicate element", "duplicate element"], fake.rejections
+  end
+
+  def test_arrays_without_unique_never_rejects_a_repeated_element
+    fake = RejectRecordingFake.new
+    fake.collection_more_count = 3
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+    assert_equal [0, 0, 0], arrays(integers).do_draw(tc)
+    assert_empty fake.rejections
+  end
+
+  def test_arrays_unique_keeps_the_array_span_protocol
+    generator = arrays(integers, unique: true)
+    assert_equal(
+      [[:start, generator.label], [:start, integers.label], [:stop, false], [:stop, false]],
+      draw_with_span_recording(generator)
+    )
+  end
+
+  def test_arrays_unique_of_a_single_value_cannot_reach_a_larger_min_size_and_does_not_hang
+    error = Timeout.timeout(5) do
+      assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) { |tc| tc.draw(arrays(just(1), min_size: 5, unique: true)) }
+      end
+    end
+
+    assert_includes error.message, "FilterTooMuch"
   end
 
   # ---- just ----

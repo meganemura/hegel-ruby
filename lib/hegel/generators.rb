@@ -152,12 +152,16 @@ module Hegel
     end
 
     # Hegel::Syntax::Methods#arrays. An Array of values from +elements+,
-    # with [min_size, max_size] entries, unbounded above by default.
+    # with [min_size, max_size] entries, unbounded above by default. With
+    # +unique+, an element equal to one already drawn is rejected through
+    # #collection_reject, as SetGenerator does, so min_size still counts
+    # distinct elements.
     class ArrayGenerator < Generator
-      def initialize(elements, min_size:, max_size:)
+      def initialize(elements, min_size:, max_size:, unique: false)
         @elements = elements
         @min_size = min_size
         @max_size = max_size
+        @unique = unique
         @label = combined_label(@elements)
       end
 
@@ -189,7 +193,14 @@ module Hegel
         collection = tc.new_collection(@min_size, max_size)
         begin
           result = []
-          result << draw_element(tc) while tc.collection_more(collection)
+          while tc.collection_more(collection)
+            value = draw_element(tc)
+            if @unique && result.include?(value)
+              tc.collection_reject(collection, why: "duplicate element")
+            else
+              result << value
+            end
+          end
           result
         ensure
           tc.collection_free(collection)
