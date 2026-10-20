@@ -527,7 +527,7 @@ Three more concern `allow_subnormal`, each prefixed `"floats: InvalidArgument:
   subnormals inside: `"allow_subnormal=false leaves no 64-bit floating-point
   values in [5.0e-324, 1.0e-310]"`
 
-### `text(min_size: 0, max_size: nil, codec: nil, min_codepoint: nil, max_codepoint: nil)`
+### `text(min_size: 0, max_size: nil, alphabet: nil, codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)`
 
 A Unicode string of `[min_size, max_size]` characters, unbounded above by
 default.
@@ -549,28 +549,73 @@ Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
 end
 ```
 
-`max_size < min_size` raises `Hegel::Error` at draw time: `"text: max_size <
-min_size"`. `alphabet:`, `categories:`, `include_characters:`, and
-`exclude_characters:` (character-filtering options other Hegel bindings
-expose) are not available in this binding; `codec:`, `min_codepoint:`, and
-`max_codepoint:` are the alphabet controls it exposes today.
+The alphabet options select which characters a string can hold:
 
-Other generators cover most character-set jobs. These results were measured
-with libhegel 0.47.1:
+```ruby
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  s = tc.draw(text(alphabet: "ßaİ", max_size: 4))
+  raise "left the alphabet" unless s.match?(/\A[ßaİ]*\z/)
+end
+
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  s = tc.draw(text(categories: ["Lu"], min_size: 1, max_size: 5))
+  raise "not uppercase" unless s.match?(/\A\p{Lu}+\z/)
+end
+
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  s = tc.draw(text(exclude_characters: ",\t\n", max_size: 6))
+  raise "drew an excluded character" if s.match?(/[,\t\n]/)
+end
+```
+
+- `alphabet:` is a `String` of the permitted characters, or a `characters`
+  generator whose options define them. It cannot be combined with any of the
+  options below.
+- `codec:` is `"ascii"`, `"latin-1"` (or `"iso-8859-1"`), or `"utf-8"`. It
+  sets the starting range, which `min_codepoint:` and `max_codepoint:`
+  narrow.
+- `categories:` keeps the union of the named Unicode general categories
+  (`"Lu"`, `"Nd"`, and so on); `[]` is an empty alphabet. `exclude_categories:`
+  removes categories. When both are given, `categories:` wins and
+  `exclude_categories:` is ignored, as in hegel-rust.
+- `include_characters:` adds characters to the alphabet whatever the other
+  options say; `exclude_characters:` removes them. A character in both raises
+  `Hegel::Error`.
+
+Strings never hold surrogates, and `categories:` rejects `"Cs"` and `"C"`.
+The engine's Unicode tables can be newer than Ruby's, so a check with
+`\p{...}` in a test can disagree with the engine on a recently assigned
+codepoint.
+
+These cases raise `Hegel::Error` at draw time:
+
+- `max_size < min_size`: `"text: max_size < min_size"`.
+- An `alphabet:` beside another character option: `"text: Cannot combine
+  .alphabet() with character methods."`.
+- An `alphabet:` that is neither a `String` nor a `characters` generator:
+  `"text: alphabet must be a String or a characters generator, not a
+  Integer"`.
+- An unknown codec: `"text: invalid codec: utf-16"`.
+- A surrogate category in `categories:`: `"text: Category \"Cs\" includes
+  surrogate codepoints (Cs), which a valid UTF-8 String cannot hold."`.
+- An unknown category, an empty range (`min_codepoint:` above
+  `max_codepoint:`, or every character excluded), and an overlap between
+  `include_characters:` and `exclude_characters:`: the engine writes the
+  message, as `"HEGEL_E_INVALID_ARG (-5): \"foo\" is not a valid Unicode
+  category"`.
+
+A regular expression still suits a pattern that is more than an alphabet.
+These results were measured with libhegel 0.47.1:
 
 | Job | Generator | Measured output |
 |---|---|---|
 | Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"0"`, `"D"`, `"Yもで"`; 30 draws all matched the pattern |
 | Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"RÈbÁ¡"`; 30 draws contained no comma, tab, or newline |
-| A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character of 100 draws was in U+0300 through U+036F |
-| An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | 30 draws, each built only from `ß`, `a`, and `İ` |
 
-The `categories:` option remains an open request. A category such as any `Lu`
-or any `Mn` spans codepoint ranges that a codepoint bound cannot select. A
-regular expression character class requires those ranges to be written out.
-The `.filter` method is not a substitute. In a measured run of 50 test cases,
-filtering `text` to `\p{Han}` produced no valid inputs. The engine filtered 50
-inputs and reported this health check:
+`.filter` is not a substitute for an alphabet option. In a measured run of 50
+test cases, filtering `text` to `\p{Han}` produced no valid inputs. A script
+such as Han is not a general category, so `categories:` cannot select it
+either. The engine filtered 50 inputs and reported this health check:
 
 ```
 FailedHealthCheck: FilterTooMuch — it looks like this test is filtering out
@@ -810,9 +855,10 @@ seen.to_a # => [[5, false], [3, false]]
 max_size < min_size"`. A negative `min_size` also raises at draw time:
 `"hashes: min_size must not be negative"`.
 
-### `characters(codec: nil, min_codepoint: nil, max_codepoint: nil)`
+### `characters(codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)`
 
 A `String` of exactly one character, sharing `text`'s own alphabet options.
+Pass it as `text(alphabet:)` or `from_regex(alphabet:)` to reuse one alphabet.
 
 ```ruby
 result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
@@ -827,6 +873,9 @@ Hegel.test(test_cases: 5, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
 end
 seen # => ["A", "Z", "E", "T", "G"]
 ```
+
+The options and their draw-time errors are the ones listed under `text`,
+with `characters:` in place of `text:` in each message.
 
 ### `binary(min_size: 0, max_size: nil)`
 
@@ -850,11 +899,12 @@ seen # => ["\x00\x00", "\xCA\x95", "\xD5N"]
 `max_size < min_size` raises `Hegel::Error` at draw time: `"binary:
 max_size < min_size"`.
 
-### `from_regex(pattern, fullmatch: false)`
+### `from_regex(pattern, fullmatch: false, alphabet: nil)`
 
 A `String` matching `pattern` (Python `re` syntax, not Ruby's `Regexp`
 syntax). `fullmatch` requires the whole string to match, not just contain
-a match.
+a match. `alphabet` is a `characters` generator that limits every character of
+the string, padding around a partial match included.
 
 ```ruby
 result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
@@ -876,6 +926,18 @@ translated): `from_regex(/[a-z]{3}/)` raises `Hegel::Error` at draw time,
 `"from_regex: pattern must be a String in Python re syntax, not a
 Regexp"`. Pass `my_regexp.source` explicitly for a pattern confirmed to
 need no flags and to use only syntax the two grammars share.
+
+```ruby
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  v = tc.draw(from_regex("[a-z]+", fullmatch: true, alphabet: characters(codec: "ascii")))
+  raise "no match" unless v.match?(/\A[a-z]+\z/)
+end
+```
+
+An `alphabet` that is not a `characters` generator raises `Hegel::Error` at
+draw time: `"from_regex: alphabet must be a characters generator, not a
+String"`. A pattern that cannot match any string over the alphabet raises
+with the engine's message, `"... matches no string over the alphabet ..."`.
 
 A pattern that no string matches, such as `"(?!)"`, also raises
 `Hegel::Error` at draw time. The engine writes the message, and it names

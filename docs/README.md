@@ -33,6 +33,7 @@ An index of the design records for `hegel-ruby`.
 - [0024: Release when a merge changes the gem version](adr/0024-release-when-a-merge-changes-the-gem-version.md)
 - [0025: Copy each string input into a hegel_string_t](adr/0025-copy-each-string-input-into-a-hegel-string-t.md)
 - [0026: Select the engine release repository by version](adr/0026-select-the-engine-release-repository-by-version.md)
+- [0031: Take the alphabet options from hegel-rust](adr/0031-take-the-alphabet-options-from-hegel-rust.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.
