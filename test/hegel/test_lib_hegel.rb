@@ -1782,6 +1782,53 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # A consuming hegel_pool_generate removes the id until hegel_pool_restore
+  # puts it back, and the engine refuses to restore an id that is not
+  # consumed. The database is disabled ("") so the run leaves nothing on disk.
+  def test_real_pool_restore_makes_a_consumed_id_drawable_again_and_refuses_one_that_is_not_consumed
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      pool = real.new_pool(ctx, tc)
+      id = real.pool_add(ctx, tc, pool)
+
+      assert_equal id, real.pool_generate(ctx, tc, pool, true)
+      assert_raises(Hegel::AssumeFailed) { real.pool_generate(ctx, tc, pool, true) }
+
+      assert_nil real.pool_restore(ctx, tc, pool, id)
+      assert_equal id, real.pool_generate(ctx, tc, pool, true)
+
+      error = assert_raises(Hegel::Error) { real.pool_restore(ctx, tc, pool, id + 1000) }
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+
+      real.pool_free(ctx, pool)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
   # hegel_pool_generate on a pool with no variables: the header documents
   # HEGEL_E_ASSUME, and LibHegel.check! already translates that to
   # Hegel::AssumeFailed with no extra code in #pool_generate -- this pins
@@ -2121,6 +2168,18 @@ class TestLibHegel < Minitest::Test
     assert_equal 7, fake.pool_add(ctx, Object.new, pool)
     assert_equal 7, fake.pool_generate(ctx, Object.new, pool, false)
     assert_nil fake.pool_free(ctx, pool)
+  end
+
+  def test_fake_pool_restore_records_each_id_in_call_order_and_translates_a_configured_error_code
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    assert_nil fake.pool_restore(ctx, Object.new, Object.new, 4)
+    assert_nil fake.pool_restore(ctx, Object.new, Object.new, 2)
+    assert_equal [4, 2], fake.restored_pool_ids
+
+    fake.pool_restore_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.pool_restore(ctx, Object.new, Object.new, 1) }
   end
 
   def test_fake_new_pool_pool_add_and_pool_generate_translate_configured_error_codes

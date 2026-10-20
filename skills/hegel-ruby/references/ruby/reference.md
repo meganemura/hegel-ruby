@@ -1526,7 +1526,9 @@ pool = Hegel::Stateful::Pool.new(tc)
 - `#values_reusable` is a `Hegel::Generator` over the pool's values that
   leaves the chosen value in place, so it can be drawn again.
 - `#values_consumed` is a `Hegel::Generator` over the pool's values that
-  removes the chosen value, so it is never drawn again.
+  removes the chosen value, so it is never drawn again. A `.filter` on it
+  consumes only the value the predicate accepts: the values it rejected go
+  back into the pool.
 - `#size` and `#empty?` read the pool's own count directly.
 
 ```ruby
@@ -1580,7 +1582,8 @@ end
 ```
 
 `.filter` retries its source generator up to 3 times per draw, then
-discards the test case. A predicate that (almost) never holds does not loop
+discards the test case. A filter over a filter spends those 3 attempts
+between the two predicates, not 3 per filter. A predicate that (almost) never holds does not loop
 forever: libhegel's own health check aborts a run that discards too many
 test cases in a row, surfacing as `Hegel::Error`:
 

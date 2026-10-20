@@ -142,7 +142,7 @@ module Hegel
       settings_get_print_blob settings_set_show_statistics settings_set_nondeterminism_strictness
       settings_set_backend settings_set_test_location
       target event event_value
-      new_pool pool_add pool_generate pool_free
+      new_pool pool_add pool_generate pool_restore pool_free
       new_state_machine state_machine_next_group state_machine_next_rule state_machine_rule_rejected
       state_machine_should_check_invariant state_machine_free
       grammar_builder_new grammar_builder_file grammar_builder_provide grammar_builder_free

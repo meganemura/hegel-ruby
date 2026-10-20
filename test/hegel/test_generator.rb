@@ -66,7 +66,7 @@ class TestGenerator < Minitest::Test
   end
 
   # A generator whose #do_draw always raises, so a test can force
-  # Filtered#do_draw's ensure block to run with the predicate never called
+  # Generator#do_draw_filtered's ensure block to run with the predicate never called
   # -- the one path where the pre-loop "accepted = false" matters, since
   # nothing later in the same iteration assigns it.
   class RaisingGenerator < Hegel::Generator
@@ -76,14 +76,13 @@ class TestGenerator < Minitest::Test
   end
 
   # Every attempt gets its own span, each closed with the outcome the
-  # predicate reached for that attempt -- Hegel::Generator::Filtered's own
-  # comment on retrying "each attempt in its own span". A predicate that
+  # predicate reached for that attempt. A predicate that
   # never holds runs MAX_ATTEMPTS spans, every one discarded. Against this
   # Fake (no health check), the discarded case just ends the run normally,
   # so only the recorded spans matter here.
   def test_filter_opens_and_discards_one_span_per_rejected_attempt
     generator = integers.filter { |_| false }
-    fake = span_recording_fake(generator.label => :filter)
+    fake = span_recording_fake(Hegel::Generator::FILTER_ATTEMPT_LABEL => :filter)
     fake.test_case_count = 1
 
     Hegel.test(impl: fake) { |tc| tc.draw(generator) }
@@ -101,7 +100,7 @@ class TestGenerator < Minitest::Test
   # test_runner.rb) so the raised exception reaches the caller.
   def test_filter_discards_the_span_when_the_source_draw_raises
     generator = RaisingGenerator.new.filter { |_| true }
-    fake = span_recording_fake(generator.label => :filter)
+    fake = span_recording_fake(Hegel::Generator::FILTER_ATTEMPT_LABEL => :filter)
     fake.test_case_count = 1
     fake.run_result_status_value = Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED
     fake.failure_count = 1
@@ -112,6 +111,38 @@ class TestGenerator < Minitest::Test
     end
 
     assert_equal [[:filter, :start], [:filter, :stop, true]], fake.spans.select { |kind,| kind == :filter }
+  end
+
+  # Draws +values+ in order, so a test sees which value each attempt gets.
+  class ScriptedGenerator < Hegel::Generator
+    def initialize(values)
+      @values = values.dup
+    end
+
+    def do_draw(_tc)
+      @values.shift
+    end
+  end
+
+  # A filter over a filter draws once through the source's attempts, with
+  # both predicates in one: three attempts between them, the inner predicate
+  # first, and the outer one only for a value the inner one accepted.
+  def test_nested_filters_share_one_set_of_attempts_and_apply_the_inner_predicate_first
+    seen = []
+    generator = ScriptedGenerator.new([1, 2, 3, 4])
+      .filter { |value| (seen << [:inner, value]) && value.odd? }
+      .filter { |value| (seen << [:outer, value]) && false }
+    fake = span_recording_fake(Hegel::Generator::FILTER_ATTEMPT_LABEL => :filter)
+    fake.test_case_count = 1
+
+    Hegel.test(impl: fake) do |tc|
+      tc.draw(generator)
+    rescue Hegel::AssumeFailed
+      nil
+    end
+
+    assert_equal [[:inner, 1], [:outer, 1], [:inner, 2], [:inner, 3], [:outer, 3]], seen
+    assert_equal 3, fake.spans.count { |kind, step| kind == :filter && step == :start }
   end
 
   # Mapped#do_draw wraps its whole draw in one span with its own label.

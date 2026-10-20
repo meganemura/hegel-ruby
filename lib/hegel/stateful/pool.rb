@@ -103,6 +103,58 @@ module Hegel
           @values.delete(variable_id)
           value
         end
+
+        # Consumes up to Filtered::MAX_ATTEMPTS ids and keeps only the one
+        # whose value +predicate+ accepts. hegel_pool_generate removes an id
+        # for good unless hegel_pool_restore puts it back, so a filter that
+        # drew through #do_draw would lose every value it rejected. Rejected
+        # ids stay consumed while the attempts run, so no attempt draws one
+        # again, and go back together once they are over. hegel-rust's
+        # ValuesConsumed (frontends/rust/src/stateful.rs) does the same.
+        def do_draw_filtered(tc, predicate)
+          attempted = []
+          accepted = nil
+          restore = true
+          begin
+            Filtered::MAX_ATTEMPTS.times do
+              # Once every value left was rejected, the engine has nothing
+              # more to draw.
+              break if @values.size == attempted.size
+
+              accepted = filtered_attempt(tc, predicate, attempted)
+              break if accepted
+            end
+          rescue *Hegel::FATAL_EXCEPTIONS
+            # The process is ending, and answering a NoMemoryError with
+            # native calls is the wrong move (see Hegel::Stateful.apply_rule).
+            restore = false
+            raise
+          ensure
+            (attempted - [accepted]).each { |variable_id| tc.pool_restore(@pool, variable_id) } if restore
+          end
+          raise Hegel::AssumeFailed unless accepted
+
+          @values.delete(accepted)
+        end
+
+        private
+
+        # One attempt, in a span of its own that closes as discarded unless
+        # the predicate accepts. Records the consumed id in +attempted+ before
+        # the predicate runs, so a predicate that raises still has its id put
+        # back. Returns the id when accepted, nil otherwise. +accepted+ stays
+        # nil, which discards the span, when a draw or the predicate raises.
+        def filtered_attempt(tc, predicate, attempted)
+          tc.start_span(Generator::FILTER_ATTEMPT_LABEL)
+          begin
+            variable_id = tc.pool_generate(@pool, true)
+            attempted << variable_id
+            accepted = predicate.call(@values.fetch(variable_id))
+            variable_id if accepted
+          ensure
+            tc.stop_span(discard: !accepted)
+          end
+        end
       end
     end
   end

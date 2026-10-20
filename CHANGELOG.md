@@ -115,6 +115,20 @@ ends.
   `Hegel::StateMachine::Rule` with `block` and `weight`, where it mapped to the
   block alone.
 
+### Fixed
+
+- A filter on `Pool#values_consumed` no longer loses the values it rejects. They
+  go back into the pool through `hegel_pool_restore` once the draw is over, and
+  only the accepted value is consumed, as in hegel-rust.
+
+### Changed
+
+- A filter over a filter now spends 3 attempts between the two predicates, as
+  hegel-rust does, where each level used to spend 3 of its own.
+- `Hegel::Generator#do_draw_filtered(tc, predicate)` is the draw behind
+  `#filter`. A generator whose draws have effects that a rejected value must
+  not keep overrides it.
+
 ## [0.3.4] - 2026-10-20
 
 ### Engine: libhegel 0.47.2 (was 0.47.1)

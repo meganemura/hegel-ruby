@@ -54,7 +54,7 @@ module Hegel
         :settings_set_phases_code, :settings_set_suppress_health_check_code,
         :settings_set_report_multiple_failures_code, :settings_set_database_key_code, :settings_set_test_location_code,
         :target_code,
-        :new_pool_code, :pool_add_code, :pool_generate_code,
+        :new_pool_code, :pool_add_code, :pool_generate_code, :pool_restore_code,
         :new_state_machine_code, :state_machine_next_group_code, :state_machine_next_rule_code,
         :state_machine_rule_rejected_code, :state_machine_should_check_invariant_code,
         :grammar_builder_new_code, :grammar_builder_file_code, :grammar_builder_provide_code, :grammar_new_code,
@@ -136,7 +136,7 @@ module Hegel
       attr_writer :run_start_returns_nil
 
       attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
-        :freed_pools, :state_machine_rule_weights
+        :freed_pools, :state_machine_rule_weights, :restored_pool_ids
 
       # The arguments of each #string_generator_text call (a Hash of its
       # keywords) and each #string_generator_regex call (a Hash of pattern,
@@ -177,6 +177,7 @@ module Hegel
         @string_generator_regex_calls = []
         @freed_pools = []
         @state_machine_rule_weights = []
+        @restored_pool_ids = []
 
         @settings_new_code = HEGEL_OK
         @settings_new_for_profile_code = HEGEL_OK
@@ -293,6 +294,7 @@ module Hegel
         @pool_add_value = 0
         @pool_generate_code = HEGEL_OK
         @pool_generate_value = 0
+        @pool_restore_code = HEGEL_OK
         @new_state_machine_code = HEGEL_OK
         # The machine ends before its first round unless a test says
         # otherwise, so a test that opens one never loops by accident.
@@ -762,6 +764,12 @@ module Hegel
       def pool_generate(ctx, _tc, _pool, _consume)
         LibHegel.check!(self, ctx, @pool_generate_code)
         @pool_generate_value
+      end
+
+      def pool_restore(ctx, _tc, _pool, variable_id)
+        LibHegel.check!(self, ctx, @pool_restore_code)
+        @restored_pool_ids << variable_id
+        nil
       end
 
       # Records +pool+ (readable via #freed_pools), so a test can confirm

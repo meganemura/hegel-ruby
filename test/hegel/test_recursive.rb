@@ -314,13 +314,12 @@ class TestRecursive < Minitest::Test
     fake = RecursionEventFake.new
     fake.recursion_branch_values = [true]
     fake.recursion_leaf_codes = [RETRY]
-    branches = []
-    generator = recursive(integers) { |subtrees| subtrees.filter { true }.tap { |b| branches << b } }
+    generator = recursive(integers) { |subtrees| subtrees.filter { true } }
 
     generator.do_draw(fake_test_case(fake))
     assert_equal [
       [:start, generator.label], :new_recursion, [:branch, 0],
-      [:start, branches.first.label], [:start, generator.label], [:branch, 1], :leaf, :retry,
+      [:start, Hegel::Generator::FILTER_ATTEMPT_LABEL], [:start, generator.label], [:branch, 1], :leaf, :retry,
       [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
     ], fake.calls
   end
@@ -574,6 +573,7 @@ class TestRecursive < Minitest::Test
       new_pool: -> { tc.new_pool },
       pool_add: -> { tc.pool_add(Object.new) },
       pool_generate: -> { tc.pool_generate(Object.new, false) },
+      pool_restore: -> { tc.pool_restore(Object.new, 1) },
       new_state_machine: -> { tc.new_state_machine(["a"], [1.0], [], [], 1) },
       state_machine_next_group: -> { tc.state_machine_next_group(Object.new) },
       state_machine_next_rule: -> { tc.state_machine_next_rule(Object.new) },
