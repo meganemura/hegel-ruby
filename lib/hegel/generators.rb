@@ -75,21 +75,26 @@ module Hegel
     #
     # The two checks below come with those defaults: hegel-rust and
     # hegel-go each raise on the same two combinations, and the messages
-    # here carry the substring theirs do. smallest_nonzero_magnitude and
-    # allow_subnormal, which hegel-rust also exposes, stay unexposed; a
-    # keyword can be added later without breaking a caller.
+    # here carry the substring theirs do.
+    #
+    # allow_subnormal is three-valued too. nil allows subnormals whenever
+    # the bounds admit one, as hegel-rust's does, and the keyword maps to
+    # hegel_generate_float's smallest_nonzero_magnitude: the smallest
+    # subnormal when allowed, the smallest normal otherwise.
     class FloatGenerator < Generator
       # hegel_generate_float's width; Ruby has one Float type, the 64-bit
       # IEEE 754 double, so this is never anything else.
       WIDTH = 64
 
-      def initialize(min_value:, max_value:, allow_nan:, allow_infinity:, exclude_min:, exclude_max:)
+      def initialize(min_value:, max_value:, allow_nan:, allow_infinity:, exclude_min:, exclude_max:,
+        allow_subnormal:)
         @min_value = min_value
         @max_value = max_value
         @allow_nan = allow_nan
         @allow_infinity = allow_infinity
         @exclude_min = exclude_min
         @exclude_max = exclude_max
+        @allow_subnormal = allow_subnormal
       end
 
       def do_draw(tc)
@@ -113,8 +118,43 @@ module Hegel
           WIDTH, min_value, max_value,
           allow_nan: allow_nan, allow_infinity: allow_infinity,
           exclude_min: @exclude_min, exclude_max: @exclude_max,
-          smallest_nonzero_magnitude: LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+          smallest_nonzero_magnitude: smallest_nonzero_magnitude
         )
+      end
+
+      private
+
+      def smallest_nonzero_magnitude
+        allow_subnormal = @allow_subnormal.nil? ? subnormal_default : @allow_subnormal
+        if allow_subnormal
+          if !@min_value.nil? && @min_value >= Float::MIN
+            raise Hegel::Error, "floats: InvalidArgument: allow_subnormal=true, but min_value excludes " \
+              "all values below the smallest positive normal #{Float::MIN}"
+          end
+          if !@max_value.nil? && @max_value <= -Float::MIN
+            raise Hegel::Error, "floats: InvalidArgument: allow_subnormal=true, but max_value excludes " \
+              "all values above the smallest negative normal -#{Float::MIN}"
+          end
+
+          LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+        else
+          if only_subnormals_between_bounds?
+            raise Hegel::Error, "floats: InvalidArgument: allow_subnormal=false leaves no #{WIDTH}-bit " \
+              "floating-point values in [#{@min_value}, #{@max_value}]"
+          end
+
+          Float::MIN
+        end
+      end
+
+      def only_subnormals_between_bounds?
+        return false if @min_value.nil? || @max_value.nil? || 0.0.between?(@min_value, @max_value)
+
+        @max_value < Float::MIN && @min_value > -Float::MIN
+      end
+
+      def subnormal_default
+        (@min_value.nil? || @min_value < Float::MIN) && (@max_value.nil? || @max_value > -Float::MIN)
       end
     end
 
