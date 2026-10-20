@@ -75,7 +75,7 @@ class TestLocate < Minitest::Test
   end
 
   def test_resolve_directory_override_finds_the_cargo_output_name
-    # hegel-c/Cargo.toml declares `[lib] name = "hegel_c"`; the hegel-cpp
+    # libhegel/Cargo.toml declares `[lib] name = "hegel_c"`; the hegel-cpp
     # README points HEGEL_LIBHEGEL_LIBRARY at a path ending in this name.
     Dir.mktmpdir do |dir|
       asset = File.join(dir, "libhegel_c.dylib")
@@ -340,6 +340,20 @@ class TestLibhegelFetch < Minitest::Test
         "https://github.com/hegeldev/hegel-rust/releases/download/libhegel-v0.45.0/libhegel-darwin-arm64.dylib.sha256"
       ], requested
     end
+  end
+
+  def test_release_base_takes_releases_to_0_47_1_from_hegel_rust
+    assert_equal "https://github.com/hegeldev/hegel-rust/releases/download/libhegel-v0.47.1",
+      Hegel::LibhegelFetch.release_base("0.47.1")
+    assert_equal "https://github.com/hegeldev/hegel-rust/releases/download/libhegel-v0.9.0",
+      Hegel::LibhegelFetch.release_base("0.9.0")
+  end
+
+  def test_release_base_takes_releases_from_0_47_2_from_the_monorepo
+    assert_equal "https://github.com/hegeldev/hegel/releases/download/libhegel/0.47.2",
+      Hegel::LibhegelFetch.release_base("0.47.2")
+    assert_equal "https://github.com/hegeldev/hegel/releases/download/libhegel/0.47.10",
+      Hegel::LibhegelFetch.release_base("0.47.10")
   end
 
   def test_fetch_host_asset_raises_on_a_checksum_mismatch

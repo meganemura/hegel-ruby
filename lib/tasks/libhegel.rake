@@ -13,16 +13,28 @@ require_relative "../hegel/libhegel_version"
 # needs is fetched here ahead of time, not at resolution time.
 module Hegel
   module LibhegelFetch
-    RELEASE_BASE = "https://github.com/hegeldev/hegel-rust/releases/download"
+    # libhegel 0.47.2 is the first engine release from the hegeldev/hegel
+    # monorepo, tagged libhegel/<version>. hegeldev/hegel-rust holds the
+    # releases up to 0.47.1, tagged libhegel-v<version>, and gets no new
+    # release. hegeldev/hegel does not carry the assets of those older
+    # releases (measured on 2026-10-19: HTTP 404 for libhegel/0.47.1/hegel.h),
+    # so the version selects the repository.
+    MONOREPO_RELEASE_BASE = "https://github.com/hegeldev/hegel/releases/download"
+    MONOREPO_FIRST_VERSION = Gem::Version.new("0.47.2")
+    LEGACY_RELEASE_BASE = "https://github.com/hegeldev/hegel-rust/releases/download"
     DEFAULT_ROOT = File.expand_path("../../tmp/libhegel", __dir__)
 
     module_function
 
-    # Since libhegel 0.42.1, hegel-rust tags an engine release
-    # libhegel-v<version>. The plain v<version> tags belong to its hegeltest
-    # crate, whose version numbers differ from the engine's.
+    # In hegeldev/hegel-rust, the plain v<version> tags belong to the
+    # hegeltest crate, whose version numbers differ from the engine's. In
+    # hegeldev/hegel, the frontends/rust/<version> tags have the same role.
     def release_base(version)
-      "#{RELEASE_BASE}/libhegel-v#{version}"
+      if Gem::Version.new(version) >= MONOREPO_FIRST_VERSION
+        "#{MONOREPO_RELEASE_BASE}/libhegel/#{version}"
+      else
+        "#{LEGACY_RELEASE_BASE}/libhegel-v#{version}"
+      end
     end
 
     # Fetches the host's pinned asset into <root>/<version>/<asset>,

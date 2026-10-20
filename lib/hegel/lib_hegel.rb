@@ -18,7 +18,7 @@ module Hegel
   # is testable without the native engine. hegel-java makes the same split,
   # between its Libhegel interface, RealLibhegel, and FakeLibhegel.
   module LibHegel
-    # hegel_result_t, named from hegel-c/include/hegel.h's enum of the same
+    # hegel_result_t, named from libhegel/include/hegel.h's enum of the same
     # name. HEGEL_OK is success; every other value is a negative error code.
     HEGEL_OK = 0
     HEGEL_E_STOP_TEST = -1
