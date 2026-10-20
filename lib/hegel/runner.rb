@@ -141,7 +141,7 @@ module Hegel
       output: $stderr, reproduce_failure: nil, &block)
       quiet = verbosity == :quiet
       LibHegel.with_context(impl) do |ctx|
-        settings = profile.nil? ? impl.settings_new(ctx) : impl.settings_new_for_profile(ctx, profile)
+        settings = Settings.new_handle(impl, ctx, profile)
         run = begin
           Settings.apply(impl, ctx, settings, test_cases: test_cases, seed: seed, derandomize: derandomize,
             verbosity: verbosity, database: database, database_key: database_key, phases: phases,
