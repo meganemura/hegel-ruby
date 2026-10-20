@@ -13,9 +13,11 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: release
-  cancel-in-progress: false
+# No concurrency group (docs/adr/0027). A group keeps at most one pending
+# run, and cancels it when a newer run queues. The approval keeps a run in
+# progress for as long as nobody approves it, so the run of the version
+# merged next waited behind it and was cancelled by the one after: the 0.3.3
+# run ended that way. Runs for different versions share no tag and no gem.
 
 # Three jobs. check finds a gem version that has no tag yet; a change to
 # version.rb that keeps a released version, such as a revert, stops there.
