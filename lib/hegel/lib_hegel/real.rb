@@ -123,6 +123,10 @@ module Hegel
           "hegel_settings_set_nondeterminism_strictness", [:pointer, :pointer, :uint32], :int32
         )
         @hegel_settings_set_backend_fn = bind("hegel_settings_set_backend", [:pointer, :pointer, :uint32], :int32)
+        @hegel_settings_set_test_location_fn = bind(
+          "hegel_settings_set_test_location",
+          [:pointer, :pointer, StringStruct.by_value, :uint32, StringStruct.by_value, StringStruct.by_value], :int32
+        )
 
         @hegel_run_start_fn = bind(
           "hegel_run_start", [:pointer, :pointer, :pointer, :pointer, :pointer], :int32
@@ -372,6 +376,14 @@ module Hegel
       # same as #settings_set_database's own nilable database argument.
       def settings_set_database_key(ctx, s, key)
         code = @hegel_settings_set_database_key_fn.call(ctx, s, optional_string(key))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_test_location(ctx, s, file, begin_line, class_name, function)
+        code = @hegel_settings_set_test_location_fn.call(
+          ctx, s, string_view(file), begin_line, string_view(class_name), string_view(function)
+        )
         LibHegel.check!(self, ctx, code)
         nil
       end

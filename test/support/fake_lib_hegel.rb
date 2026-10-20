@@ -49,7 +49,7 @@ module Hegel
         :string_generator_url_code, :string_generator_domain_code, :generate_ipv4_code, :generate_ipv6_code,
         :generate_uuid_code, :generate_date_code, :generate_time_code, :generate_datetime_code,
         :settings_set_phases_code, :settings_set_suppress_health_check_code,
-        :settings_set_report_multiple_failures_code, :settings_set_database_key_code,
+        :settings_set_report_multiple_failures_code, :settings_set_database_key_code, :settings_set_test_location_code,
         :target_code,
         :new_pool_code, :pool_add_code, :pool_generate_code,
         :new_state_machine_code, :state_machine_next_group_code, :state_machine_next_rule_code,
@@ -128,7 +128,7 @@ module Hegel
         :settings_derandomize_calls, :settings_database_calls, :settings_database_key_calls,
         :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls,
         :settings_stop_on_first_failure_calls, :settings_print_blob_calls, :settings_show_statistics_calls,
-        :settings_nondeterminism_strictness_calls, :settings_backend_calls, :event_calls, :event_value_calls
+        :settings_nondeterminism_strictness_calls, :settings_backend_calls, :settings_test_location_calls, :event_calls, :event_value_calls
 
       # What #settings_get_print_blob reports: true, the engine's own default,
       # unless a test sets it to stand in for a profile that turns it off.
@@ -155,6 +155,7 @@ module Hegel
         @settings_derandomize_calls = []
         @settings_database_calls = []
         @settings_database_key_calls = []
+        @settings_test_location_calls = []
         @settings_phases_calls = []
         @settings_suppress_health_check_calls = []
         @settings_report_multiple_failures_calls = []
@@ -242,6 +243,7 @@ module Hegel
         @settings_set_suppress_health_check_code = HEGEL_OK
         @settings_set_report_multiple_failures_code = HEGEL_OK
         @settings_set_database_key_code = HEGEL_OK
+        @settings_set_test_location_code = HEGEL_OK
 
         @target_code = HEGEL_OK
 
@@ -595,6 +597,12 @@ module Hegel
       def settings_set_database_key(ctx, _s, key)
         @settings_database_key_calls << key
         LibHegel.check!(self, ctx, @settings_set_database_key_code)
+        nil
+      end
+
+      def settings_set_test_location(ctx, _s, file, begin_line, class_name, function)
+        @settings_test_location_calls << [file, begin_line, class_name, function]
+        LibHegel.check!(self, ctx, @settings_set_test_location_code)
         nil
       end
 

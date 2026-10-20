@@ -511,6 +511,7 @@ module Hegel
       def settings_set_database: (untyped ctx, untyped s, String? database) -> nil
       def settings_set_report_multiple_failures: (untyped ctx, untyped s, bool yes) -> nil
       def settings_set_database_key: (untyped ctx, untyped s, String? key) -> nil
+      def settings_set_test_location: (untyped ctx, untyped s, String file, Integer begin_line, String class_name, String function) -> nil
       def settings_set_phases: (untyped ctx, untyped s, Integer phases) -> nil
       def settings_set_suppress_health_check: (untyped ctx, untyped s, Integer checks) -> nil
       def settings_set_stop_on_first_failure: (untyped ctx, untyped s, bool yes) -> nil
