@@ -6,7 +6,7 @@
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
 - [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
-- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `composite`, `deferred`
+- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `composite`, `deferred`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
 - [Gotchas](#gotchas)
@@ -612,6 +612,62 @@ result # => nil
 
 An empty `collection` raises `Hegel::Error` at draw time:
 `"sampled_from: collection must not be empty"`.
+
+### `permutations(elements)`
+
+An `Array` holding every element of `elements` in an order Hegel picks,
+shrinking towards the original order. `elements` is anything `sampled_from`
+accepts.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(permutations([1, 2, 3]))
+end
+seen # => [[1, 2, 3], [2, 3, 1], [3, 2, 1]]
+```
+
+### `subsequences(elements, min_size: 0, max_size: nil)`
+
+An `Array` of `[min_size, max_size]` of the `elements`, in their original
+order. Duplicate elements count as distinct.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(subsequences([1, 2, 3, 4], min_size: 1))
+end
+seen # => [[1], [3], [1, 2, 3, 4]]
+```
+
+`max_size < min_size` raises `Hegel::Error` at draw time: `"subsequences:
+Cannot have max_size < min_size"`. So does a `min_size` above the number of
+elements: `"subsequences: Cannot generate a subsequence: min_size 4 is larger
+than the 3 elements in the sequence"`.
+
+### `samples(elements, min_size: 0, max_size: nil, replacement: true)`
+
+An `Array` of `[min_size, max_size]` of the `elements`, in the order drawn.
+With `replacement: true` each is drawn independently from all of `elements`,
+so a value can repeat, and the size is unbounded unless `max_size` bounds
+it. With `replacement: false` each element is used at most once, duplicates
+count as distinct, and the size is capped at the number of elements.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(samples([1, 2, 3], max_size: 4))
+end
+seen # => [[], [1, 3], []]
+```
+
+Three errors are raised at draw time, each beginning `"samples: "`:
+`max_size < min_size` gives `"Cannot have max_size < min_size"`; a
+non-empty sample from an empty `elements` gives `"Cannot generate a
+non-empty sample from an empty sequence"`; and with `replacement: false`, a
+`min_size` above the number of elements gives `"Cannot generate a sample
+without replacement: min_size 4 is larger than the 3 elements in the
+sequence"`.
 
 ### `one_of(*generators)`
 
