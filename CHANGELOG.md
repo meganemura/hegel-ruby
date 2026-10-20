@@ -53,6 +53,13 @@ own name.
 reached, for the statistics that `show_statistics: true` prints. They follow
 hegel-rust's `TestCase#event` and `TestCase#event_value`.
 
+### Generators
+
+- `date_strings`, `time_strings`, and `datetime_strings` generate ISO 8601
+  date, time, and datetime Strings, with no options, as hegel-rust does.
+  A time keeps nanoseconds: nine fractional digits appear when the
+  nanosecond is not zero.
+
 ## [0.3.4] - 2026-10-20
 
 ### Engine: libhegel 0.47.2 (was 0.47.1)

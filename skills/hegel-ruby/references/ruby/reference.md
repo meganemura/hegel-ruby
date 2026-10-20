@@ -6,7 +6,7 @@
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
 - [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
-- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
+- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `composite`, `deferred`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
 - [Gotchas](#gotchas)
@@ -972,6 +972,45 @@ seen # => ["2020-01-01 00:00:00 UTC", "2020-07-23 00:00:00 UTC", "2020-04-28 00:
 
 `max_value < min_value` raises `Hegel::Error` at draw time: `"datetimes:
 max_value < min_value"`.
+
+### `date_strings`
+
+A `"YYYY-MM-DD"` String over year 1 through year 9999. It takes no options.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(date_strings)
+end
+seen # => ["2000-01-01", "2000-08-26", "2028-11-11"]
+```
+
+### `time_strings`
+
+An `"HH:MM:SS"` String over the whole day, with `".fffffffff"` (nine digits)
+appended when the nanosecond is not zero. It takes no options. Unlike
+`times`, it keeps the engine's nanoseconds.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(time_strings)
+end
+seen # => ["00:00:00", "00:00:00.000080023", "00:00:00.030484623"]
+```
+
+### `datetime_strings`
+
+A `"YYYY-MM-DDTHH:MM:SS"` String over year 1 through year 9999, formatted as
+`date_strings` and `time_strings` are, with no timezone. It takes no options.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(datetime_strings)
+end
+seen # => ["2000-01-01T00:00:00", "2000-08-26T00:00:00.000002047", "2028-11-11T00:00:00.000383651"]
+```
 
 ### `composite(&block)`
 
