@@ -139,6 +139,40 @@ module Hegel
       def do_draw: (untyped tc) -> untyped
     end
 
+    module SequenceDrawing
+      private
+
+      def check_sizes: (String name, Integer min_size, Integer? max_size) -> void
+      def with_span: (untyped tc) { () -> untyped } -> untyped
+      def draw_index_sample: (untyped tc, Integer size, Integer min_size, Integer? max_size) -> Array[Integer]
+    end
+
+    class PermutationsGenerator < Generator
+      include SequenceDrawing
+
+      def initialize: (untyped elements) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+    end
+
+    class SubsequencesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize: (untyped elements, min_size: Integer, max_size: Integer?) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+    end
+
+    class SamplesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize: (untyped elements, min_size: Integer, max_size: Integer?, replacement: bool) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+
+      private
+
+      def validate_for: (Integer size) -> void
+      def draw_with_replacement: (untyped tc, Array[untyped] elements) -> Array[untyped]
+    end
+
     class SampledFromGenerator < Generator
       def initialize: (untyped collection) -> void
       def do_draw: (untyped tc) -> untyped
@@ -338,6 +372,9 @@ module Hegel
       def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::ArrayGenerator
       def just: (untyped value) -> Generators::JustGenerator
       def sampled_from: (untyped collection) -> Generators::SampledFromGenerator
+      def permutations: (untyped elements) -> Generators::PermutationsGenerator
+      def subsequences: (untyped elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::SubsequencesGenerator
+      def samples: (untyped elements, ?min_size: Integer, ?max_size: Integer?, ?replacement: bool) -> Generators::SamplesGenerator
       def one_of: (*Generator generators) -> Generators::OneOfGenerator
       def optional: (Generator generator) -> Generators::OptionalGenerator
       def tuples: (*Generator generators) -> Generators::TupleGenerator
