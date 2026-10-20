@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-20
+
 ### Engine: libhegel 0.47.2 (was 0.47.1)
 
 The [libhegel 0.47.2 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.47.2)
@@ -271,6 +273,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.3.4]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.4
 [0.3.3]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.3
 [0.3.2]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.2
 [0.3.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.1
