@@ -297,14 +297,26 @@ Inside a test, `tc.note` records a message that the failure report prints, and
 
 ## Agent skill
 
-[`skills/hegel-ruby`](skills/hegel-ruby/SKILL.md) teaches a coding agent how to
-write property-based tests with this gem. Claude Code can install it as a
-plugin from this repository:
+Two skills work together. The official
+[hegel-skill](https://github.com/hegeldev/hegel-skill) from the Hegel
+maintainers teaches the method: which properties to look for, and how to
+check the tests an agent writes. It works with every Hegel implementation.
+[`skills/hegel-ruby`](skills/hegel-ruby/SKILL.md) adds the Ruby part: this
+gem's API and how to use it with RSpec and Minitest. Install both.
+
+In Claude Code, add each repository as a marketplace and install its plugin:
 
 ```
+/plugin marketplace add hegeldev/hegel-skill
+/plugin install hegel-skill@hegeldev
 /plugin marketplace add meganemura/hegel-ruby
 /plugin install hegel-ruby@meganemura
 ```
+
+For Codex and other agents, see the installation section of the
+[hegel-skill README](https://github.com/hegeldev/hegel-skill#installation).
+For this gem's skill, use the same steps with
+<https://github.com/meganemura/hegel-ruby/tree/main/skills/hegel-ruby>.
 
 ## Development
 

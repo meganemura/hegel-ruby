@@ -294,14 +294,27 @@ Hegel.test(database_key: "my_sort matches the builtin sort") { |tc| ... }
 
 ## エージェント向けスキル
 
-[`skills/hegel-ruby`](skills/hegel-ruby/SKILL.md) は、この gem で
-プロパティベーステストを書く方法をコーディングエージェントに教えます。
-Claude Code ではこのリポジトリからプラグインとしてインストールできます。
+2 つのスキルを組み合わせて使います。Hegel のメンテナーによる公式の
+[hegel-skill](https://github.com/hegeldev/hegel-skill) は、どの性質を探すか、
+エージェントが書いたテストをどう確かめるかといった手法を教えるもので、
+どの Hegel 実装でも使えます。[`skills/hegel-ruby`](skills/hegel-ruby/SKILL.md) は
+Ruby の部分、つまりこの gem の API と RSpec・Minitest での使い方を足します。
+両方をインストールしてください。
+
+Claude Code では、それぞれのリポジトリをマーケットプレイスとして追加し、
+プラグインをインストールします。
 
 ```
+/plugin marketplace add hegeldev/hegel-skill
+/plugin install hegel-skill@hegeldev
 /plugin marketplace add meganemura/hegel-ruby
 /plugin install hegel-ruby@meganemura
 ```
+
+Codex などほかのエージェントでのインストール方法は、
+[hegel-skill の README](https://github.com/hegeldev/hegel-skill#installation) を
+参照してください。この gem のスキルは、同じ手順で
+<https://github.com/meganemura/hegel-ruby/tree/main/skills/hegel-ruby> を指定すればインストールできます。
 
 ## 開発
 
