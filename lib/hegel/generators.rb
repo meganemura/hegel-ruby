@@ -960,6 +960,33 @@ module Hegel
       end
     end
 
+    # Hegel::Syntax::Methods#durations. A span of time as whole nanoseconds
+    # in [min_value, max_value], at most u64::MAX (about 584 years) as in
+    # hegel-rust, whose generator is the model for the two messages below
+    # (docs/adr/0030).
+    class DurationsGenerator < Generator
+      MAX_NANOSECONDS = (2**64) - 1
+
+      def initialize(min_value:, max_value:)
+        @min_value = min_value
+        @max_value = max_value
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "durations: min_value must not be negative" if @min_value.negative?
+        if @min_value > MAX_NANOSECONDS
+          raise Hegel::Error, "durations: min_value exceeds the largest generatable Duration " \
+            "(u64::MAX nanoseconds, about 584 years)"
+        end
+
+        # Saturates rather than raises, as hegel-rust's max_value does.
+        max_value = [@max_value, MAX_NANOSECONDS].min
+        raise Hegel::Error, "durations: Cannot have max_value < min_value" if max_value < @min_value
+
+        IntegerGenerator.new(min_value: @min_value, max_value: max_value).do_draw(tc)
+      end
+    end
+
     # Hegel::Syntax::Methods#composite. Builds a generator from imperative
     # code, the way Hypothesis's @composite decorator and hegel-rust's
     # compose!/hegel-go's Composite let a caller assemble one value out of

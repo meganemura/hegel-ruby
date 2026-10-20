@@ -297,6 +297,13 @@ module Hegel
       def do_draw: (untyped tc) -> String
     end
 
+    class DurationsGenerator < Generator
+      MAX_NANOSECONDS: Integer
+
+      def initialize: (min_value: Integer, max_value: Integer) -> void
+      def do_draw: (untyped tc) -> Integer
+    end
+
     class CompositeGenerator < Generator
       def initialize: () { (CompositeGenerator::BlockTestCase) -> untyped } -> void
       def do_draw: (untyped tc) -> untyped
@@ -394,6 +401,7 @@ module Hegel
       def date_strings: () -> Generators::DateStringsGenerator
       def time_strings: () -> Generators::TimeStringsGenerator
       def datetime_strings: () -> Generators::DatetimeStringsGenerator
+      def durations: (?min_value: Integer, ?max_value: Integer) -> Generators::DurationsGenerator
       def composite: () { (Generators::CompositeGenerator::BlockTestCase) -> untyped } -> Generators::CompositeGenerator
       def deferred: () -> Generators::DeferredGenerator
     end
