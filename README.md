@@ -202,7 +202,7 @@ Expected: [0, 0]
 | Kind | Generators |
 | --- | --- |
 | Numbers and booleans | `integers`, `floats`, `booleans` |
-| Text and bytes | `text`, `characters`, `binary`, `from_regex` |
+| Text and bytes | `text`, `characters`, `binary`, `from_regex`, `from_lark` |
 | Collections | `arrays`, `sets`, `hashes`, `tuples` |
 | Choice | `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional` |
 | Formats | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
