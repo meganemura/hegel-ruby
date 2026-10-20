@@ -135,6 +135,7 @@ class TestRecursive < Minitest::Test
     error = assert_raises(Hegel::LeafBudgetExceeded) { tc.recursion_leaf(recursion) }
 
     assert_same recursion, error.recursion
+    assert_equal "hegel: a recursive draw outgrew its leaf budget; the attempt is retried", error.message
     assert tc.abandoned_by?(recursion)
     refute tc.abandoned_by?(Hegel::TestCase::Recursion.new(Object.new, false))
   end

@@ -2175,6 +2175,10 @@ class TestLibHegel < Minitest::Test
     assert_nil fake.recursion_free(ctx, recursion)
     assert_equal [recursion], fake.freed_recursions
 
+    other = fake.new_recursion(ctx, Object.new, 1, 1)
+    8.times { assert_nil fake.recursion_retry(ctx, Object.new, other) }
+    assert_raises(Hegel::AssumeFailed) { fake.recursion_retry(ctx, Object.new, other) }
+
     fake.new_recursion_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
     assert_raises(Hegel::StopTest) { fake.new_recursion(ctx, Object.new, 1, 1) }
     fake.recursion_branch_code = Hegel::LibHegel::HEGEL_E_STOP_TEST

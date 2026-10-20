@@ -143,8 +143,7 @@ have to let those four straight through before anything else.
 
 ## An abandoned recursive attempt
 
-`recursive` is the one generator that unwinds through open spans on
-purpose. When an attempt outgrows its leaf budget, `Hegel::TestCase` raises
+`recursive` unwinds through open spans on purpose. When an attempt outgrows its leaf budget, `Hegel::TestCase` raises
 `Hegel::LeafBudgetExceeded` and holds it until `hegel_recursion_retry`.
 Meanwhile `stop_span` makes no native call, so the retry can discard the
 spans the attempt opened, and every other call that takes the test-case

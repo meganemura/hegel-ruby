@@ -525,8 +525,8 @@ module Hegel
       @poison.is_a?(LeafBudgetExceeded) && @poison.recursion.equal?(recursion)
     end
 
-    # hegel_recursion_retry, the one call that reaches the engine while an
-    # attempt is abandoned. HEGEL_E_ASSUME or HEGEL_E_STOP_TEST ends the
+    # hegel_recursion_retry, which reaches the engine with the raw handle
+    # while an attempt is abandoned. HEGEL_E_ASSUME or HEGEL_E_STOP_TEST ends the
     # test case, so its exception takes the abandoned attempt's place and
     # later calls raise it without reaching the engine.
     def recursion_retry(recursion)

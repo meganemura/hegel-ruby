@@ -23,6 +23,8 @@ module Hegel
       # already carries that state.
       Failure = Struct.new(:origin, :blob, :caveat)
 
+      RECURSION_MAX_ATTEMPTS = 9
+
       # Writers only: #version is also the name of the instance method
       # below that mimics the real ABI call, so an attr_accessor's 0-arity
       # reader would collide with (and be overwritten by) that method
@@ -322,6 +324,7 @@ module Hegel
         @recursion_branch_values = []
         @recursion_leaf_codes = []
         @recursion_retry_codes = []
+        @recursion_retries = Hash.new(0).compare_by_identity
         @recursion_finish_codes = []
         @freed_recursions = []
       end
@@ -864,8 +867,13 @@ module Hegel
         retry_or_check!(ctx, @recursion_leaf_codes.shift || HEGEL_OK)
       end
 
-      def recursion_retry(ctx, _tc, _recursion)
-        LibHegel.check!(self, ctx, @recursion_retry_codes.shift || HEGEL_OK)
+      # The next of #recursion_retry_codes. Once they run out, HEGEL_OK
+      # until the ninth retry of one recursion, which answers
+      # HEGEL_E_ASSUME, as libhegel's RECURSION_MAX_ATTEMPTS has it.
+      def recursion_retry(ctx, _tc, recursion)
+        attempts = @recursion_retries[recursion] += 1
+        default = (attempts >= RECURSION_MAX_ATTEMPTS) ? HEGEL_E_ASSUME : HEGEL_OK
+        LibHegel.check!(self, ctx, @recursion_retry_codes.shift || default)
         nil
       end
 
