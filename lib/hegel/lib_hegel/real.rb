@@ -82,6 +82,13 @@ module Hegel
 
         @hegel_settings_new_fn = bind("hegel_settings_new", [:pointer, :pointer], :int32)
         @hegel_settings_free_fn = bind("hegel_settings_free", [:pointer, :pointer], :int32)
+        @hegel_settings_new_for_profile_fn = bind(
+          "hegel_settings_new_for_profile", [:pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_settings_register_profile_fn = bind(
+          "hegel_settings_register_profile", [:pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_set_default_profile_fn = bind("hegel_set_default_profile", [:pointer, StringStruct.by_value], :int32)
         @hegel_settings_set_test_cases_fn = bind(
           "hegel_settings_set_test_cases", [:pointer, :pointer, :uint64], :int32
         )
@@ -318,6 +325,31 @@ module Hegel
         code = @hegel_settings_new_fn.call(ctx, out)
         LibHegel.check!(self, ctx, code)
         out.read_pointer
+      end
+
+      # Like #settings_new, but starts from the profile +name+, which still
+      # extends the default profile (except "base"). An unknown name returns
+      # HEGEL_E_INVALID_ARG.
+      def settings_new_for_profile(ctx, name)
+        out = FFI::MemoryPointer.new(:pointer)
+        code = @hegel_settings_new_for_profile_fn.call(ctx, string_view(name), out)
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # Registers a snapshot of +s+ as the profile +name+ for the whole
+      # process. The caller keeps ownership of +s+.
+      def settings_register_profile(ctx, name, s)
+        code = @hegel_settings_register_profile_fn.call(ctx, string_view(name), s)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # "" clears an earlier call.
+      def set_default_profile(ctx, name)
+        code = @hegel_set_default_profile_fn.call(ctx, string_view(name))
+        LibHegel.check!(self, ctx, code)
+        nil
       end
 
       # No-op when +s+ is nil, matching hegel_settings_free's documented

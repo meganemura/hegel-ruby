@@ -4,6 +4,7 @@ require "test_helper"
 require "hegel/lib_hegel"
 require "hegel/lib_hegel/real"
 require "support/fake_lib_hegel"
+require "securerandom"
 require "stringio"
 
 class TestLibHegel < Minitest::Test
@@ -1840,6 +1841,26 @@ class TestLibHegel < Minitest::Test
     assert_nil real.state_machine_free(nil, nil)
   end
 
+  def test_fake_profile_calls_record_their_arguments_and_translate_error_codes
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    refute_nil fake.settings_new_for_profile(ctx, "ci")
+    handle = Object.new
+    assert_nil fake.settings_register_profile(ctx, "mine", handle)
+    assert_nil fake.set_default_profile(ctx, "mine")
+    assert_equal ["ci"], fake.settings_new_for_profile_calls
+    assert_equal [["mine", handle]], fake.settings_register_profile_calls
+    assert_equal ["mine"], fake.set_default_profile_calls
+
+    fake.settings_new_for_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_new_for_profile(ctx, "ci") }
+    fake.settings_register_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_register_profile(ctx, "mine", handle) }
+    fake.set_default_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.set_default_profile(ctx, "mine") }
+  end
+
   def test_fake_new_settings_setters_and_target_succeed_by_default
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
@@ -1969,6 +1990,25 @@ class TestLibHegel < Minitest::Test
   # The engine reads HEGEL_* variables when it builds a settings handle, and
   # rejects a malformed one. The variable is restored afterwards, because
   # every later run in this process reads it too.
+  def test_real_profile_calls_return_a_handle_and_nil_on_a_live_context
+    real = Hegel::LibHegel::Real.new
+    name = "hegel-ruby-bind-#{SecureRandom.hex(4)}"
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new_for_profile(ctx, "development")
+      refute_nil settings
+      refute_predicate settings, :null?
+      assert_nil real.settings_register_profile(ctx, name, settings)
+      real.settings_free(ctx, settings)
+
+      registered = real.settings_new_for_profile(ctx, name)
+      refute_predicate registered, :null?
+      real.settings_free(ctx, registered)
+
+      assert_nil real.set_default_profile(ctx, "")
+    end
+  end
+
   def test_real_settings_new_raises_on_a_malformed_hegel_variable
     real = Hegel::LibHegel::Real.new
     saved = ENV.fetch("HEGEL_TEST_CASES", nil)
