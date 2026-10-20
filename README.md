@@ -300,8 +300,9 @@ Give each property its own key. See
 [ADR 0009](docs/adr/0009-turn-the-example-database-on-with-a-key.md) for why
 the key, and not the directory, turns it on.
 
-Inside a test, `tc.note` records a message that the failure report prints, and
-`tc.target` tells Hegel which inputs to search toward.
+Inside a test, `tc.note` records a message that the failure report prints,
+`tc.target` tells Hegel which inputs to search toward, and `tc.repeat` runs a
+block for as many iterations as Hegel chooses.
 
 `tc.event` and `tc.event_value` check that a test reaches the cases you care
 about. With `show_statistics: true`, the engine prints how often each event

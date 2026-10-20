@@ -297,7 +297,8 @@ Hegel.test(database_key: "my_sort matches the builtin sort") { |tc| ... }
 あります。
 
 テストの中では、`tc.note` で失敗レポートに出すメッセージを記録でき、
-`tc.target` で Hegel が探索を寄せる方向を指定できます。
+`tc.target` で Hegel が探索を寄せる方向を指定でき、`tc.repeat` で
+Hegel が選んだ回数だけブロックを繰り返し実行できます。
 
 `tc.event` と `tc.event_value` は、テストが狙ったケースに届いているかを確かめる
 ためのものです。`show_statistics: true` にすると、各イベントが起きた割合と、

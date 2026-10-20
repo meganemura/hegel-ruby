@@ -33,24 +33,18 @@ class SpanRecordingFake < Hegel::LibHegel::Fake
 end
 
 class SequenceRecordingFake < SpanRecordingFake
-  attr_reader :collection_sizes, :freed_collections, :integer_bounds
+  attr_reader :collection_sizes, :integer_bounds
   attr_writer :integer_values
 
   def initialize
     super
     @collection_sizes = []
-    @freed_collections = []
     @integer_bounds = []
     @integer_values = []
   end
 
   def new_collection(ctx, tc, min_size, max_size)
     @collection_sizes << [min_size, max_size]
-    super
-  end
-
-  def collection_free(ctx, collection)
-    @freed_collections << collection
     super
   end
 

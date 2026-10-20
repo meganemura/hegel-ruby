@@ -44,6 +44,17 @@ module Hegel
     end
   end
 
+  # Raised by Hegel::TestCase#repeat when the engine ends its loop: the
+  # repetition ran as long as the engine wanted it to and nothing failed,
+  # so Hegel::Runner.classify reports the case VALID. hegel-rust raises its
+  # own LoopDone at the same point, and its run lifecycle maps it to VALID
+  # the same way.
+  #
+  # Descends from Exception for the same reason as StopTest above: a
+  # `rescue => e` written after the loop must not turn the end of the loop
+  # into ordinary control flow. See docs/adr/0034.
+  class LoopDone < Exception; end
+
   # standard:enable Lint/InheritException
 
   # Say the process is ending, not that a property failed. Every

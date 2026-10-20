@@ -136,7 +136,7 @@ module Hegel
       attr_writer :run_start_returns_nil
 
       attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
-        :freed_pools, :state_machine_rule_weights, :restored_pool_ids
+        :freed_pools, :state_machine_rule_weights, :restored_pool_ids, :opened_collections, :freed_collections
 
       # The arguments of each #string_generator_text call (a Hash of its
       # keywords) and each #string_generator_regex call (a Hash of pattern,
@@ -178,6 +178,8 @@ module Hegel
         @freed_pools = []
         @state_machine_rule_weights = []
         @restored_pool_ids = []
+        @opened_collections = []
+        @freed_collections = []
 
         @settings_new_code = HEGEL_OK
         @settings_new_for_profile_code = HEGEL_OK
@@ -554,9 +556,14 @@ module Hegel
         nil
       end
 
-      def new_collection(ctx, _tc, _min_size, _max_size)
+      # Records each collection it opens as [handle, min_size, max_size],
+      # and #collection_free records each handle it frees, so a test can
+      # pair every opened collection with its release.
+      def new_collection(ctx, _tc, min_size, max_size)
         LibHegel.check!(self, ctx, @new_collection_code)
-        Object.new
+        collection = Object.new
+        @opened_collections << [collection, min_size, max_size]
+        collection
       end
 
       # Answers true @collection_more_count times, then false, matching
@@ -575,7 +582,8 @@ module Hegel
         nil
       end
 
-      def collection_free(_ctx, _collection)
+      def collection_free(_ctx, collection)
+        @freed_collections << collection
         nil
       end
 

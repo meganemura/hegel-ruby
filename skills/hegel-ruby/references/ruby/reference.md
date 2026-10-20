@@ -5,7 +5,7 @@
 - [Setup](#setup)
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
 - [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
-- [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
+- [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `repeat`, `target`, `event`, `event_value`
 - [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `from_lark`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations`, `composite`, `deferred`, `recursive`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
@@ -275,6 +275,7 @@ written to it.
 | `assume` | `assume(condition)` | Discard this test case (see `reject`) unless `condition` holds, read as Ruby truthiness |
 | `reject` | `reject` | Discard this test case unconditionally |
 | `note` | `note(message = nil, &block)` | Record `message` (or the block's return value) for the failure report, interleaved with draws in call order |
+| `repeat` | `repeat { ... }` | Run the block again and again, for as many iterations as the engine chooses; never returns unless the block calls `break` |
 | `target` | `target(value, label: "")` | Feed `value` to libhegel's own hill-climbing search between generation rounds |
 | `event` | `event(label)` | Record `label` for the statistics that `show_statistics: true` prints |
 | `event_value` | `event_value(label, value)` | Record a numeric `value` under `label` for the same statistics |
@@ -380,6 +381,48 @@ Falsified after 2 test cases (0 discarded):
 To reproduce this failure, pass the blob below to Hegel.test:
     reproduce_failure: "AAEAAAAACgIAAAD1AQ=="
 ```
+
+`repeat` runs its block again and again, for as many iterations as the
+engine chooses, and shrinks a failure toward fewer iterations. State kept
+outside the block carries from one iteration to the next. The report shows
+each iteration as a `// Repetition #N` line, with what the iteration drew or
+noted indented under it:
+
+```ruby
+output = StringIO.new
+begin
+  Hegel.test(output: output, seed: 1, derandomize: true) do |tc|
+    stack = []
+    tc.repeat do
+      n = tc.draw(integers(min_value: 0, max_value: 10))
+      stack.push(n)
+      raise "stack sum too big: #{stack.sum}" if stack.sum > 10
+    end
+  end
+rescue => e
+  e.message # => "stack sum too big: 11"
+end
+output.string
+```
+
+```
+Falsified after 2 test cases (0 discarded):
+
+  // Repetition #1
+    n_1 = 1
+  // Repetition #2
+    n_2 = 10
+
+To reproduce this failure, pass the blob below to Hegel.test:
+    reproduce_failure: "AXicY2MAAi5GEMnICGEwwhhAAgADbwA4"
+```
+
+A `tc.assume` or `tc.reject` inside the block skips that iteration, not the
+whole test case. When the engine ends the loop, `repeat` raises
+`Hegel::LoopDone` instead of returning, and `Hegel.test` counts the test
+case as passing; code after `tc.repeat` runs only when the block calls
+`break`. `Hegel::LoopDone` descends from `Exception`, so `rescue => e` does
+not catch it.
 
 `target` feeds `value` to libhegel's own hill-climbing search between
 generation rounds, under `label` (default `""`); it does not appear in the

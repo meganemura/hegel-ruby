@@ -40,6 +40,7 @@ An index of the design records for `hegel-ruby`.
 - [0031: Take the alphabet options from hegel-rust](adr/0031-take-the-alphabet-options-from-hegel-rust.md)
 - [0032: Suppress span closes while an abandoned recursion attempt unwinds](adr/0032-suppress-span-closes-while-an-abandoned-recursion-attempt-unwinds.md)
 - [0033: Cache compiled grammars for the length of a run](adr/0033-cache-compiled-grammars-for-the-length-of-a-run.md)
+- [0034: Repeat a test body with a Ruby-side indent](adr/0034-repeat-a-test-body-with-a-ruby-side-indent.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.
