@@ -2,8 +2,10 @@
 
 require "date"
 require "ipaddr"
+require "pathname"
 require_relative "errors"
 require_relative "generator"
+require_relative "grammar_cache"
 require_relative "lib_hegel"
 
 module Hegel
@@ -180,6 +182,9 @@ module Hegel
           exclude_characters: exclude_characters
         }.freeze
       end
+
+      # The alphabet options as given, nil for each one left out.
+      attr_reader :options
 
       def do_draw(tc)
         with_alphabet(tc, "characters", 1, 1) { |generator| tc.generate_string(generator) }
@@ -767,6 +772,213 @@ module Hegel
         tc.with_regex_generator(@pattern, fullmatch: @fullmatch, alphabet: alphabet) do |generator|
           tc.generate_string(generator)
         end
+      end
+    end
+
+    # Hegel::Syntax::Methods#from_lark. A String that a grammar in Lark's
+    # syntax accepts, ported from hegel-rust's LarkGenerator.
+    #
+    # The compiled grammar lives in the run's Hegel::GrammarCache, under a key
+    # holding everything the compilation reads, so a generator built inside
+    # the test body compiles once per run as well (docs/adr/0033). The key is
+    # built here because a draw writes nothing to the generator (ADR 0020).
+    class FromLarkGenerator < Generator
+      DEFAULT_MAX_SIZE = 8192
+      ATTEMPTS = 3
+      ATTEMPT_LABEL = LibHegel.label_from_name("hegel-ruby.Hegel::Generators::FromLarkGenerator.attempt")
+
+      # The widest values hegel_grammar_new takes, so a larger one reaches
+      # the engine as a value it reports on rather than failing to marshal.
+      MAX_SIZE_LIMIT = (2**64) - 1
+      MAX_DEPTH_LIMIT = (2**32) - 1
+
+      def initialize(grammar, start:, explicit:, alphabet:, max_size:, max_depth:, import_path:)
+        @grammar = frozen(grammar)
+        @start = frozen(start)
+        @explicit = explicit
+        @alphabet = alphabet
+        @max_size = max_size
+        @max_depth = max_depth
+        @import_path = frozen(import_path.is_a?(Pathname) ? import_path.to_s : import_path)
+        names = explicit.keys.map { |name| frozen(name.is_a?(Symbol) ? name.to_s : name) } if explicit.is_a?(Hash)
+        @label = lark_label(names)
+        @key = [
+          @grammar, @start, max_size, max_depth, alphabet.is_a?(CharactersGenerator) ? alphabet.options : alphabet,
+          names, @import_path
+        ].freeze
+      end
+
+      attr_reader :label
+
+      def do_draw(tc)
+        terminals = explicit_terminals
+        names = terminals.map(&:first)
+        tc.with_grammar(@key, -> { compile(tc, names) }) do |compiled|
+          next tc.generate_grammar(compiled.grammar, 0) if terminals.empty?
+
+          tc.start_span(label)
+          begin
+            draw_with_values(tc, compiled, terminals)
+          ensure
+            tc.stop_span(discard: false)
+          end
+        end
+      end
+
+      private
+
+      def frozen(value)
+        value.is_a?(String) ? -value : value
+      end
+
+      # hegel-rust's ingredients: the grammar, the start rule, and each
+      # explicit terminal's name and generator.
+      def lark_label(names)
+        labels = [self.class.label, text_label(@grammar), text_label(@start || "start")]
+        names&.zip(@explicit.values)&.each { |name, generator| labels << text_label(name) << Generator.label_of(generator) }
+        LibHegel.label_combine(labels)
+      end
+
+      def text_label(value)
+        value.is_a?(String) ? LibHegel.label_from_name(value) : 0
+      end
+
+      # The explicit terminals as [name, generator] pairs, once every option
+      # has been checked.
+      def explicit_terminals
+        raise Hegel::Error, "from_lark: grammar must be a String, not a #{@grammar.class}" unless @grammar.is_a?(String)
+        unless @start.nil? || @start.is_a?(String)
+          raise Hegel::Error, "from_lark: start must be a String, not a #{@start.class}"
+        end
+        raise Hegel::Error, "from_lark: max_size must be at least 1" if @max_size && @max_size < 1
+        raise Hegel::Error, "from_lark: max_depth must be at least 1" if @max_depth && @max_depth < 1
+        raise Hegel::Error, "from_lark: explicit must be a Hash, not a #{@explicit.class}" unless @explicit.is_a?(Hash)
+
+        terminals = @explicit.map { |name, generator| explicit_terminal(name, generator) }
+        names = terminals.map(&:first)
+        duplicate = names.find { |name| names.count(name) > 1 }
+        raise Hegel::Error, "from_lark: explicit terminal '#{duplicate}' is given more than one generator" if duplicate
+        unless @alphabet.nil? || @alphabet.is_a?(CharactersGenerator)
+          raise Hegel::Error, "from_lark: alphabet must be a characters generator, not a #{@alphabet.class}"
+        end
+        unless @import_path.nil? || @import_path.is_a?(String)
+          raise Hegel::Error, "from_lark: import_path must be a String or a Pathname, not a #{@import_path.class}"
+        end
+
+        terminals
+      end
+
+      def explicit_terminal(name, generator)
+        unless name.is_a?(String) || name.is_a?(Symbol)
+          raise Hegel::Error, "from_lark: an explicit terminal name must be a String or a Symbol, not a #{name.class}"
+        end
+        unless generator.is_a?(Generator)
+          raise Hegel::Error, "from_lark: explicit terminal '#{name}' must be given a generator, not a #{generator.class}"
+        end
+
+        [name.to_s, generator]
+      end
+
+      def compile(tc, names)
+        return compile_with(tc, names, nil) if @alphabet.nil?
+
+        # Sized 0..0, as hegel-rust builds a grammar's alphabet, and freed
+        # once the grammar is built from it.
+        @alphabet.with_alphabet(tc, "from_lark", 0, 0) { |alphabet| compile_with(tc, names, alphabet) }
+      end
+
+      def compile_with(tc, names, alphabet)
+        builder = tc.grammar_builder_new(@grammar)
+        begin
+          provide_files(tc, builder)
+          grammar = tc.grammar_new(
+            builder, @start, [@max_size || DEFAULT_MAX_SIZE, MAX_SIZE_LIMIT].min, [@max_depth || 0, MAX_DEPTH_LIMIT].min,
+            alphabet, names
+          )
+        ensure
+          tc.grammar_builder_free(builder)
+        end
+        begin
+          GrammarCache::Compiled.new(grammar: grammar, markers: names.map { |name| tc.grammar_placeholder(grammar, name) })
+        rescue
+          tc.grammar_free(grammar)
+          raise
+        end
+      end
+
+      def provide_files(tc, builder)
+        index = 0
+        while (path = tc.grammar_builder_file(builder, index))
+          tc.grammar_builder_provide(builder, index, @import_path && read_import(File.join(@import_path, path)))
+          index += 1
+        end
+      end
+
+      # The text of +file+, or nil when there is no such file, which lets a
+      # bundled grammar stand in for it. hegel-rust reads it the same way.
+      def read_import(file)
+        text = File.binread(file).force_encoding(Encoding::UTF_8)
+        return text if text.valid_encoding?
+
+        raise Hegel::Error, "from_lark: Could not read grammar `#{file}`: stream did not contain valid UTF-8"
+      rescue Errno::ENOENT, Errno::ENOTDIR
+        nil
+      rescue SystemCallError => e
+        raise Hegel::Error, "from_lark: Could not read grammar `#{file}`: #{e.message}"
+      end
+
+      # Draws the grammar's string under a shrinking budget until the string
+      # with its values spliced in fits max_size, or rejects the case, as
+      # hegel-rust does.
+      def draw_with_values(tc, compiled, terminals)
+        max_size = @max_size || DEFAULT_MAX_SIZE
+        pattern = Regexp.union(compiled.markers)
+        budget = max_size
+        ATTEMPTS.times do
+          oversize = false
+          tc.start_span(ATTEMPT_LABEL)
+          begin
+            out, own, markers, size = splice(tc, compiled, pattern, terminals, budget)
+            oversize = size > max_size
+          ensure
+            tc.stop_span(discard: oversize)
+          end
+          return out unless oversize
+
+          budget = [max_size * (own + markers) / size, budget - 1].min.clamp(1..)
+        end
+        tc.reject
+      end
+
+      # The grammar's string with a drawn value in place of each marker, how
+      # many of its characters the grammar drew, how many markers it held,
+      # and how many characters it has. One leftmost pass that does not
+      # rescan a spliced value, as in hegel-rust.
+      def splice(tc, compiled, pattern, terminals, budget)
+        drawn = tc.generate_grammar(compiled.grammar, budget)
+        markers = 0
+        marker_chars = 0
+        value_chars = 0
+        out = drawn.gsub(pattern) do |marker|
+          name, generator = terminals[compiled.markers.index(marker)]
+          value = draw_value(tc, name, generator)
+          markers += 1
+          marker_chars += marker.length
+          value_chars += value.length
+          value
+        end
+        own = drawn.length - marker_chars
+        [out, own, markers, own + value_chars]
+      end
+
+      def draw_value(tc, name, generator)
+        tc.start_span(generator.label)
+        value = generator.do_draw(tc)
+        return value if value.is_a?(String)
+
+        raise Hegel::Error, "from_lark: explicit terminal '#{name}' drew a #{value.class}, not a String"
+      ensure
+        tc.stop_span(discard: false)
       end
     end
 

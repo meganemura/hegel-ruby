@@ -141,6 +141,18 @@ module Hegel
         Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch, alphabet: alphabet)
       end
 
+      # A String that +grammar+, written in the syntax of the Lark parsing
+      # library, accepts from its +start+ rule. +explicit+ maps terminal names
+      # to generators of the values drawn for them, +alphabet+ is a
+      # #characters generator limiting what terminal patterns draw, and
+      # +import_path+ is the directory %import reads files from.
+      def from_lark(grammar, start: nil, explicit: {}, alphabet: nil, max_size: nil, max_depth: nil, import_path: nil)
+        Generators::FromLarkGenerator.new(
+          grammar, start: start, explicit: explicit, alphabet: alphabet, max_size: max_size, max_depth: max_depth,
+          import_path: import_path
+        )
+      end
+
       # An RFC 5321/5322 email address String.
       def emails
         Generators::EmailsGenerator.new
