@@ -41,15 +41,12 @@ module Hegel
       large_initial_test_case: LibHegel::HEGEL_HC_LARGE_INITIAL_TEST_CASE
     }.freeze
 
-    # Hegel.test's nondeterminism_strictness: values, mapped to hegel.h's
-    # hegel_nondeterminism_strictness_t.
     NONDETERMINISM_STRICTNESS_CODES = {
       quiet: LibHegel::HEGEL_NONDETERMINISM_QUIET,
       warn: LibHegel::HEGEL_NONDETERMINISM_WARN,
       error: LibHegel::HEGEL_NONDETERMINISM_ERROR
     }.freeze
 
-    # Hegel.test's backend: values, mapped to hegel.h's hegel_backend_t.
     BACKEND_CODES = {
       default: LibHegel::HEGEL_BACKEND_DEFAULT,
       urandom: LibHegel::HEGEL_BACKEND_URANDOM
@@ -58,10 +55,8 @@ module Hegel
     module_function
 
     # Applies every one of Hegel.test's settings keywords to +settings+ via
-    # +impl+. +test_cases+, +seed+, +derandomize+, +verbosity+, +phases+,
-    # +suppress_health_check+, +stop_on_first_failure+, +print_blob+,
-    # +show_statistics+, +nondeterminism_strictness+, and +backend+ all skip
-    # their setter when left nil.
+    # +impl+. Every keyword skips its setter when nil, except
+    # database/database_key and report_multiple_failures (below).
     # +database+/+database_key+ follow #apply_database's own table, called
     # unconditionally since even the nil/nil case has a setter to call (see
     # its comment). +report_multiple_failures+ is called unconditionally too,
@@ -98,8 +93,6 @@ module Hegel
       impl.settings_set_verbosity(ctx, settings, lookup(VERBOSITY_CODES, verbosity, "verbosity"))
     end
 
-    # The code +codes+ maps +value+ to, or a Hegel::Error naming +keyword+
-    # and the accepted values.
     def lookup(codes, value, keyword)
       codes.fetch(value) do
         raise Hegel::Error, "hegel: unknown #{keyword} #{value.inspect}; expected one of #{codes.keys.inspect}"

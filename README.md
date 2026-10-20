@@ -276,7 +276,7 @@ rules that one test case runs; 50 is the default.
 | `print_blob` | `false` leaves the reproduction line out of the failure report |
 | `show_statistics` | Print what `tc.event` and `tc.event_value` recorded, at the end of the run |
 | `nondeterminism_strictness` | `:quiet`, `:warn`, or `:error` when the test behaves differently on a replay |
-| `backend` | `:default`, or `:urandom` to take fresh entropy on every draw |
+| `backend` | `:default`, or `:urandom` to take fresh entropy on every draw, for Antithesis |
 | `database_key` | Turn the example database on for this property |
 | `database` | The directory of the example database |
 | `reproduce_failure` | Replay one failure from the blob in its report |

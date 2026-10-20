@@ -273,7 +273,7 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 | `print_blob` | `false` にすると失敗レポートから再現用の行を外す |
 | `show_statistics` | `tc.event` と `tc.event_value` で記録した内容を実行の最後に表示する |
 | `nondeterminism_strictness` | 再実行で振る舞いが変わるテストへの反応。`:quiet`、`:warn`、`:error` |
-| `backend` | `:default`、または値を引くたびに外部のエントロピーを使う `:urandom` |
+| `backend` | `:default`、または値を引くたびに外部のエントロピーを使う `:urandom`(Antithesis 向け) |
 | `database_key` | このプロパティで example database を有効にする |
 | `database` | example database のディレクトリ |
 | `reproduce_failure` | レポートの blob から 1 つの失敗を再生する |

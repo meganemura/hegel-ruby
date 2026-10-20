@@ -55,13 +55,9 @@ module Hegel
   # passed.
   #
   # +stop_on_first_failure+, +print_blob+, +show_statistics+,
-  # +nondeterminism_strictness+ (:quiet, :warn, or :error), and +backend+
-  # (:default or :urandom) also default to nil, with the same meaning as
-  # +test_cases+ and the other keywords above. They carry the names and
-  # meanings of hegel-rust's Settings methods. +print_blob: false+ leaves
-  # the reproduce line out of the failure report; +show_statistics: true+
-  # makes the engine print what Hegel::TestCase#event and #event_value
-  # recorded.
+  # +nondeterminism_strictness+, and +backend+ default to nil, so the engine's
+  # profile decides as it does for +test_cases+; they follow hegel-rust's
+  # Settings.
   #
   # +output+ (default $stderr) is where a failure report is written; a
   # caller passes its own IO to capture that report instead (tests do).

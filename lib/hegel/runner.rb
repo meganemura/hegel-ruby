@@ -97,12 +97,8 @@ module Hegel
 
     module_function
 
-    # Runs +block+ as a Hegel property against +impl+, applying +test_cases+,
-    # +seed+, +derandomize+, +verbosity+, +database+, +database_key+,
-    # +phases+, +suppress_health_check+, +report_multiple_failures+,
-    # +stop_on_first_failure+, +print_blob+, +show_statistics+,
-    # +nondeterminism_strictness+, and +backend+ (see
-    # Hegel::Settings) to a fresh settings handle first. Returns nil on a
+    # Runs +block+ as a Hegel property against +impl+, applying the
+    # settings keywords (see Hegel::Settings) to a fresh settings handle first. Returns nil on a
     # passing run, re-raises the exception the smallest failing case's body
     # raised on a failing run, and raises Hegel::Error for a run-level
     # failure (ERROR status, a blob that no longer reproduces, or more than

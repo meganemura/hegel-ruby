@@ -67,14 +67,12 @@ module Hegel
     HEGEL_VERBOSITY_VERBOSE = 2
     HEGEL_VERBOSITY_DEBUG = 3
 
-    # hegel_nondeterminism_strictness_t, named from hegel.h's enum of the
-    # same name. Passed to hegel_settings_set_nondeterminism_strictness.
+    # hegel_nondeterminism_strictness_t
     HEGEL_NONDETERMINISM_QUIET = 0
     HEGEL_NONDETERMINISM_WARN = 1
     HEGEL_NONDETERMINISM_ERROR = 2
 
-    # hegel_backend_t, named from hegel.h's enum of the same name. Passed to
-    # hegel_settings_set_backend.
+    # hegel_backend_t
     HEGEL_BACKEND_DEFAULT = 1
     HEGEL_BACKEND_URANDOM = 2
 

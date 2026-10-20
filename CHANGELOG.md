@@ -6,7 +6,7 @@
 
 `Hegel.test` takes five more keywords, with the names and meanings of
 hegel-rust's `Settings` methods. Each one left `nil` takes its value from
-the engine's settings profile, like the other keywords.
+the engine's settings profile, like `test_cases:` and `seed:`.
 
 - `stop_on_first_failure: false` keeps generating after a failure and
   spends the whole `test_cases` budget before reporting.

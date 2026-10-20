@@ -403,10 +403,7 @@ module Hegel
         nil
       end
 
-      # The resolved value: the profile, HEGEL_PRINT_BLOB, and any
-      # #settings_set_print_blob call all apply before this reads it. The
-      # engine never prints the blob itself, so the caller reads this to
-      # decide whether its own report does.
+      # libhegel never prints the blob; the caller decides from the resolved value.
       def settings_get_print_blob(ctx, s)
         out = FFI::MemoryPointer.new(:bool)
         code = @hegel_settings_get_print_blob_fn.call(ctx, s, out)
@@ -420,14 +417,12 @@ module Hegel
         nil
       end
 
-      # +strictness+ is one of the HEGEL_NONDETERMINISM_* constants.
       def settings_set_nondeterminism_strictness(ctx, s, strictness)
         code = @hegel_settings_set_nondeterminism_strictness_fn.call(ctx, s, strictness)
         LibHegel.check!(self, ctx, code)
         nil
       end
 
-      # +backend+ is one of the HEGEL_BACKEND_* constants.
       def settings_set_backend(ctx, s, backend)
         code = @hegel_settings_set_backend_fn.call(ctx, s, backend)
         LibHegel.check!(self, ctx, code)
@@ -522,16 +517,12 @@ module Hegel
         nil
       end
 
-      # Records an event for the end-of-run statistics report, which the
-      # engine prints only when the show_statistics setting is on.
       def event(ctx, tc, label)
         code = @hegel_event_fn.call(ctx, tc, string_view(label))
         LibHegel.check!(self, ctx, code)
         nil
       end
 
-      # Records a numeric observation for the same report as #event. Unlike
-      # #target, a label may be observed any number of times per test case.
       def event_value(ctx, tc, label, value)
         code = @hegel_event_value_fn.call(ctx, tc, value, string_view(label))
         LibHegel.check!(self, ctx, code)
