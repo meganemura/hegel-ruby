@@ -6,7 +6,7 @@
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
 - [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
-- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `composite`, `deferred`
+- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations`, `composite`, `deferred`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
 - [Gotchas](#gotchas)
@@ -1067,6 +1067,33 @@ Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
 end
 seen # => ["2000-01-01T00:00:00", "2000-08-26T00:00:00.000002047", "2028-11-11T00:00:00.000383651"]
 ```
+
+### `durations(min_value: 0, max_value: 2**64 - 1)`
+
+A duration as an `Integer` count of nanoseconds in `[min_value,
+max_value]`. The largest duration is `2**64 - 1` nanoseconds, about 584
+years. `Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)` returns
+the same unit.
+
+```ruby
+Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(durations(min_value: 1_000_000_000, max_value: 60_000_000_000))
+  raise "out of range" unless v.between?(1_000_000_000, 60_000_000_000)
+end
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(durations(min_value: 1_000_000_000, max_value: 60_000_000_000))
+end
+seen # => [1000000000, 7679018401, 21643530102]
+```
+
+A `max_value` above `2**64 - 1` is treated as `2**64 - 1`. A `min_value`
+above it raises `Hegel::Error` at draw time: `"durations: min_value exceeds
+the largest generatable Duration (u64::MAX nanoseconds, about 584 years)"`.
+`max_value < min_value` raises `"durations: Cannot have max_value <
+min_value"`, and a negative `min_value` raises `"durations: min_value must
+not be negative"`.
 
 ### `composite(&block)`
 
