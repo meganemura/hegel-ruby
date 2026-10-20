@@ -37,10 +37,13 @@ section, and says under it what the move changes for a caller, or that it
 changes nothing. A caller who reads one release's notes, or the GitHub release
 built from them, then sees the engine move first. The first paragraph under
 that heading links the engine's own release notes, at
-`https://github.com/hegeldev/hegel-rust/releases/tag/libhegel-v<new>`. Each
-of those pages describes one engine release. When the move skips engine
-releases, the paragraph also links `hegel-c/CHANGELOG.md` at the
-`libhegel-v<new>` tag, which describes every release in between.
+`https://github.com/hegeldev/hegel/releases/tag/libhegel/<new>`. Each of
+those pages describes one engine release. When the move skips engine
+releases, the paragraph also links `libhegel/CHANGELOG.md` at the
+`libhegel/<new>` tag, which describes every release in between. Engine
+releases up to 0.47.1 come from hegeldev/hegel-rust, tagged
+`libhegel-v<version>`, with the changelog at `hegel-c/CHANGELOG.md`. A
+section for one of those releases links there.
 
 Write comments that record why: a constraint, or an alternative that got
 rejected. The code already states what it does. Another repository's agent
@@ -228,16 +231,21 @@ for a reason nobody intended.
 
 ## Where the answers come from
 
-**hegel-rust defines what is correct.** libhegel lives inside it, as the
-`hegel-c` member of the same Cargo workspace. Every question about meaning
-answers there: what a call does, what an error code means, who owns what, what
-a span changes, how a value shrinks, what a generator option constrains.
+**hegel-rust defines what is correct.** Since libhegel 0.47.2, the engine
+and the Rust frontend live in one repository, hegeldev/hegel, as the
+`libhegel` and `frontends/rust` members of one Cargo workspace. In this file,
+"hegel-rust" names that Rust frontend. hegeldev/hegel-rust is an archive of
+the releases up to libhegel 0.47.1, where the same files were at `hegel-c/`
+and at the repository root. Every question about meaning answers in
+hegeldev/hegel: what a call does, what an error code means, who owns what,
+what a span changes, how a value shrinks, what a generator option constrains.
 
-- `hegel-c/include/hegel.h`: the ABI
-- `src/ffi.rs`: the safe wrappers the ABI is meant to get, one per handle
-- `src/run_lifecycle.rs`: the per-test-case lifecycle
-- `tests/`: the behaviour a binding must reproduce, including
-  `tests/test_shrink_quality/`
+- `libhegel/include/hegel.h`: the ABI
+- `frontends/rust/src/ffi.rs`: the safe wrappers the ABI is meant to get, one
+  per handle
+- `frontends/rust/src/run_lifecycle.rs`: the per-test-case lifecycle
+- `frontends/rust/tests/`: the behaviour a binding must reproduce, including
+  `frontends/rust/tests/test_shrink_quality/`
 - `.agents/skills/`: that project's own procedures
 
 **The other implementations show how to do this in a language like Ruby.** They

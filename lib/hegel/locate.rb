@@ -16,7 +16,7 @@ module Hegel
   #    fallback.
   # 2. The copy bundled into the gem under +lib/hegel/libhegel/+.
   #
-  # A sibling `../hegel-rust` checkout is deliberately not searched. The env
+  # A sibling engine checkout (`../hegel`) is deliberately not searched. The env
   # override already covers local-engine-build workflows without depending
   # on any particular checkout layout, and `rake libhegel:fetch` covers the
   # rest; a rule that depends on a layout this repo's own checkout does not
@@ -32,10 +32,10 @@ module Hegel
     LIBRARY_PATH_ENV = "HEGEL_LIBHEGEL_PATH"
 
     # Published release asset name for each supported "<host_cpu>-<host_os>"
-    # pair, mirroring the artifacts hegel-rust publishes for the pinned
-    # LIBHEGEL_VERSION. Hosts absent from this table (e.g. x86_64-darwin,
-    # Intel Mac) are unsupported because hegel-rust does not publish a build
-    # for them.
+    # pair, mirroring the artifacts the libhegel release of the pinned
+    # LIBHEGEL_VERSION publishes. Hosts absent from this table (e.g.
+    # x86_64-darwin, Intel Mac) are unsupported because that release does not
+    # publish a build for them.
     ASSET_NAMES = {
       "arm64-darwin" => "libhegel-darwin-arm64.dylib",
       "x86_64-linux" => "libhegel-linux-amd64.so",
@@ -76,7 +76,7 @@ module Hegel
     end
 
     # The release asset name for the given host, or raises Hegel::Error if
-    # hegel-rust does not publish a build for it.
+    # the libhegel release does not publish a build for it.
     def asset_name(host_cpu:, host_os:)
       release_asset_name(host_cpu, host_os) || raise(Hegel::Error, unsupported_host_message(host_cpu, host_os))
     end
@@ -101,7 +101,7 @@ module Hegel
     #    directory override is how an unsupported host (e.g. x86_64-darwin)
     #    points at a local build in the first place, so treating it as an
     #    error here would close off that path.
-    # 2. libhegel_c.<ext>, the name cargo gives the library when hegel-c's
+    # 2. libhegel_c.<ext>, the name cargo gives the library when libhegel's
     #    crate (`[lib] name = "hegel_c"`) is built without renaming it.
     # 3. libhegel.<ext>, a renamed copy, per the hegel-go and hegel-ocaml
     #    READMEs.
@@ -122,8 +122,8 @@ module Hegel
       [release_asset_name(host_cpu, host_os), "libhegel_c.#{ext}", "libhegel.#{ext}"].compact
     end
 
-    # The release asset name for the given host, or nil if hegel-rust does
-    # not publish a build for it. Split from asset_name (which raises) so a
+    # The release asset name for the given host, or nil if the libhegel
+    # release does not publish a build for it. Split from asset_name (which raises) so a
     # directory override can treat an unsupported host as "skip this
     # candidate" instead of an error.
     def release_asset_name(host_cpu, host_os)
@@ -159,7 +159,7 @@ module Hegel
     end
 
     # Shared-library extension for host_os alone, independent of whether the
-    # specific host_cpu is one hegel-rust publishes a build for. This lets
+    # specific host_cpu is one libhegel publishes a build for. This lets
     # an explicit directory override (step 1) resolve on an otherwise
     # unsupported host (e.g. x86_64-darwin), matching a local libhegel build
     # that always produces the OS-native extension.

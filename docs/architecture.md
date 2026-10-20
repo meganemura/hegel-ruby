@@ -43,10 +43,13 @@ schedules it.
 
 ## Where meaning comes from
 
-libhegel is hegel-rust's native engine. hegel-rust's Cargo workspace builds
-it from the `hegel-c` directory, as the crate `hegeltest-c`, whose header is
-`hegel-c/include/hegel.h`. That header defines the ABI this gem calls: what
-each function does, what its error codes mean, and who owns each pointer.
+libhegel is the native engine of every Hegel frontend. Since 0.47.2, the
+hegeldev/hegel Cargo workspace builds it from the `libhegel` directory, as
+the crate `hegeltest-c`, whose header is `libhegel/include/hegel.h`. The
+same workspace holds the Rust frontend, hegel-rust, at `frontends/rust`.
+Releases up to 0.47.1 came from hegeldev/hegel-rust, where the engine was at
+`hegel-c`. The header defines the ABI this gem calls: what each function
+does, what its error codes mean, and who owns each pointer.
 
 The Java, Go, TypeScript, OCaml, and C++ implementations bind the same
 engine. Each works under a constraint hegel-rust does not have: a dynamic

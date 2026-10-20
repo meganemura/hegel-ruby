@@ -18,7 +18,7 @@ module Hegel
     # symbol.
     class Real
       # hegel_date_t / hegel_time_t / hegel_datetime_t, transcribed field
-      # for field from hegel-c/include/hegel.h. FFI::Struct computes each
+      # for field from libhegel/include/hegel.h. FFI::Struct computes each
       # field's offset and the struct's own alignment padding from this
       # layout -- the same C-ABI rules the compiled library was built
       # against -- so there is no hand-computed byte offset here to drift
@@ -42,7 +42,7 @@ module Hegel
 
       # hegel_string_t (`{ const char *data; size_t len; }`), and
       # hegel_generate_bytes_result_t (`{ uint8_t *data; size_t len; }`),
-      # from hegel-c/include/hegel.h: the same layout under two names. Since
+      # from libhegel/include/hegel.h: the same layout under two names. Since
       # libhegel 0.46 every string crosses the ABI as a hegel_string_t: by
       # value for an ordinary input, through a nullable pointer for an
       # optional input, and as a struct the engine writes for an output.

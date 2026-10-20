@@ -7,8 +7,8 @@ require_relative "../hegel/locate"
 require_relative "../hegel/libhegel_version"
 require_relative "../hegel/errors"
 
-# Packages this gem for the five platforms hegel-rust publishes a libhegel
-# build for (see Hegel::Locate::ASSET_NAMES), on top of the platform-
+# Packages this gem for the five platforms libhegel publishes a build
+# for (see Hegel::Locate::ASSET_NAMES), on top of the platform-
 # independent "ruby" gem `rake build` already produces. A platform gem
 # differs from that ruby gem in exactly two ways: spec.platform names the
 # platform, and lib/hegel/libhegel/ (Hegel::Locate::GEM_LIBHEGEL_DIR) carries
@@ -103,7 +103,7 @@ module Hegel
 end
 
 namespace :platform_gems do
-  desc "Build the hegeltest gem for every platform hegel-rust publishes libhegel for, " \
+  desc "Build the hegeltest gem for every platform libhegel publishes a build for, " \
     "from assets already fetched by `rake libhegel:fetch_all`"
   task :build do
     Hegel::PlatformGems.build_all.each { |path| puts "built: #{path}" }

@@ -7,7 +7,7 @@
 > there reviews or endorses it.
 >
 > The official implementations are
-> [Rust](https://github.com/hegeldev/hegel-rust),
+> [Rust](https://github.com/hegeldev/hegel/tree/main/frontends/rust),
 > [Go](https://github.com/hegeldev/hegel-go),
 > [C++](https://github.com/hegeldev/hegel-cpp),
 > [TypeScript](https://github.com/hegeldev/hegel-typescript),
