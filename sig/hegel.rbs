@@ -12,7 +12,7 @@ module Hegel
   class AssumeFailed < Exception
   end
 
-  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
+  def self.test: (?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
   class TestCase
@@ -379,7 +379,11 @@ module Hegel
     PHASE_CODES: Hash[Symbol, Integer]
     HEALTH_CHECK_CODES: Hash[Symbol, Integer]
 
-    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool, stop_on_first_failure: bool?, print_blob: bool?, show_statistics: bool?, nondeterminism_strictness: Symbol?, backend: Symbol?) -> void
+    def self.apply: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?, report_multiple_failures: bool, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, stop_on_first_failure: bool?, print_blob: bool?, show_statistics: bool?, nondeterminism_strictness: Symbol?, backend: Symbol?) -> void
+    def self.apply_shared: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, stop_on_first_failure: bool?, print_blob: bool?, show_statistics: bool?, nondeterminism_strictness: Symbol?, backend: Symbol?) -> void
+    def self.new_handle: (untyped impl, untyped ctx, String? profile) -> untyped
+    def self.register_profile: (String name, ?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool?, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?impl: untyped) -> nil
+    def self.set_default_profile: (String name, ?impl: untyped) -> nil
     def self.apply_verbosity: (untyped impl, untyped ctx, untyped settings, Symbol verbosity) -> void
     def self.apply_database: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?) -> void
     def self.apply_phases: (untyped impl, untyped ctx, untyped settings, Array[Symbol] phases) -> void
@@ -421,7 +425,7 @@ module Hegel
       def for: (String? origin) -> [Integer, Integer]
     end
 
-    def self.run: (impl: untyped, test_location: TestLocation, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
+    def self.run: (impl: untyped, test_location: TestLocation, ?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
     def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
     def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc) { (TestCase) -> R } -> R
@@ -516,6 +520,9 @@ module Hegel
       def context_last_error: (untyped ctx) -> String
       def version: (untyped ctx) -> String
       def settings_new: (untyped ctx) -> untyped
+      def settings_new_for_profile: (untyped ctx, String name) -> untyped
+      def settings_register_profile: (untyped ctx, String name, untyped s) -> nil
+      def set_default_profile: (untyped ctx, String name) -> nil
       def settings_free: (untyped ctx, untyped s) -> nil
       def settings_set_test_cases: (untyped ctx, untyped s, Integer n) -> nil
       def settings_set_verbosity: (untyped ctx, untyped s, Integer v) -> nil

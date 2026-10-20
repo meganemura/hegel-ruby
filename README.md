@@ -265,6 +265,7 @@ rules that one test case runs; 50 is the default.
 
 | Keyword | Effect |
 | --- | --- |
+| `profile` | The settings profile the run starts from; see [Profiles](#profiles) |
 | `test_cases` | How many test cases to generate |
 | `seed` | The seed for the random generation |
 | `derandomize` | Make the generation deterministic |
@@ -317,6 +318,30 @@ Statistics (over 100 test cases):
   * empty: 6.0% of test cases
   * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
 ```
+
+## Profiles
+
+A profile is a named set of settings. The engine ships `development`, `ci`,
+and `workload`, and a `hegel.toml` file can define more. Pass `profile:` to
+start one run from a profile, and register your own with
+`Hegel::Settings.register_profile`:
+
+```ruby
+Hegel::Settings.register_profile("nightly", profile: "ci", test_cases: 10_000)
+
+Hegel.test(profile: "nightly") { |tc| ... }
+```
+
+A keyword passed to `Hegel.test` still beats the profile. A profile you
+name extends the default profile, so what it does not set comes from
+there. `Hegel::Settings.set_default_profile("nightly")` makes a profile the
+default for every run in the process, and `set_default_profile("")` clears
+it. Registration and the default are process-wide, and they do not change
+runs that have already started. `register_profile` takes the keywords of
+`Hegel.test` except `database_key`, which a profile does not carry, and
+`Hegel.test` always passes `report_multiple_failures`, so a profile's value
+for it never applies. An unknown name raises `Hegel::Error`. See
+[ADR 0028](docs/adr/0028-expose-settings-profiles-as-a-keyword-and-module-functions.md).
 
 ## Agent skill
 

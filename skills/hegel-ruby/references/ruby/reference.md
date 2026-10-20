@@ -4,7 +4,7 @@
 
 - [Setup](#setup)
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
-- [Settings](#settings): `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
+- [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
 - [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
@@ -142,6 +142,7 @@ the reproduction line.
 
 | Keyword | Type | Default | Purpose |
 |---|---|---|---|
+| `profile` | `String` or `nil` | `nil` (the default profile) | Settings profile the run starts from: `"development"`, `"ci"`, `"workload"`, one in `hegel.toml`, or one from `Hegel::Settings.register_profile`; an unknown name raises `Hegel::Error`; a keyword passed alongside still wins |
 | `test_cases` | `Integer` or `nil` | `nil` (libhegel's own default: 100) | Number of test cases to run |
 | `seed` | `Integer` or `nil` | `nil` (libhegel picks its own) | Fixed RNG seed; pair with `derandomize: true` for a reproducible sequence |
 | `derandomize` | `true`/`false` or `nil` | `nil` (libhegel's own default) | Derive the seed deterministically from the test itself, instead of drawing a random one |
@@ -199,6 +200,21 @@ entirely:
 Hegel.test(phases: []) { |tc| tc.draw(integers) }
 # raises Hegel::Error, "hegel: phases expects one or more of [:explicit,
 # :reuse, :generate, :target, :shrink], got an empty Array"
+```
+
+`Hegel::Settings.register_profile(name, profile: nil, **keywords)` registers
+the settings built from `profile` (default profile when `nil`) and the
+keywords as a profile for the whole process. It takes the keywords above
+except `database_key` (a profile does not carry it), and passes `database:`
+straight to the engine (`""` disables the database). `report_multiple_failures:`
+is applied only when given, and `Hegel.test` overrides it anyway.
+`Hegel::Settings.set_default_profile(name)` makes a profile the default for
+every run in the process, and `""` clears it. Neither changes a run that has
+already started.
+
+```ruby
+Hegel::Settings.register_profile("nightly", profile: "ci", test_cases: 10_000)
+Hegel.test(profile: "nightly") { |tc| ... }
 ```
 
 `report_multiple_failures:` defaults to `false`, and is always passed, so a
