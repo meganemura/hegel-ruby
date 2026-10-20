@@ -931,13 +931,16 @@ module Hegel
       # of labor #new_collection leaves to the caller for its own
       # min_size/max_size ordering.
       #
-      # The machine is always sequential: one concurrency group, equal rule
-      # weights, and a concurrency of exactly 1, so the engine draws no
-      # concurrency level and the drawn level needs no reading. These
+      # +rule_weights+ holds one number per rule name; the engine rejects one
+      # that is not finite and positive.
+      #
+      # The machine is always sequential: one concurrency group and a
+      # concurrency of exactly 1, so the engine draws no concurrency level
+      # and the drawn level needs no reading. These
       # bindings drive the engine from one thread, and a concurrent machine
       # needs one worker thread per drawn level. For the same reason the
       # rule calls below pass worker index 0, the only worker there is.
-      def new_state_machine(ctx, tc, rule_names, invariant_names, always_check, step_count)
+      def new_state_machine(ctx, tc, rule_names, rule_weights, invariant_names, always_check, step_count)
         out = FFI::MemoryPointer.new(:pointer)
         out_concurrency = FFI::MemoryPointer.new(:int64)
         # _rule_pointers / _invariant_pointers are unread past the call
@@ -952,9 +955,11 @@ module Hegel
         # A fresh MemoryPointer is zero-filled, which puts every rule in
         # group 0.
         rule_groups = FFI::MemoryPointer.new(:int64, rule_names.size)
+        weights = FFI::MemoryPointer.new(:double, rule_weights.size)
+        weights.write_array_of_double(rule_weights.map(&:to_f))
 
         code = @hegel_new_state_machine_fn.call(
-          ctx, tc, rule_names_ptr, rule_groups, nil, rule_names.size,
+          ctx, tc, rule_names_ptr, rule_groups, weights, rule_names.size,
           invariant_names_ptr, pack_flags(always_check), invariant_names.size,
           1, 1, step_count, out, out_concurrency
         )

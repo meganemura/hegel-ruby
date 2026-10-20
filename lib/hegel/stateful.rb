@@ -43,7 +43,7 @@ module Hegel
 
       invariants = machine.class.invariant_definitions
       state_machine = tc.new_state_machine(
-        rules.keys, invariants.keys, invariants.values.map(&:always_run), step_count
+        rules.keys, rules.values.map(&:weight), invariants.keys, invariants.values.map(&:always_run), step_count
       )
       begin
         tc.note { "Initial invariant check." }
@@ -81,7 +81,7 @@ module Hegel
           name = rule_names[rule_index]
           steps_attempted += 1
           tc.note { "Step #{steps_attempted}: #{name}" }
-          rejected = true unless apply_rule(machine, rules.fetch(name), state_machine, tc)
+          rejected = true unless apply_rule(machine, rules.fetch(name).block, state_machine, tc)
         end
         tc.stop_span(discard: rejected)
         run_sampled_invariants(machine, invariants, state_machine, tc)

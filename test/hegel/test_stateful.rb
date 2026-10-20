@@ -60,8 +60,8 @@ class TestStateful < Minitest::Test
     definitions = RedeclareChildMachine.rule_definitions
 
     assert_equal %w[push pop], definitions.keys
-    assert_equal :child_push, definitions.fetch("push").call
-    assert_equal :base_pop, definitions.fetch("pop").call
+    assert_equal :child_push, definitions.fetch("push").block.call
+    assert_equal :base_pop, definitions.fetch("pop").block.call
   end
 
   class NoRulesMachine < Hegel::StateMachine
@@ -78,6 +78,96 @@ class TestStateful < Minitest::Test
     assert_includes error.message, "no rules"
   end
 
+  # ---- rule weights ----
+
+  class WeightedMachine < Hegel::StateMachine
+    rule(:plain) {}
+    rule(:heavy, weight: 2.5) {}
+    rule(:integral, weight: 3) {}
+  end
+
+  class WeightedChildMachine < WeightedMachine
+    rule(:heavy, weight: 7.0) {}
+    rule(:extra, weight: 0.5) {}
+  end
+
+  def test_a_rule_weighs_one_unless_declared_otherwise
+    weights = WeightedMachine.rule_definitions.transform_values(&:weight)
+
+    assert_equal({"plain" => 1.0, "heavy" => 2.5, "integral" => 3}, weights)
+  end
+
+  def test_a_subclass_keeps_inherited_weights_and_replaces_a_redeclared_one
+    weights = WeightedChildMachine.rule_definitions.transform_values(&:weight)
+
+    assert_equal({"plain" => 1.0, "heavy" => 7.0, "integral" => 3, "extra" => 0.5}, weights)
+  end
+
+  def test_a_weight_that_is_not_a_real_number_raises_at_declaration
+    [nil, "2", Complex(1, 1)].each do |weight|
+      error = assert_raises(Hegel::Error) do
+        Class.new(Hegel::StateMachine) { rule(:push, weight: weight) {} }
+      end
+
+      assert_includes error.message, "rule weight must be a real number"
+      assert_includes error.message, weight.inspect
+    end
+  end
+
+  def test_the_engine_is_given_one_weight_per_rule_in_declaration_order
+    fake = stateful_recording_fake([0])
+
+    Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(WeightedMachine.new, tc) }
+
+    assert_equal [[1.0, 2.5, 3]], fake.state_machine_rule_weights
+  end
+
+  def test_a_machine_with_fractional_and_integral_weights_runs
+    Hegel.test(test_cases: 5, verbosity: :quiet) { |tc| Hegel::Stateful.run(WeightedMachine.new, tc) }
+  end
+
+  class LopsidedMachine < Hegel::StateMachine
+    class << self
+      attr_accessor :cases
+    end
+
+    def initialize
+      self.class.cases << [0, 0]
+    end
+
+    rule(:heavy, weight: 50) { self.class.cases.last[0] += 1 }
+    rule(:light) { self.class.cases.last[1] += 1 }
+  end
+
+  # Swarm testing leaves one of the two rules out of about half the cases, so
+  # no aggregate ratio means anything. A case where both ran shows the
+  # weighting itself.
+  def test_a_heavier_rule_is_chosen_more_often
+    LopsidedMachine.cases = []
+
+    Hegel.test(test_cases: 100, derandomize: true) do |tc|
+      Hegel::Stateful.run(LopsidedMachine.new, tc)
+    end
+
+    assert LopsidedMachine.cases.any? { |heavy, light| light > 0 && heavy >= 30 * light },
+      "no case ran both rules with the weight-50 rule dominating: #{LopsidedMachine.cases.inspect}"
+  end
+
+  def test_a_weight_that_is_not_finite_and_positive_reaches_the_caller_as_the_engines_error
+    [0.0, -2.0, Float::NAN, Float::INFINITY].each do |weight|
+      machine = Class.new(Hegel::StateMachine) do
+        rule(:fine) {}
+        rule(:bad, weight: weight) {}
+      end
+
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(test_cases: 1, verbosity: :quiet) { |tc| Hegel::Stateful.run(machine.new, tc) }
+      end
+
+      assert_includes error.message, "rule weights must be finite and positive, but rule 1 (bad) has weight"
+    end
+  end
+
   class GeneratorMachine < Hegel::StateMachine
     attr_reader :built
 
@@ -91,7 +181,7 @@ class TestStateful < Minitest::Test
   # Hegel::Stateful.run itself invokes one, without opening the engine.
   def test_generator_methods_are_callable_bare_inside_a_rule_block
     machine = GeneratorMachine.new
-    machine.instance_exec(nil, &GeneratorMachine.rule_definitions.fetch("build"))
+    machine.instance_exec(nil, &GeneratorMachine.rule_definitions.fetch("build").block)
 
     assert_kind_of Hegel::Generators::IntegerGenerator, machine.built
   end
