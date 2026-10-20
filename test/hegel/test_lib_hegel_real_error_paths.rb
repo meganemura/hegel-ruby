@@ -34,6 +34,14 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         settings_set_suppress_health_check: -> {
           real.settings_set_suppress_health_check(ctx, nil, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
         },
+        settings_set_stop_on_first_failure: -> { real.settings_set_stop_on_first_failure(ctx, nil, true) },
+        settings_set_print_blob: -> { real.settings_set_print_blob(ctx, nil, true) },
+        settings_get_print_blob: -> { real.settings_get_print_blob(ctx, nil) },
+        settings_set_show_statistics: -> { real.settings_set_show_statistics(ctx, nil, true) },
+        settings_set_nondeterminism_strictness: -> {
+          real.settings_set_nondeterminism_strictness(ctx, nil, Hegel::LibHegel::HEGEL_NONDETERMINISM_QUIET)
+        },
+        settings_set_backend: -> { real.settings_set_backend(ctx, nil, Hegel::LibHegel::HEGEL_BACKEND_DEFAULT) },
         run_start: -> { real.run_start(ctx, nil) }
       }
 
@@ -80,7 +88,9 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         test_case_should_capture: -> { real.test_case_should_capture(ctx, nil) },
         state_machine_next_rule: -> { real.state_machine_next_rule(ctx, nil, nil) },
         state_machine_should_check_invariant: -> { real.state_machine_should_check_invariant(ctx, nil, nil, 0) },
-        state_machine_rule_rejected: -> { real.state_machine_rule_rejected(ctx, nil, nil) }
+        state_machine_rule_rejected: -> { real.state_machine_rule_rejected(ctx, nil, nil) },
+        event: -> { real.event(ctx, nil, "e") },
+        event_value: -> { real.event_value(ctx, nil, "v", 1.0) }
       }
 
       calls.each do |name, call|

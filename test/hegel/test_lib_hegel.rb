@@ -632,12 +632,24 @@ class TestLibHegel < Minitest::Test
       assert_nil real.settings_set_seed(ctx, settings, 42, true)
       assert_nil real.settings_set_derandomize(ctx, settings, true)
       assert_nil real.settings_set_database(ctx, settings, "")
+      assert_nil real.settings_set_stop_on_first_failure(ctx, settings, true)
+      assert_nil real.settings_set_show_statistics(ctx, settings, false)
+      assert_nil real.settings_set_nondeterminism_strictness(ctx, settings,
+        Hegel::LibHegel::HEGEL_NONDETERMINISM_QUIET)
+      assert_nil real.settings_set_backend(ctx, settings, Hegel::LibHegel::HEGEL_BACKEND_DEFAULT)
+      assert_nil real.settings_set_print_blob(ctx, settings, false)
+      assert_equal false, real.settings_get_print_blob(ctx, settings)
+      real.settings_set_print_blob(ctx, settings, true)
+      assert_equal true, real.settings_get_print_blob(ctx, settings)
 
       run = real.run_start(ctx, settings)
       real.settings_free(ctx, settings)
 
       tc = real.next_test_case(ctx, run)
       refute_nil tc
+
+      assert_nil real.event(ctx, tc, "e")
+      assert_nil real.event_value(ctx, tc, "v", 1.0)
 
       state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [], [], 50)
       real.state_machine_next_group(ctx, tc, state_machine)
