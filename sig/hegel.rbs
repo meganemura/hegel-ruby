@@ -20,7 +20,7 @@ module Hegel
     DRAW_METHOD_NAMES: Array[Symbol]
     DRAW_CALLER_DEPTH: Integer
 
-    def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool) -> void
+    def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool, ?grammars: GrammarCache?) -> void
     def entries: () -> Array[[:draw, String, untyped] | [:note, untyped]]?
     def draw_integer: (Integer min_value, Integer max_value, ?label: String?) -> Integer
     def draw_boolean: (?Float p, ?label: String?) -> bool
@@ -70,6 +70,28 @@ module Hegel
     def state_machine_rule_rejected: (untyped state_machine) -> nil
     def state_machine_should_check_invariant: (untyped state_machine, Integer index) -> bool
     def state_machine_free: (untyped state_machine) -> nil
+    def with_grammar: [R] (untyped key, ^() -> GrammarCache::Compiled build) { (GrammarCache::Compiled) -> R } -> R
+    def grammar_builder_new: (String text) -> untyped
+    def grammar_builder_file: (untyped builder, Integer index) -> String?
+    def grammar_builder_provide: (untyped builder, Integer index, String? text) -> nil
+    def grammar_builder_free: (untyped builder) -> nil
+    def grammar_new: (untyped builder, String? start, Integer max_size, Integer max_depth, untyped alphabet, Array[String] names) -> untyped
+    def grammar_placeholder: (untyped grammar, String name) -> String
+    def grammar_free: (untyped grammar) -> nil
+    def generate_grammar: (untyped grammar, Integer max_size) -> String
+  end
+
+  class GrammarCache
+    class Compiled
+      attr_reader grammar: untyped
+      attr_reader markers: Array[String]
+
+      def initialize: (grammar: untyped, markers: Array[String]) -> void
+    end
+
+    def initialize: () -> void
+    def fetch: (untyped key) { () -> Compiled } -> Compiled
+    def free_all: (untyped impl, untyped ctx) -> void
   end
 
   class Generator
@@ -511,10 +533,10 @@ module Hegel
     end
 
     def self.run: (impl: untyped, test_location: TestLocation, ?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
-    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) { (TestCase) -> void } -> nil
-    def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
-    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc) { (TestCase) -> R } -> R
-    def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
+    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, GrammarCache grammars, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) { (TestCase) -> void } -> nil
+    def self.drive: (untyped impl, untyped ctx, untyped run, GrammarCache grammars, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
+    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc, GrammarCache grammars) { (TestCase) -> R } -> R
+    def self.run_case: (untyped impl, untyped ctx, untyped tc, GrammarCache grammars, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
     def self.keep_capture: (Hash[String, Capture] captures, String origin, Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
     def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) -> nil
     def self.report_failures: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, quiet: bool, print_blob: bool, output: untyped) -> bot
