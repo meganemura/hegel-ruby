@@ -19,6 +19,19 @@ the engine's settings profile, like `test_cases:` and `seed:`.
   `Hegel::Error`.
 - `backend:` takes `:default` or `:urandom`.
 
+### Test location
+
+Every `Hegel.test` run now reports where its test lives to libhegel, with
+`hegel_settings_set_test_location`. Under Antithesis the engine writes one
+`always` assertion, "<class>::<function> passes properties", for each
+location; elsewhere it uses nothing, and no keyword changes. The file is
+relative to the working directory when it lies under it, and the class and
+function come from the frame that called `Hegel.test`. A call inside a
+block takes the name of the method holding the block, and a call outside
+any method, such as an RSpec example, takes the file without `.rb` as the
+class and `line <n>` as the function, so each example in a file has its
+own name.
+
 ### Test cases
 
 `tc.event(label)` and `tc.event_value(label, value)` record what a test
