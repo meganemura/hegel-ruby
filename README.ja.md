@@ -207,7 +207,7 @@ Expected: [0, 0]
 | 選択 | `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional` |
 | 書式 | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
 | 日時 | `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations` |
-| 自作 | `composite`, `deferred` |
+| 自作 | `composite`, `deferred`, `recursive` |
 
 どれも `map` と `filter` で組み合わせられます。オプションはキーワード引数で、
 `integers(min_value: 0, max_value: 9)`、`arrays(text, max_size: 5)`、`arrays(integers, unique: true)` のように、

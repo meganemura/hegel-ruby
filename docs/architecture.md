@@ -141,6 +141,16 @@ exception can be raised inside an open span, which is why
 than beside the run loop: two `rescue Exception` sites need it now, and both
 have to let those four straight through before anything else.
 
+## An abandoned recursive attempt
+
+`recursive` is the one generator that unwinds through open spans on
+purpose. When an attempt outgrows its leaf budget, `Hegel::TestCase` raises
+`Hegel::LeafBudgetExceeded` and holds it until `hegel_recursion_retry`.
+Meanwhile `stop_span` makes no native call, so the retry can discard the
+spans the attempt opened, and every other call that takes the test-case
+handle raises the held exception again instead of reaching the engine. See
+[ADR 0032](adr/0032-suppress-span-closes-while-an-abandoned-recursion-attempt-unwinds.md).
+
 ## Generator validation happens at draw time
 
 hegel-rust's own contributor documentation states the rule for its

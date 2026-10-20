@@ -38,6 +38,7 @@ An index of the design records for `hegel-ruby`.
 - [0029: Keep notes local, and defer run error kinds](adr/0029-keep-notes-local-and-defer-run-error-kinds.md)
 - [0030: Represent a duration as Integer nanoseconds](adr/0030-represent-a-duration-as-integer-nanoseconds.md)
 - [0031: Take the alphabet options from hegel-rust](adr/0031-take-the-alphabet-options-from-hegel-rust.md)
+- [0032: Suppress span closes while an abandoned recursion attempt unwinds](adr/0032-suppress-span-closes-while-an-abandoned-recursion-attempt-unwinds.md)
 - [0033: Cache compiled grammars for the length of a run](adr/0033-cache-compiled-grammars-for-the-length-of-a-run.md)
 
 A new decision gets a new record. A changed decision supersedes the old
