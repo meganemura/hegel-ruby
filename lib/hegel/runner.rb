@@ -117,6 +117,10 @@ module Hegel
     # with its class and backtrace intact), so a hegel.toml profile or a
     # HEGEL_* variable does not get to turn it off by accident.
     #
+    # +profile+ names the engine profile the settings start from; nil starts
+    # from the default profile. The keywords apply on top either way, so one
+    # passed explicitly beats the profile's value.
+    #
     # +test_location+ is a Hegel::TestLocation. It is identity rather than a
     # setting, so it goes to the engine here and not through Settings.apply.
     #
@@ -131,13 +135,13 @@ module Hegel
     # `ensure` by the code that opened it, innermost first: hegel_context_free
     # requires every other handle taken from the context to be freed first,
     # and Ruby's GC gives finalizers no ordering guarantee to rely on instead.
-    def run(impl:, test_location:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
+    def run(impl:, test_location:, profile: nil, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
       phases: nil, suppress_health_check: nil, report_multiple_failures: false, stop_on_first_failure: nil,
       print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil, backend: nil,
       output: $stderr, reproduce_failure: nil, &block)
       quiet = verbosity == :quiet
       LibHegel.with_context(impl) do |ctx|
-        settings = impl.settings_new(ctx)
+        settings = profile.nil? ? impl.settings_new(ctx) : impl.settings_new_for_profile(ctx, profile)
         run = begin
           Settings.apply(impl, ctx, settings, test_cases: test_cases, seed: seed, derandomize: derandomize,
             verbosity: verbosity, database: database, database_key: database_key, phases: phases,
