@@ -214,6 +214,312 @@ class TestRecursive < Minitest::Test
     assert_equal [:new_recursion, [:branch, 0], [:branch, 1], :finish, :finish], fake.events
   end
 
+  # ---- RecursiveGenerator against the Fake ----
+
+  def test_a_leaf_draws_inside_the_recursive_span
+    fake = RecursionEventFake.new
+    generator = recursive(integers) { |subtrees| arrays(subtrees) }
+
+    assert_equal 0, generator.do_draw(fake_test_case(fake))
+    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :integer, :finish, :free,
+      [:stop, false]], fake.events
+  end
+
+  # Every subtree span carries the recursive generator's own label.
+  def test_a_branch_draws_its_subtrees_at_the_next_depth_under_the_shared_label
+    fake = RecursionEventFake.new
+    fake.recursion_branch_values = [true]
+    fake.collection_more_count = 1
+    generator = recursive(integers) { |subtrees| arrays(subtrees) }
+    array_label = arrays(generator).label
+
+    assert_equal [0], generator.do_draw(fake_test_case(fake))
+    assert_equal [
+      [:start, generator.label], :new_recursion, [:branch, 0],
+      [:start, array_label], :new_collection, :more,
+      [:start, generator.label], [:start, generator.label], [:branch, 1], :leaf, :integer, [:stop, false], [:stop, false],
+      :more, :collection_free, [:stop, false],
+      :finish, :free, [:stop, false]
+    ], fake.events
+  end
+
+  def test_the_block_is_called_afresh_for_each_branch
+    fake = Hegel::LibHegel::Fake.new
+    fake.recursion_branch_values = [true, true]
+    fake.collection_more_count = 1
+    calls = 0
+    generator = recursive(integers) do |subtrees|
+      calls += 1
+      arrays(subtrees)
+    end
+
+    assert_equal [[]], generator.do_draw(fake_test_case(fake))
+    assert_equal 2, calls
+  end
+
+  # Between the over-budget leaf and the retry, the engine sees no span
+  # close, so the retry discards every span the attempt opened; the
+  # collection opened inside the attempt is still freed.
+  def test_a_leaf_over_budget_unwinds_without_closing_spans_and_retries_from_the_root
+    fake = RecursionEventFake.new
+    fake.recursion_branch_values = [true]
+    fake.collection_more_count = 1
+    fake.recursion_leaf_codes = [RETRY]
+    generator = recursive(integers) { |subtrees| arrays(subtrees) }
+    array_label = arrays(generator).label
+
+    assert_equal 0, generator.do_draw(fake_test_case(fake))
+    assert_equal [
+      [:start, generator.label], :new_recursion, [:branch, 0],
+      [:start, array_label], :new_collection, :more, [:start, generator.label], [:start, generator.label],
+      [:branch, 1], :leaf, :collection_free, :retry,
+      [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
+    ], fake.events
+  end
+
+  def test_a_finished_attempt_the_engine_discards_starts_again_from_the_root_without_a_retry
+    fake = RecursionEventFake.new
+    fake.recursion_finish_codes = [RETRY]
+    generator = recursive(integers) { |subtrees| arrays(subtrees) }
+
+    generator.do_draw(fake_test_case(fake))
+    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :integer, :finish,
+      [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]], fake.events
+  end
+
+  def test_a_retry_out_of_attempts_discards_the_case_and_later_draws_never_reach_the_engine
+    fake = RecursionEventFake.new
+    fake.recursion_leaf_codes = [RETRY]
+    fake.recursion_retry_codes = [Hegel::LibHegel::HEGEL_E_ASSUME]
+    tc = fake_test_case(fake)
+    generator = recursive(integers) { |subtrees| arrays(subtrees) }
+
+    verdict = assert_raises(Hegel::AssumeFailed) { generator.do_draw(tc) }
+    assert_same verdict, assert_raises(Hegel::AssumeFailed) { tc.draw(integers) }
+    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :retry, :free], fake.events
+  end
+
+  def test_a_stop_test_from_a_leaf_propagates_and_frees_the_recursion
+    fake = RecursionEventFake.new
+    fake.recursion_leaf_codes = [Hegel::LibHegel::HEGEL_E_STOP_TEST]
+    generator = recursive(integers) { |subtrees| arrays(subtrees) }
+
+    assert_raises(Hegel::StopTest) { generator.do_draw(fake_test_case(fake)) }
+    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :free, [:stop, false]], fake.events
+    assert_equal 1, fake.freed_recursions.size
+  end
+
+  def test_an_abandoned_attempt_inside_a_filter_closes_no_span_as_rejected
+    fake = RecursionEventFake.new
+    fake.recursion_branch_values = [true]
+    fake.recursion_leaf_codes = [RETRY]
+    branches = []
+    generator = recursive(integers) { |subtrees| subtrees.filter { true }.tap { |b| branches << b } }
+
+    generator.do_draw(fake_test_case(fake))
+    assert_equal [
+      [:start, generator.label], :new_recursion, [:branch, 0],
+      [:start, branches.first.label], [:start, generator.label], [:branch, 1], :leaf, :retry,
+      [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
+    ], fake.events
+  end
+
+  # The four ways a branch's own code can meet the abandoned attempt all end
+  # in the same retry, with nothing they did after it reaching the engine.
+  def test_a_branch_cannot_keep_an_abandoned_attempt
+    bodies = {
+      rescue_standard_error: lambda do |dtc, subtrees|
+        dtc.draw(subtrees)
+      rescue
+        :rescued
+      end,
+      rescue_exception_and_return: lambda do |dtc, subtrees|
+        dtc.draw(subtrees)
+      rescue Exception # standard:disable Lint/RescueException
+        :swallowed
+      end,
+      rescue_exception_and_draw: lambda do |dtc, subtrees|
+        begin
+          dtc.draw(subtrees)
+        rescue Exception # standard:disable Lint/RescueException
+          nil
+        end
+        dtc.draw(integers)
+      end
+    }
+
+    bodies.each do |name, body|
+      fake = RecursionEventFake.new
+      fake.recursion_branch_values = [true]
+      fake.recursion_leaf_codes = [RETRY]
+      composites = []
+      generator = recursive(integers) do |subtrees|
+        composite { |dtc| body.call(dtc, subtrees) }.tap { |c| composites << c }
+      end
+
+      assert_equal 0, generator.do_draw(fake_test_case(fake)), name
+      assert_equal [
+        [:start, generator.label], :new_recursion, [:branch, 0],
+        [:start, composites.first.label], [:start, generator.label], [:branch, 1], :leaf, :retry,
+        [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
+      ], fake.events, name
+    end
+  end
+
+  def test_an_ensure_that_raises_while_an_attempt_unwinds_propagates_its_own_error
+    fake = RecursionEventFake.new
+    fake.recursion_branch_values = [true]
+    fake.recursion_leaf_codes = [RETRY]
+    composites = []
+    generator = recursive(integers) do |subtrees|
+      composite do |dtc|
+        dtc.draw(subtrees)
+      ensure
+        raise "cleanup failed"
+      end.tap { |c| composites << c }
+    end
+
+    error = assert_raises(RuntimeError) { generator.do_draw(fake_test_case(fake)) }
+    assert_equal "cleanup failed", error.message
+    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], [:start, composites.first.label],
+      [:start, generator.label], [:branch, 1], :leaf, :free], fake.events
+  end
+
+  # The body that rescues that error and draws again gets the abandoned
+  # attempt back, and the run discards the case.
+  def test_an_attempt_left_abandoned_by_a_raising_ensure_discards_the_case
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 1
+    fake.recursion_branch_values = [true]
+    fake.recursion_leaf_codes = [RETRY]
+    generator = recursive(integers) do |subtrees|
+      composite do |dtc|
+        dtc.draw(subtrees)
+      ensure
+        raise "cleanup failed"
+      end
+    end
+
+    Hegel.test(impl: fake, output: StringIO.new) do |tc|
+      begin
+        tc.draw(generator)
+      rescue RuntimeError
+        nil
+      end
+      tc.draw(integers)
+    end
+
+    assert_equal [Hegel::LibHegel::HEGEL_STATUS_INVALID], fake.marked_statuses
+  end
+
+  def test_a_retry_in_a_nested_recursive_draw_leaves_the_outer_one_alone
+    fake = RecursionEventFake.new
+    fake.recursion_branch_values = [false, true, false]
+    fake.recursion_leaf_codes = [Hegel::LibHegel::HEGEL_OK, RETRY]
+    fake.collection_more_count = 1
+    inner = recursive(integers) { |subtrees| arrays(subtrees) }
+    outer = recursive(inner) { |subtrees| arrays(subtrees) }
+
+    assert_equal 0, outer.do_draw(fake_test_case(fake))
+    assert_equal [
+      [:start, outer.label], :new_recursion, [:branch, 0], :leaf,
+      [:start, inner.label], :new_recursion, [:branch, 0],
+      [:start, arrays(inner).label], :new_collection, :more, [:start, inner.label], [:start, inner.label],
+      [:branch, 1], :leaf, :collection_free, :retry,
+      [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false],
+      :finish, :free, [:stop, false]
+    ], fake.events
+  end
+
+  # The inner draw's leaves are subtrees of the outer one, so an outer leaf
+  # over budget unwinds through the inner draw, which frees its own
+  # recursion and leaves the retry to the outer.
+  def test_a_retry_of_the_outer_recursive_draw_passes_through_an_inner_one
+    fake = RecursionEventFake.new
+    fake.recursion_branch_values = [true, false, false]
+    fake.recursion_leaf_codes = [Hegel::LibHegel::HEGEL_OK, RETRY]
+    inners = []
+    outer = recursive(integers) do |subtrees|
+      recursive(subtrees) { |inner_subtrees| arrays(inner_subtrees) }.tap { |inner| inners << inner }
+    end
+
+    assert_equal 0, outer.do_draw(fake_test_case(fake))
+    assert_equal [
+      [:start, outer.label], :new_recursion, [:branch, 0],
+      [:start, inners.first.label], :new_recursion, [:branch, 0], :leaf,
+      [:start, outer.label], [:branch, 1], :leaf, :free, :retry,
+      [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
+    ], fake.events
+  end
+
+  def test_a_subtree_drawn_after_its_recursive_draw_raises
+    fake = Hegel::LibHegel::Fake.new
+    fake.recursion_branch_values = [true]
+    kept = nil
+    generator = recursive(integers) do |subtrees|
+      kept = subtrees
+      arrays(subtrees)
+    end
+    tc = fake_test_case(fake)
+    generator.do_draw(tc)
+
+    error = assert_raises(Hegel::Error) { kept.do_draw(tc) }
+    assert_equal "recursive: a subtree generator was drawn outside the draw that made it", error.message
+  end
+
+  def test_the_default_budgets_reach_the_engine
+    fake = Hegel::LibHegel::Fake.new
+    recursive(integers) { |subtrees| arrays(subtrees) }.do_draw(fake_test_case(fake))
+    recursive(integers, max_depth: 0, max_leaves: 2**64 - 1) { |subtrees| arrays(subtrees) }
+      .do_draw(fake_test_case(fake))
+
+    assert_equal [[32, 100], [0, 2**64 - 1]], fake.new_recursion_calls
+  end
+
+  def test_each_invalid_argument_raises_at_draw_time_with_its_own_message
+    branch = ->(subtrees) { arrays(subtrees) }
+    cases = {
+      recursive(integers) => "recursive: block is required",
+      recursive(5, &branch) => "recursive: leaf must be a generator, got 5",
+      recursive(integers, max_depth: -1, &branch) =>
+        "recursive: max_depth must be an Integer between 0 and 2**64 - 1, got -1",
+      recursive(integers, max_depth: 2**64, &branch) =>
+        "recursive: max_depth must be an Integer between 0 and 2**64 - 1, got 18446744073709551616",
+      recursive(integers, max_depth: 1.0, &branch) =>
+        "recursive: max_depth must be an Integer between 0 and 2**64 - 1, got 1.0",
+      recursive(integers, max_leaves: -1, &branch) =>
+        "recursive: max_leaves must be an Integer between 0 and 2**64 - 1, got -1",
+      recursive(integers, max_leaves: 2**64, &branch) =>
+        "recursive: max_leaves must be an Integer between 0 and 2**64 - 1, got 18446744073709551616",
+      recursive(integers, max_leaves: nil, &branch) =>
+        "recursive: max_leaves must be an Integer between 0 and 2**64 - 1, got nil"
+    }
+
+    cases.each do |generator, message|
+      fake = RecursionEventFake.new
+      error = assert_raises(Hegel::Error) { generator.do_draw(fake_test_case(fake)) }
+      assert_equal message, error.message
+      assert_empty fake.events, message
+    end
+  end
+
+  def test_a_block_that_returns_something_other_than_a_generator_raises_at_draw_time
+    fake = Hegel::LibHegel::Fake.new
+    fake.recursion_branch_values = [true]
+    generator = recursive(integers) { |_subtrees| 5 }
+
+    error = assert_raises(Hegel::Error) { generator.do_draw(fake_test_case(fake)) }
+    assert_equal "recursive: the block must return a generator, got 5", error.message
+    assert_equal 1, fake.freed_recursions.size
+  end
+
+  def test_the_label_names_the_leaf_generator
+    assert_equal Hegel::LibHegel.label_combine([Hegel::Generators::RecursiveGenerator.label, integers.label]),
+      recursive(integers) { |s| arrays(s) }.label
+    assert_equal recursive(integers) { |s| arrays(s) }.label, recursive(integers, max_depth: 1) { |s| tuples(s) }.label
+    refute_equal recursive(integers) { |s| arrays(s) }.label, recursive(text) { |s| arrays(s) }.label
+  end
+
   # ---- Hegel::Runner ----
 
   # A body that swallows the abandoned attempt and draws again gets the

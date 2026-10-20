@@ -412,6 +412,24 @@ module Hegel
       def do_draw: (untyped tc) -> untyped
     end
 
+    class RecursiveGenerator < Generator
+      UINT64_MAX: Integer
+
+      def initialize: (untyped leaf, max_depth: untyped, max_leaves: untyped) ?{ (SubtreeGenerator) -> untyped } -> void
+      def do_draw: (untyped tc) -> untyped
+
+      private
+
+      def validate_bound: (String name, untyped value) -> void
+      def draw_recursion: (untyped tc) -> untyped
+    end
+
+    class SubtreeGenerator < Generator
+      def initialize: (Generator leaf, ^(SubtreeGenerator) -> untyped branch, TestCase::Recursion recursion, Integer depth, Integer label) -> void
+      def do_draw: (untyped tc) -> untyped
+      def draw_subtree: (untyped tc) -> untyped
+    end
+
     extend Syntax::Methods
   end
 
@@ -495,6 +513,7 @@ module Hegel
       def durations: (?min_value: Integer, ?max_value: Integer) -> Generators::DurationsGenerator
       def composite: () { (Generators::CompositeGenerator::BlockTestCase) -> untyped } -> Generators::CompositeGenerator
       def deferred: () -> Generators::DeferredGenerator
+      def recursive: (Generator leaf, ?max_depth: Integer, ?max_leaves: Integer) { (Generators::SubtreeGenerator) -> Generator } -> Generators::RecursiveGenerator
     end
   end
 

@@ -237,6 +237,15 @@ module Hegel
       def deferred
         Generators::DeferredGenerator.new
       end
+
+      # A recursively defined value, such as a tree: either a value from
+      # +leaf+, or what the block's generator builds from sub-values of the
+      # same kind (see Generators::RecursiveGenerator). The block receives
+      # the generator of those sub-values and is called afresh for each
+      # branch.
+      def recursive(leaf, max_depth: 32, max_leaves: 100, &branch)
+        Generators::RecursiveGenerator.new(leaf, max_depth: max_depth, max_leaves: max_leaves, &branch)
+      end
     end
   end
 
