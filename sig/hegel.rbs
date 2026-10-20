@@ -41,7 +41,7 @@ module Hegel
     def collection_more: (untyped collection) -> bool
     def collection_reject: (untyped collection, ?why: String?) -> untyped
     def collection_free: (untyped collection) -> untyped
-    def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
+    def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) { (untyped) -> R } -> R
     def with_regex_generator: [R] (String pattern, fullmatch: bool) { (untyped) -> R } -> R
     def with_email_generator: [R] () { (untyped) -> R } -> R
     def with_url_generator: [R] () { (untyped) -> R } -> R
@@ -648,7 +648,7 @@ module Hegel
       def state_machine_should_check_invariant: (untyped ctx, untyped tc, untyped state_machine, Integer index) -> bool
       def state_machine_free: (untyped ctx, untyped state_machine) -> nil
       def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
-      def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) -> untyped
+      def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) -> untyped
       def string_generator_free: (untyped ctx, untyped generator) -> nil
       def generate_string: (untyped ctx, untyped tc, untyped generator) -> String
       def owned_string_free: (untyped ctx, untyped result) -> nil

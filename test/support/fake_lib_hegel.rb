@@ -120,6 +120,11 @@ module Hegel
       attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
         :freed_pools
 
+      # The arguments of each #string_generator_text call (a Hash of its
+      # keywords) and each #string_generator_regex call (a Hash of pattern,
+      # fullmatch and alphabet), paired with the handle that call returned.
+      attr_reader :string_generator_text_calls, :string_generator_regex_calls
+
       # The value passed to each settings setter, one array per keyword, so
       # a test can confirm Hegel::Settings.apply calls the setter its table
       # names with the value it was given (and that a nil keyword calls no
@@ -144,6 +149,8 @@ module Hegel
         @freed_settings = []
         @freed_test_cases = []
         @freed_string_generators = []
+        @string_generator_text_calls = []
+        @string_generator_regex_calls = []
         @freed_pools = []
 
         @settings_new_code = HEGEL_OK
@@ -523,9 +530,15 @@ module Hegel
         @generate_float_value
       end
 
-      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF)
+      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF,
+        categories: nil, exclude_categories: nil, include_characters: "", exclude_characters: "")
         LibHegel.check!(self, ctx, @string_generator_text_code)
-        Object.new
+        options = {
+          min_size: min_size, max_size: max_size, codec: codec, min_codepoint: min_codepoint,
+          max_codepoint: max_codepoint, categories: categories, exclude_categories: exclude_categories,
+          include_characters: include_characters, exclude_characters: exclude_characters
+        }
+        Object.new.tap { |handle| @string_generator_text_calls << [options, handle] }
       end
 
       # Records +generator+, so a test can confirm
@@ -554,9 +567,11 @@ module Hegel
         nil
       end
 
-      def string_generator_regex(ctx, _pattern, _fullmatch, _alphabet = nil)
+      def string_generator_regex(ctx, pattern, fullmatch, alphabet = nil)
         LibHegel.check!(self, ctx, @string_generator_regex_code)
-        Object.new
+        Object.new.tap do |handle|
+          @string_generator_regex_calls << [{pattern: pattern, fullmatch: fullmatch, alphabet: alphabet}, handle]
+        end
       end
 
       def string_generator_email(ctx)

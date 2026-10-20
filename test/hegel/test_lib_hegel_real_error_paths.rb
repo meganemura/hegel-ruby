@@ -175,6 +175,23 @@ class TestLibHegelRealErrorPaths < Minitest::Test
       end
       assert_includes text_error.message, "HEGEL_E_INVALID_ARG"
 
+      category_error = assert_raises(Hegel::Error) do
+        real.string_generator_text(ctx, min_size: 1, max_size: 1, categories: %w[not-a-category])
+      end
+      assert_includes category_error.message, "HEGEL_E_INVALID_ARG"
+
+      exclude_error = assert_raises(Hegel::Error) do
+        real.string_generator_text(ctx, min_size: 1, max_size: 1, exclude_categories: %w[not-a-category])
+      end
+      assert_includes exclude_error.message, "HEGEL_E_INVALID_ARG"
+
+      empty_error = assert_raises(Hegel::Error) do
+        real.string_generator_text(
+          ctx, min_size: 1, max_size: 1, min_codepoint: 0x30, max_codepoint: 0x30, exclude_characters: "0"
+        )
+      end
+      assert_includes empty_error.message, "HEGEL_E_INVALID_ARG"
+
       regex_error = assert_raises(Hegel::Error) { real.string_generator_regex(ctx, "(", false) }
       assert_includes regex_error.message, "HEGEL_E_INVALID_ARG"
     end
