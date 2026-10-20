@@ -158,18 +158,82 @@ module Hegel
       end
     end
 
-    # Hegel::Syntax::Methods#text. A Unicode string of [min_size, max_size]
-    # characters, unbounded above by default.
-    class TextGenerator < Generator
-      def initialize(min_size:, max_size:, codec:, min_codepoint:, max_codepoint:)
-        @min_size = min_size
-        @max_size = max_size
-        @codec = codec
-        @min_codepoint = min_codepoint
-        @max_codepoint = max_codepoint
+    # The codecs hegel_string_generator_text accepts. Checked here as well so
+    # the message matches hegel-rust's, which rejects an unknown codec before
+    # the engine sees it.
+    CODECS = %w[ascii latin-1 iso-8859-1 utf-8].freeze
+
+    # The categories that contain surrogate codepoints. hegel-rust rejects
+    # them in +categories+ because its strings cannot hold a surrogate.
+    SURROGATE_CATEGORIES = %w[Cs C].freeze
+
+    # Hegel::Syntax::Methods#characters. A String of exactly one character.
+    # It also carries the alphabet options that TextGenerator and
+    # FromRegexGenerator share, so all three build their text handle from the
+    # same arguments.
+    class CharactersGenerator < Generator
+      def initialize(codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil,
+        include_characters: nil, exclude_characters: nil)
+        @options = {
+          codec: codec, min_codepoint: min_codepoint, max_codepoint: max_codepoint, categories: categories,
+          exclude_categories: exclude_categories, include_characters: include_characters,
+          exclude_characters: exclude_characters
+        }.freeze
       end
 
       def do_draw(tc)
+        with_alphabet(tc, "characters", 1, 1) { |generator| tc.generate_string(generator) }
+      end
+
+      # Whether any alphabet option was passed, which TextGenerator needs to
+      # refuse an +alphabet+ given beside one.
+      def options_given?
+        @options.each_value.any? { |value| !value.nil? }
+      end
+
+      # Yields a text handle over this alphabet for strings of
+      # [min_size, max_size] characters, freed when the block returns.
+      # +name+ is the factory method whose draw this is, for the messages.
+      def with_alphabet(tc, name, min_size, max_size, &block)
+        tc.with_text_generator(min_size: min_size, max_size: max_size, **engine_options(name), &block)
+      end
+
+      private
+
+      def engine_options(name)
+        codec = @options[:codec]
+        raise Hegel::Error, "#{name}: invalid codec: #{codec}" if codec && !CODECS.include?(codec)
+
+        categories = @options[:categories]
+        exclude_categories = @options[:exclude_categories]
+        if categories
+          surrogate = categories.find { |category| SURROGATE_CATEGORIES.include?(category) }
+          if surrogate
+            raise Hegel::Error,
+              "#{name}: Category \"#{surrogate}\" includes surrogate codepoints (Cs), " \
+              "which a valid UTF-8 String cannot hold."
+          end
+          # hegel-rust drops exclude_categories when categories is given.
+          exclude_categories = nil
+        end
+        @options.merge(categories: categories, exclude_categories: exclude_categories).compact
+      end
+    end
+
+    # Hegel::Syntax::Methods#text. A Unicode string of [min_size, max_size]
+    # characters, unbounded above by default. +alphabet+ is a String of the
+    # permitted characters or a CharactersGenerator, and cannot be combined
+    # with any of the character options.
+    class TextGenerator < Generator
+      def initialize(min_size:, max_size:, alphabet: nil, **character_options)
+        @min_size = min_size
+        @max_size = max_size
+        @alphabet = alphabet
+        @characters = CharactersGenerator.new(**character_options)
+      end
+
+      def do_draw(tc)
+        alphabet = alphabet_generator
         max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
         raise Hegel::Error, "text: max_size < min_size" if max_size < @min_size
 
@@ -184,10 +248,21 @@ module Hegel
         # free at a fixed, known scope exit; Ruby has no equivalent
         # lifetime to hang a cache on, so this pays the alphabet-building
         # cost every draw instead.
-        tc.with_text_generator(
-          min_size: @min_size, max_size: max_size, codec: @codec,
-          min_codepoint: @min_codepoint || 0, max_codepoint: @max_codepoint || 0xFFFFFFFF
-        ) { |generator| tc.generate_string(generator) }
+        alphabet.with_alphabet(tc, "text", @min_size, max_size) { |generator| tc.generate_string(generator) }
+      end
+
+      private
+
+      def alphabet_generator
+        return @characters if @alphabet.nil?
+
+        raise Hegel::Error, "text: Cannot combine .alphabet() with character methods." if @characters.options_given?
+
+        case @alphabet
+        when String then CharactersGenerator.new(categories: [], include_characters: @alphabet)
+        when CharactersGenerator then @alphabet
+        else raise Hegel::Error, "text: alphabet must be a String or a characters generator, not a #{@alphabet.class}"
+        end
       end
     end
 
@@ -619,26 +694,6 @@ module Hegel
         ensure
           tc.collection_free(collection)
         end
-      end
-    end
-
-    # Hegel::Syntax::Methods#characters. A String of exactly one character,
-    # sharing TextGenerator's own alphabet options (codec, min_codepoint,
-    # max_codepoint) by delegating to a TextGenerator built with min_size
-    # and max_size both fixed at 1 -- the same alphabet-building logic,
-    # just bounded to a single character instead of a run of them. Opens
-    # no span of its own for the same reason TextGenerator does not: the
-    # delegated #do_draw is the whole draw, not a composition of several.
-    class CharactersGenerator < Generator
-      def initialize(codec:, min_codepoint:, max_codepoint:)
-        @text = TextGenerator.new(
-          min_size: 1, max_size: 1, codec: codec,
-          min_codepoint: min_codepoint, max_codepoint: max_codepoint
-        )
-      end
-
-      def do_draw(tc)
-        @text.do_draw(tc)
       end
     end
 
