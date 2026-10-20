@@ -30,6 +30,7 @@ module Hegel
     HEGEL_E_NOT_COMPLETE = -7
     HEGEL_E_INTERNAL = -8
     HEGEL_E_CONCURRENT_USE = -9
+    HEGEL_E_NOT_FOUND = -11
 
     # The hegel.h name for each code above, so a translated error message
     # names the code instead of leaving the reader to cross-reference the
@@ -44,7 +45,8 @@ module Hegel
       HEGEL_E_ALREADY_COMPLETE => "HEGEL_E_ALREADY_COMPLETE",
       HEGEL_E_NOT_COMPLETE => "HEGEL_E_NOT_COMPLETE",
       HEGEL_E_INTERNAL => "HEGEL_E_INTERNAL",
-      HEGEL_E_CONCURRENT_USE => "HEGEL_E_CONCURRENT_USE"
+      HEGEL_E_CONCURRENT_USE => "HEGEL_E_CONCURRENT_USE",
+      HEGEL_E_NOT_FOUND => "HEGEL_E_NOT_FOUND"
     }.freeze
 
     # hegel_status_t, named from hegel.h's enum of the same name. Passed to
@@ -141,6 +143,8 @@ module Hegel
       new_pool pool_add pool_generate pool_free
       new_state_machine state_machine_next_group state_machine_next_rule state_machine_rule_rejected
       state_machine_should_check_invariant state_machine_free
+      grammar_builder_new grammar_builder_file grammar_builder_provide grammar_builder_free
+      grammar_new grammar_placeholder grammar_free generate_grammar
     ].freeze
 
     module_function

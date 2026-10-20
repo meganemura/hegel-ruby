@@ -54,7 +54,23 @@ module Hegel
         :target_code,
         :new_pool_code, :pool_add_code, :pool_generate_code,
         :new_state_machine_code, :state_machine_next_group_code, :state_machine_next_rule_code,
-        :state_machine_rule_rejected_code, :state_machine_should_check_invariant_code
+        :state_machine_rule_rejected_code, :state_machine_should_check_invariant_code,
+        :grammar_builder_new_code, :grammar_builder_file_code, :grammar_builder_provide_code, :grammar_new_code,
+        :grammar_placeholder_code, :generate_grammar_code
+
+      # The paths #grammar_builder_file answers, by index, and the strings
+      # #generate_grammar answers, one per call in order, then "".
+      attr_writer :grammar_builder_files, :generate_grammar_values
+
+      # What the grammar calls were given: each builder's text, each
+      # [builder, index, text] provided, a Hash of each #grammar_new call's
+      # arguments, and the max_size of each #generate_grammar call.
+      attr_reader :grammar_builder_texts, :grammar_builder_provides, :grammar_new_calls, :generate_grammar_max_sizes,
+        :freed_grammar_builders, :freed_grammars
+
+      # context_free, the grammar calls, and spans, in the order they were
+      # made, so a test can check one happened before another.
+      attr_reader :events
 
       # Values #pool_add / #pool_generate / #state_machine_next_group /
       # #state_machine_next_rule / #state_machine_should_check_invariant hand
@@ -278,6 +294,22 @@ module Hegel
         @state_machine_rule_rejected_code = HEGEL_OK
         @state_machine_should_check_invariant_code = HEGEL_OK
         @state_machine_should_check_invariant_value = true
+
+        @grammar_builder_new_code = HEGEL_OK
+        @grammar_builder_file_code = HEGEL_OK
+        @grammar_builder_provide_code = HEGEL_OK
+        @grammar_new_code = HEGEL_OK
+        @grammar_placeholder_code = HEGEL_OK
+        @generate_grammar_code = HEGEL_OK
+        @grammar_builder_files = []
+        @generate_grammar_values = []
+        @grammar_builder_texts = []
+        @grammar_builder_provides = []
+        @grammar_new_calls = []
+        @generate_grammar_max_sizes = []
+        @freed_grammar_builders = []
+        @freed_grammars = []
+        @events = []
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -290,6 +322,7 @@ module Hegel
       # contract) so a test can assert a context was released.
       def context_free(ctx)
         @freed_contexts << ctx
+        @events << [:context_free]
         nil
       end
 
@@ -489,12 +522,14 @@ module Hegel
         f.caveat
       end
 
-      def start_span(ctx, _tc, _label)
+      def start_span(ctx, _tc, label)
+        @events << [:start_span, label]
         LibHegel.check!(self, ctx, @start_span_code)
         nil
       end
 
-      def stop_span(ctx, _tc, _discard)
+      def stop_span(ctx, _tc, discard)
+        @events << [:stop_span, discard]
         LibHegel.check!(self, ctx, @stop_span_code)
         nil
       end
@@ -746,6 +781,54 @@ module Hegel
 
       def state_machine_free(_ctx, _state_machine)
         nil
+      end
+
+      def grammar_builder_new(ctx, text)
+        LibHegel.check!(self, ctx, @grammar_builder_new_code)
+        @grammar_builder_texts << text
+        Object.new
+      end
+
+      def grammar_builder_file(ctx, _builder, index)
+        LibHegel.check!(self, ctx, @grammar_builder_file_code)
+        @grammar_builder_files[index]
+      end
+
+      def grammar_builder_provide(ctx, builder, index, text)
+        @grammar_builder_provides << [builder, index, text]
+        LibHegel.check!(self, ctx, @grammar_builder_provide_code)
+        nil
+      end
+
+      def grammar_builder_free(_ctx, builder)
+        @freed_grammar_builders << builder
+        nil
+      end
+
+      def grammar_new(ctx, builder, start, max_size, max_depth, alphabet, names)
+        @grammar_new_calls << {
+          builder: builder, start: start, max_size: max_size, max_depth: max_depth, alphabet: alphabet, names: names
+        }
+        LibHegel.check!(self, ctx, @grammar_new_code)
+        Object.new.tap { |grammar| @events << [:grammar_new, grammar] }
+      end
+
+      def grammar_placeholder(ctx, _grammar, name)
+        LibHegel.check!(self, ctx, @grammar_placeholder_code)
+        "<<EXPLICIT_#{name}_fake>>"
+      end
+
+      def grammar_free(_ctx, grammar)
+        @freed_grammars << grammar
+        @events << [:grammar_free, grammar]
+        nil
+      end
+
+      def generate_grammar(ctx, _tc, _grammar, max_size)
+        @generate_grammar_max_sizes << max_size
+        @events << [:generate_grammar, max_size]
+        LibHegel.check!(self, ctx, @generate_grammar_code)
+        @generate_grammar_values.shift || ""
       end
     end
   end

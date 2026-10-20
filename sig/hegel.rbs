@@ -558,6 +558,7 @@ module Hegel
     HEGEL_E_NOT_COMPLETE: Integer
     HEGEL_E_INTERNAL: Integer
     HEGEL_E_CONCURRENT_USE: Integer
+    HEGEL_E_NOT_FOUND: Integer
     CODE_NAMES: Hash[Integer, String]
     HEGEL_STATUS_VALID: Integer
     HEGEL_STATUS_INVALID: Integer
@@ -681,6 +682,14 @@ module Hegel
       def generate_date: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
       def generate_time: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
       def generate_datetime: (untyped ctx, untyped tc, Array[Integer] min_date, Array[Integer] min_time, Array[Integer] max_date, Array[Integer] max_time) -> [Array[Integer], Array[Integer]]
+      def grammar_builder_new: (untyped ctx, String text) -> untyped
+      def grammar_builder_file: (untyped ctx, untyped builder, Integer index) -> String?
+      def grammar_builder_provide: (untyped ctx, untyped builder, Integer index, String? text) -> nil
+      def grammar_builder_free: (untyped ctx, untyped builder) -> nil
+      def grammar_new: (untyped ctx, untyped builder, String? start, Integer max_size, Integer max_depth, untyped alphabet, Array[String] names) -> untyped
+      def grammar_placeholder: (untyped ctx, untyped grammar, String name) -> String
+      def grammar_free: (untyped ctx, untyped grammar) -> nil
+      def generate_grammar: (untyped ctx, untyped tc, untyped grammar, Integer max_size) -> String
     end
   end
 end

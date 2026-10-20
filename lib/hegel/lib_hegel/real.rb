@@ -273,6 +273,28 @@ module Hegel
           [:pointer, :pointer, DatetimeStruct.by_value, DatetimeStruct.by_value, :pointer], :int32
         )
 
+        @hegel_grammar_builder_new_fn = bind(
+          "hegel_grammar_builder_new", [:pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_grammar_builder_file_fn = bind(
+          "hegel_grammar_builder_file", [:pointer, :pointer, :size_t, :pointer], :int32
+        )
+        @hegel_grammar_builder_provide_fn = bind(
+          "hegel_grammar_builder_provide", [:pointer, :pointer, :size_t, :pointer], :int32
+        )
+        @hegel_grammar_builder_free_fn = bind("hegel_grammar_builder_free", [:pointer, :pointer], :int32)
+        @hegel_grammar_new_fn = bind(
+          "hegel_grammar_new",
+          [:pointer, :pointer, :pointer, :uint64, :uint32, :pointer, :pointer, :size_t, :pointer], :int32
+        )
+        @hegel_grammar_placeholder_fn = bind(
+          "hegel_grammar_placeholder", [:pointer, :pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_grammar_free_fn = bind("hegel_grammar_free", [:pointer, :pointer], :int32)
+        @hegel_generate_grammar_fn = bind(
+          "hegel_generate_grammar", [:pointer, :pointer, :pointer, :uint64, :pointer], :int32
+        )
+
         LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
       end
 
@@ -1195,6 +1217,84 @@ module Hegel
         )
         LibHegel.check!(self, ctx, code)
         [read_date(out[:date]), read_time(out[:time])]
+      end
+
+      # Returns a caller-owned grammar builder for +text+, a grammar in
+      # Lark's syntax, released with #grammar_builder_free.
+      def grammar_builder_new(ctx, text)
+        out = FFI::MemoryPointer.new(:pointer)
+        code = @hegel_grammar_builder_new_fn.call(ctx, string_view(text.encode(Encoding::UTF_8)), out)
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # The path of the +index+th file the grammar imports, or nil past the
+      # end of the list. HEGEL_E_NOT_FOUND marks that end rather than an
+      # error, so it is answered before LibHegel.check! sees it.
+      def grammar_builder_file(ctx, builder, index)
+        out = StringStruct.new
+        code = @hegel_grammar_builder_file_fn.call(ctx, builder, index, out)
+        return nil if code == HEGEL_E_NOT_FOUND
+
+        LibHegel.check!(self, ctx, code)
+        read_string(out)
+      end
+
+      # Supplies the +index+th file's +text+, or nil for a file that does
+      # not exist, which the header keeps apart from an empty file.
+      def grammar_builder_provide(ctx, builder, index, text)
+        code = @hegel_grammar_builder_provide_fn.call(ctx, builder, index, optional_string(text))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def grammar_builder_free(ctx, builder)
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
+        @hegel_grammar_builder_free_fn.call(ctx, builder) # mutineer:disable-line statement_removal
+        nil
+      end
+
+      # Returns a caller-owned grammar compiled from +builder+, released
+      # with #grammar_free. +start+ nil is the rule `start`; +alphabet+ is
+      # an optional text generator handle. +names+ always goes over as a
+      # non-NULL array, as hegel-rust passes it, even when it is empty.
+      def grammar_new(ctx, builder, start, max_size, max_depth, alphabet, names)
+        out = FFI::MemoryPointer.new(:pointer)
+        names_array, names_slots = optional_name_array(names)
+        code = @hegel_grammar_new_fn.call(
+          ctx, builder, optional_string(start), max_size, max_depth, alphabet, names_array, names_slots.size, out
+        )
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # The marker standing for the explicit terminal +name+ in the strings
+      # drawn from +grammar+, copied out of the grammar's own buffer.
+      def grammar_placeholder(ctx, grammar, name)
+        out = StringStruct.new
+        code = @hegel_grammar_placeholder_fn.call(ctx, grammar, string_view(name), out)
+        LibHegel.check!(self, ctx, code)
+        read_string(out)
+      end
+
+      def grammar_free(ctx, grammar)
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
+        @hegel_grammar_free_fn.call(ctx, grammar) # mutineer:disable-line statement_removal
+        nil
+      end
+
+      # A drawn string of +grammar+ of at most +max_size+ characters outside
+      # its markers, 0 meaning the grammar's own cap. Freed like
+      # #generate_string's result.
+      def generate_grammar(ctx, tc, grammar, max_size)
+        out = StringStruct.new
+        code = @hegel_generate_grammar_fn.call(ctx, tc, grammar, max_size, out)
+        LibHegel.check!(self, ctx, code)
+        read_string(out)
+      ensure
+        owned_string_free(ctx, out)
       end
 
       private
