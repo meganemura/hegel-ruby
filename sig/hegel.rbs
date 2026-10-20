@@ -12,6 +12,11 @@ module Hegel
   class AssumeFailed < Exception
   end
 
+  class LeafBudgetExceeded < Exception
+    attr_reader recursion: TestCase::Recursion
+    def initialize: (TestCase::Recursion recursion) -> void
+  end
+
   def self.test: (?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
@@ -79,6 +84,19 @@ module Hegel
     def grammar_placeholder: (untyped grammar, String name) -> String
     def grammar_free: (untyped grammar) -> nil
     def generate_grammar: (untyped grammar, Integer max_size) -> String
+    def new_recursion: (Integer max_depth, Integer max_leaves) -> Recursion
+    def recursion_branch: (Recursion recursion, Integer depth) -> bool
+    def recursion_leaf: (Recursion recursion) -> nil
+    def abandoned_by?: (Recursion recursion) -> bool
+    def recursion_retry: (Recursion recursion) -> nil
+    def recursion_finish: (Recursion recursion) -> bool
+    def recursion_free: (Recursion recursion) -> nil
+
+    class Recursion < Struct[untyped]
+      attr_accessor handle: untyped
+      attr_accessor freed: bool
+      def initialize: (untyped handle, bool freed) -> void
+    end
   end
 
   class GrammarCache

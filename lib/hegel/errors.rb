@@ -31,6 +31,19 @@ module Hegel
   # Descends from Exception for the same reason as StopTest above.
   class AssumeFailed < Exception; end
 
+  # Raised for HEGEL_E_RETRY from hegel_recursion_leaf: the attempt at a
+  # recursive value outgrew its leaf budget and must unwind to the
+  # Generators::RecursiveGenerator that owns +recursion+, which retries it.
+  # Internal to this library. See docs/adr/0032.
+  class LeafBudgetExceeded < Exception # :nodoc:
+    attr_reader :recursion
+
+    def initialize(recursion)
+      super("hegel: a recursive draw outgrew its leaf budget; the attempt is retried")
+      @recursion = recursion
+    end
+  end
+
   # standard:enable Lint/InheritException
 
   # Say the process is ending, not that a property failed. Every
