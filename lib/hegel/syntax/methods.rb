@@ -135,8 +135,10 @@ module Hegel
       # A String matching +pattern+ (Python `re` syntax, not Ruby's
       # Regexp syntax; see Generators::FromRegexGenerator). fullmatch
       # requires the whole string to match, not just contain a match.
-      def from_regex(pattern, fullmatch: false)
-        Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch)
+      # +alphabet+ is a #characters generator limiting every character of the
+      # string.
+      def from_regex(pattern, fullmatch: false, alphabet: nil)
+        Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch, alphabet: alphabet)
       end
 
       # An RFC 5321/5322 email address String.

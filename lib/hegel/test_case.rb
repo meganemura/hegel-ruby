@@ -285,10 +285,11 @@ module Hegel
     end
 
     # Runs the block with a regex-matching string generator handle built
-    # from +pattern+/+fullmatch+ (see #string_generator_regex), freeing it
-    # via #with_generator_handle whether the block returns or raises.
-    def with_regex_generator(pattern, fullmatch:, &block)
-      with_generator_handle(string_generator_regex(pattern, fullmatch), &block)
+    # from +pattern+/+fullmatch+/+alphabet+ (see #string_generator_regex),
+    # freeing it via #with_generator_handle whether the block returns or
+    # raises. +alphabet+ stays the caller's to free.
+    def with_regex_generator(pattern, fullmatch:, alphabet: nil, &block)
+      with_generator_handle(string_generator_regex(pattern, fullmatch, alphabet), &block)
     end
 
     # Runs the block with an email-address string generator handle (see

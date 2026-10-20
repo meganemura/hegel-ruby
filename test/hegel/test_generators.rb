@@ -1444,6 +1444,105 @@ class TestGenerators < Minitest::Test
     assert_includes error.message, "matches no string"
   end
 
+  # ---- from_regex: alphabet ----
+
+  def test_from_regex_alphabet_restricts_every_character
+    generator = from_regex("[a-z]+", fullmatch: true, alphabet: characters(max_codepoint: 0x7F))
+
+    assert_all_examples(generator) { |v| v.match?(/\A[a-z]+\z/) }
+  end
+
+  # The padding around a partial match comes from the alphabet too.
+  def test_from_regex_alphabet_restricts_the_padding_of_a_partial_match
+    generator = from_regex("x", fullmatch: false, alphabet: characters(categories: [], include_characters: "xy"))
+
+    assert_all_examples(generator) { |v| v.match?(/\A[xy]*x[xy]*\z/) }
+  end
+
+  def test_from_regex_generates_each_pattern_over_a_wide_alphabet
+    patterns = [
+      ".", "a", "abc", "[a][b][c]", "[^a][^b][^c]", "[a-z0-9_]", "[^a-z0-9_]", "ab?", "ab*", "ab+", "ab{5,10}",
+      "ab|cd|ef", "(foo)+", '\d', '\w', '\s'
+    ]
+
+    patterns.each do |pattern|
+      generator = from_regex(pattern, fullmatch: true, alphabet: characters(max_codepoint: 1000))
+
+      assert_all_examples(generator) { |v| v.codepoints.all? { |cp| cp <= 1000 } }
+    end
+  end
+
+  def test_from_regex_alphabet_keeps_a_flag_scoped_literal_out_of_the_draw
+    generator = from_regex("(?-i:Ā)*k", fullmatch: true, alphabet: characters(max_codepoint: 127))
+
+    assert_all_examples(generator) { |v| v == "k" }
+  end
+
+  def test_from_regex_alphabet_that_cannot_match_the_pattern_raises_at_draw_time
+    {
+      "abc" => characters(min_codepoint: 128),
+      "aa|bb" => characters(include_characters: "c", max_codepoint: 0),
+      "[abc]" => characters(include_characters: "def", max_codepoint: 0),
+      "[ab]x[de]" => characters(min_codepoint: "a".ord, max_codepoint: "f".ord),
+      "[a-z]" => characters(codec: "ascii", categories: ["Nd"]),
+      '\d' => characters(include_characters: "abc", max_codepoint: 0),
+      "[^a]" => characters(min_codepoint: "a".ord, max_codepoint: "a".ord)
+    }.each do |pattern, alphabet|
+      error = draw_error(from_regex(pattern, alphabet: alphabet))
+
+      assert_includes error.message, "matches no string over the alphabet", "for #{pattern}"
+    end
+  end
+
+  def test_from_regex_alternative_outside_the_alphabet_is_skipped
+    generator = from_regex("[^a]|a", fullmatch: true, alphabet: characters(min_codepoint: "a".ord, max_codepoint: "a".ord))
+
+    assert_all_examples(generator) { |v| v == "a" }
+  end
+
+  # An alphabet with no characters still builds, because its handle draws
+  # strings of length zero; a pattern that needs no character matches.
+  def test_from_regex_empty_alphabet_matches_a_pattern_that_needs_no_character
+    assert_all_examples(from_regex("", fullmatch: true, alphabet: characters(categories: []))) { |v| v == "" }
+  end
+
+  def test_from_regex_alphabet_that_is_not_a_characters_generator_raises_at_draw_time
+    error = draw_error(from_regex("a", alphabet: "abc"))
+
+    assert_includes error.message, "from_regex: alphabet must be a characters generator, not a String"
+  end
+
+  def test_from_regex_alphabet_with_an_unknown_codec_raises_at_draw_time
+    error = draw_error(from_regex("a", alphabet: characters(codec: "not-a-real-codec")))
+
+    assert_includes error.message, "from_regex: invalid codec: not-a-real-codec"
+  end
+
+  def test_from_regex_alphabet_builds_a_zero_length_text_handle_and_frees_both_handles
+    fake = draw_against_fake(from_regex("a+", fullmatch: true, alphabet: characters(max_codepoint: 90)))
+
+    (text_options, alphabet_handle) = fake.string_generator_text_calls.fetch(0)
+    (regex_arguments, regex_handle) = fake.string_generator_regex_calls.fetch(0)
+    assert_equal TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 0, max_codepoint: 90), text_options
+    assert_equal({pattern: "a+", fullmatch: true, alphabet: alphabet_handle}, regex_arguments)
+    assert_equal [regex_handle, alphabet_handle], fake.freed_string_generators
+  end
+
+  def test_from_regex_without_an_alphabet_builds_no_text_handle
+    fake = draw_against_fake(from_regex("a+"))
+
+    assert_empty fake.string_generator_text_calls
+    assert_equal [{pattern: "a+", fullmatch: false, alphabet: nil}], fake.string_generator_regex_calls.map(&:first)
+  end
+
+  def test_from_regex_frees_the_alphabet_handle_when_building_the_regex_handle_raises
+    fake = Hegel::LibHegel::Fake.new
+    fake.string_generator_regex_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+
+    assert_raises(Hegel::Error) { draw_against_fake(from_regex("a", alphabet: characters), fake) }
+    assert_equal fake.string_generator_text_calls.map(&:last), fake.freed_string_generators
+  end
+
   # ---- emails ----
 
   def test_emails_draws_against_the_real_engine

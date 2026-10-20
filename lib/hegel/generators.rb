@@ -737,25 +737,38 @@ module Hegel
     # confirmed a pattern needs no flags and uses only syntax the two
     # grammars share can still pass `my_regexp.source` explicitly.
     #
-    # alphabet is not exposed here: the header's third argument accepts a
-    # text generator to constrain the wildcard/padding characters this
-    # regex can produce. nil, the header's documented "no particular
-    # alphabet" default, is passed in its place: exposing it means deciding
-    # how a Ruby caller writes an alphabet that constrains a Python regex,
-    # and that question is worth answering on its own rather than in
-    # passing here.
+    # +alphabet+ is a CharactersGenerator that constrains every character of
+    # the drawn string, padding included. Its text handle is sized 0..0, so an
+    # alphabet with no characters still builds: the engine then only rejects
+    # a pattern that needs one.
     class FromRegexGenerator < Generator
-      def initialize(pattern, fullmatch:)
+      def initialize(pattern, fullmatch:, alphabet: nil)
         @pattern = pattern
         @fullmatch = fullmatch
+        @alphabet = alphabet
       end
 
       def do_draw(tc)
         unless @pattern.is_a?(String)
           raise Hegel::Error, "from_regex: pattern must be a String in Python re syntax, not a #{@pattern.class}"
         end
+        unless @alphabet.nil? || @alphabet.is_a?(CharactersGenerator)
+          raise Hegel::Error, "from_regex: alphabet must be a characters generator, not a #{@alphabet.class}"
+        end
 
-        tc.with_regex_generator(@pattern, fullmatch: @fullmatch) { |generator| tc.generate_string(generator) }
+        return draw_regex(tc, nil) if @alphabet.nil?
+
+        # Built fresh each draw, like TextGenerator's handle, and freed after
+        # the regex handle that was built from it.
+        @alphabet.with_alphabet(tc, "from_regex", 0, 0) { |alphabet| draw_regex(tc, alphabet) }
+      end
+
+      private
+
+      def draw_regex(tc, alphabet)
+        tc.with_regex_generator(@pattern, fullmatch: @fullmatch, alphabet: alphabet) do |generator|
+          tc.generate_string(generator)
+        end
       end
     end
 

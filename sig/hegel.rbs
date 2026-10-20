@@ -42,7 +42,7 @@ module Hegel
     def collection_reject: (untyped collection, ?why: String?) -> untyped
     def collection_free: (untyped collection) -> untyped
     def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) { (untyped) -> R } -> R
-    def with_regex_generator: [R] (String pattern, fullmatch: bool) { (untyped) -> R } -> R
+    def with_regex_generator: [R] (String pattern, fullmatch: bool, ?alphabet: untyped) { (untyped) -> R } -> R
     def with_email_generator: [R] () { (untyped) -> R } -> R
     def with_url_generator: [R] () { (untyped) -> R } -> R
     def with_domain_generator: [R] (max_length: Integer) { (untyped) -> R } -> R
@@ -244,8 +244,12 @@ module Hegel
     end
 
     class FromRegexGenerator < Generator
-      def initialize: (untyped pattern, fullmatch: bool) -> void
+      def initialize: (untyped pattern, fullmatch: bool, ?alphabet: CharactersGenerator?) -> void
       def do_draw: (untyped tc) -> String
+
+      private
+
+      def draw_regex: (untyped tc, untyped alphabet) -> String
     end
 
     class EmailsGenerator < Generator
@@ -409,7 +413,7 @@ module Hegel
       def hashes: (Generator keys, Generator values, ?min_size: Integer, ?max_size: Integer?) -> Generators::HashGenerator
       def characters: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::CharactersGenerator
       def binary: (?min_size: Integer, ?max_size: Integer?) -> Generators::BinaryGenerator
-      def from_regex: (untyped pattern, ?fullmatch: bool) -> Generators::FromRegexGenerator
+      def from_regex: (untyped pattern, ?fullmatch: bool, ?alphabet: Generators::CharactersGenerator?) -> Generators::FromRegexGenerator
       def emails: () -> Generators::EmailsGenerator
       def urls: () -> Generators::UrlsGenerator
       def domains: (?max_length: Integer) -> Generators::DomainsGenerator
