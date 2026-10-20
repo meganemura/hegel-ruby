@@ -478,7 +478,7 @@ Hegel.test(verbosity: :quiet) { |tc| tc.draw(integers(min_value: 10**30, max_val
 # => nil
 ```
 
-### `floats(min_value: nil, max_value: nil, allow_nan: nil, allow_infinity: nil, exclude_min: false, exclude_max: false)`
+### `floats(min_value: nil, max_value: nil, allow_nan: nil, allow_infinity: nil, exclude_min: false, exclude_max: false, allow_subnormal: nil)`
 
 A double in `[min_value, max_value]`, unbounded by default.
 
@@ -487,6 +487,12 @@ otherwise. `allow_infinity` defaults to `true` when the caller leaves either
 side open, `false` when both bounds are set. hegel-rust and
 hegel-typescript's `floats()` default the same way. Pass `true` or `false` to
 override either (see [Gotchas](#gotchas)).
+
+`allow_subnormal` defaults to `true` whenever the bounds admit a subnormal
+(a double below `Float::MIN` in magnitude, other than zero), and to `false`
+when every value the bounds allow is at least `Float::MIN` in magnitude.
+Pass `false` for code that may run with flush-to-zero floating point, where
+a subnormal input silently becomes zero.
 
 ```ruby
 Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
@@ -507,6 +513,19 @@ Three combinations raise `Hegel::Error` at draw time:
   `"floats: cannot have allow_nan=true with min_value or max_value"`
 - `allow_infinity: true` with both bounds:
   `"floats: cannot have allow_infinity=true with both min_value and max_value"`
+
+Three more concern `allow_subnormal`, each prefixed `"floats: InvalidArgument:
+"`:
+
+- `allow_subnormal: true` with a `min_value` of `Float::MIN` or more:
+  `"allow_subnormal=true, but min_value excludes all values below the
+  smallest positive normal 2.2250738585072014e-308"`
+- `allow_subnormal: true` with a `max_value` of `-Float::MIN` or less:
+  `"allow_subnormal=true, but max_value excludes all values above the
+  smallest negative normal -2.2250738585072014e-308"`
+- `allow_subnormal: false` with both bounds, no zero between them, and only
+  subnormals inside: `"allow_subnormal=false leaves no 64-bit floating-point
+  values in [5.0e-324, 1.0e-310]"`
 
 ### `text(min_size: 0, max_size: nil, codec: nil, min_codepoint: nil, max_codepoint: nil)`
 

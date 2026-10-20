@@ -70,6 +70,10 @@ hegel-rust's `TestCase#event` and `TestCase#event_value`.
   as hegel-rust's `vecs(...).unique(true)` does. An element equal to one
   already drawn is rejected and drawn again, so `min_size` still counts
   distinct entries.
+- `floats(allow_subnormal: nil)` allows or rules out subnormal values, as
+  hegel-rust's `allow_subnormal` does. Left `nil`, it allows them whenever
+  the bounds admit one. A `floats` call whose bounds admit none, such as
+  `floats(min_value: 1.0, max_value: 2.0)`, now tells the engine so.
 
 ## [0.3.4] - 2026-10-20
 
