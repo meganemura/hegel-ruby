@@ -27,77 +27,71 @@ failure to a minimal counterexample.
 
 This gem drives [libhegel](https://hegel.dev/reference/libhegel), the native
 engine that the official implementations also drive. The engine runs in the
-same process. There is no server and no Python dependency.
+same process, through the [`ffi`](https://github.com/ffi/ffi) gem. There is no
+server and no Python dependency.
 
-## Status
+## Installation
 
-**Released as `hegeltest` 0.1.0.** Hegel finds a counterexample, shrinks it,
-names the values it drew, and re-raises your own exception.
-
-Work ran in three stages, and all three are done:
-
-1. **The walking skeleton**: the libhegel binding, the run loop, and failure
-   reports.
-2. **The full generator set**: twenty-five generators, composing through
-   `map` and `filter`.
-3. **The advanced features**: the example database, targeted testing,
-   stateful testing, phases, and health checks.
-
-Install it the way you install any gem:
+The gem is published as [`hegeltest`](https://rubygems.org/gems/hegeltest):
 
 ```ruby
 # Gemfile
-gem "hegeltest"
+gem "hegeltest", group: :test
 ```
 
-Each platform gem carries the matching `libhegel` build, so an install
-compiles nothing and needs no engine on the side. The Hegel maintainers
-permit a third-party project to redistribute their release binaries
-([hegeldev/hegel-rust#411]).
+The require path is `hegel`, and the namespace is `Hegel`.
+`require "hegeltest"` also works, so Bundler's automatic require finds it.
 
-A project that already has a `Gemfile.lock` needs one more step. Bundler keeps
-the platform list the lock already holds. It adds only the platform of the
-machine that runs `bundle install`. A lock therefore names only the platforms
-of the machines that have run it. A Linux CI job cannot find the gem when the
-lock names no Linux platform. Add each platform your CI uses:
+The gem needs Ruby 3.4 or later. Each platform gem carries the matching
+`libhegel` build, so an install compiles nothing and needs no engine on the
+side:
+
+| Platform | Gem platform |
+| --- | --- |
+| Linux x64 | `x86_64-linux` |
+| Linux arm64 | `aarch64-linux` |
+| macOS arm64 | `arm64-darwin` |
+| Windows x64 | `x64-mingw-ucrt` |
+| Windows arm64 | `aarch64-mingw-ucrt` |
+
+The Hegel maintainers permit a third-party project to redistribute their
+release binaries ([hegeldev/hegel-rust#411]).
+
+A project that already has a `Gemfile.lock` needs one more step. Bundler adds
+only the platform of the machine that runs `bundle install`, so a lock made on
+a Mac does not name Linux. A Linux CI job then cannot find the gem. Add each
+platform your CI uses:
 
 ```bash
 bundle lock --add-platform x86_64-linux
 ```
 
-A project with no lock yet reads the `PLATFORMS` section of the lock its first
-`bundle install` writes, and adds whatever its CI needs the same way.
-
-Every push to main runs the suite on Ruby 3.4 and 4.0, across Linux x64 and
-arm64, macOS arm64, and Windows x64 and arm64. A pull request runs Linux x64
-alone.
+On a platform with no published `libhegel` build, such as macOS on Intel, build
+the engine yourself and set `HEGEL_LIBHEGEL_PATH` to the library file or to the
+directory that holds it. The same variable makes any platform use a local
+engine build in place of the bundled one.
 
 [hegeldev/hegel-rust#411]: https://github.com/hegeldev/hegel-rust/issues/411
 
-## Design
+### Which libhegel a release carries
 
-| Decision | Choice |
-| --- | --- |
-| Gem name | `hegeltest` |
-| Require path | `require "hegel"` (`require "hegeltest"` also works) |
-| Namespace | `Hegel` |
-| Binding | the `ffi` gem, which publishes a prebuilt binary for every platform above |
-| Ruby | 3.4 and 4.0 |
-| Platforms | Linux amd64/arm64, macOS arm64, Windows amd64/arm64 |
-| Engine delivery | One prebuilt `libhegel` per platform-specific gem, built by `rake platform_gems:build` |
+Each gem release pins one libhegel release. To see the pinned version in your
+installed gem:
 
-`HEGEL_LIBHEGEL_PATH` overrides the bundled engine with a local build.
+```bash
+ruby -rhegel -e 'puts Hegel::LIBHEGEL_VERSION'
+```
 
-The gem name follows the Rust implementation, whose published crate is
-`hegeltest` and whose library is `hegel`. The name `hegel` on RubyGems.org
-stays free for whoever publishes an official Ruby implementation.
+The [CHANGELOG](CHANGELOG.md) section of each gem release starts with the
+engine move, when there is one, and links the release notes of that engine
+version. The [GitHub releases](https://github.com/meganemura/hegel-ruby/releases)
+show the same text.
 
-macOS on Intel has no published `libhegel` artifact, so that platform needs
-`HEGEL_LIBHEGEL_PATH` and a local build.
+When libhegel publishes a new release, a pull request moves this gem to it.
+The gem version and the engine version are independent: a gem release can
+change the engine, the Ruby code, or both.
 
 ## Quickstart
-
-Everything below runs today.
 
 ```ruby
 # spec/spec_helper.rb
@@ -123,7 +117,7 @@ end
 ```
 
 That test fails, and Hegel shrinks the failure to the smallest input that
-still shows the bug:
+still shows the bug. The report looks like this:
 
 ```
 Falsified after 11 test cases (0 discarded):
@@ -134,27 +128,26 @@ To reproduce this failure, pass the blob below to Hegel.test:
     reproduce_failure: "AXicY2VgYGBkZOBiZEBhMAAAAd8AIQ=="
 ```
 
-Two duplicates are all it takes. Hegel names the value `xs` by reading the
-line the draw was written on, then re-raises RSpec's own expectation failure,
-so the framework reports it as its own.
+The count of test cases and the blob change from run to run, and between
+engine releases. The shrunk value is the part to read: two duplicates are all
+it takes. Hegel names the value `xs` by reading the line the draw was written
+on. Then it re-raises RSpec's own expectation failure, so RSpec reports it as
+its own.
 
 Including `Hegel::Syntax::Methods` makes the generators available without a
-prefix, the way FactoryBot makes `create` available. The same generators stay
-reachable as `Hegel::Generators.arrays(...)` without the include.
+prefix, the way FactoryBot makes `create` available. The same generators are
+also available as `Hegel::Generators.arrays(...)` without the include.
 
-An existing RSpec suite can limit the 25 generator names to tagged example
-groups. This keeps the names out of other groups that have their own helpers:
+To keep the generator names out of example groups that have their own
+helpers, include the methods only in tagged groups:
 
 ```ruby
 config.include Hegel::Syntax::Methods, :hegel
 ```
 
-A new project can include the methods in every group, as the Quickstart does.
-
 Hegel draws values imperatively, so an ordinary Ruby method can share a group
 of draws between properties. Give the method parameter a descriptive name,
-which the default RuboCop naming rule accepts where a block parameter `tc`
-needs no change:
+which the default RuboCop naming rule accepts:
 
 ```ruby
 def draw_sorted_pair(test_case)
@@ -169,15 +162,9 @@ Hegel.test do |tc|
 end
 ```
 
-The generators are `arrays`, `binary`, `booleans`, `characters`, `composite`,
-`dates`, `datetimes`, `deferred`, `domains`, `emails`, `floats`, `from_regex`,
-`hashes`, `integers`, `ip_addresses`, `just`, `one_of`, `optional`,
-`sampled_from`, `sets`, `text`, `times`, `tuples`, `urls`, and `uuids`. Each
-one composes through `map` and `filter`.
-
 ### Minitest
 
-Hegel needs nothing from your test framework. Install the generator methods
+Hegel needs nothing from your test framework. Include the generator methods
 once, and write the property inside an ordinary test:
 
 ```ruby
@@ -201,8 +188,7 @@ class MySortTest < Minitest::Test
 end
 ```
 
-Minitest reports the shrunk case as its own assertion failure, pointing at
-your line:
+Minitest reports the shrunk case as its own assertion failure, at your line:
 
 ```
 1) Failure:
@@ -211,10 +197,28 @@ Expected: [0, 0]
   Actual: [0]
 ```
 
-### Stateful testing
+## Generators
+
+| Kind | Generators |
+| --- | --- |
+| Numbers and booleans | `integers`, `floats`, `booleans` |
+| Text and bytes | `text`, `characters`, `binary`, `from_regex` |
+| Collections | `arrays`, `sets`, `hashes`, `tuples` |
+| Choice | `just`, `sampled_from`, `one_of`, `optional` |
+| Formats | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
+| Time | `dates`, `times`, `datetimes` |
+| Your own | `composite`, `deferred` |
+
+Each one composes through `map` and `filter`. Options are keywords, with the
+names the other Hegel implementations use, such as
+`integers(min_value: 0, max_value: 9)` or `arrays(text, max_size: 5)`. An
+invalid combination of options raises when the generator is drawn, not when it
+is built.
+
+## Stateful testing
 
 Some bugs need a sequence of operations rather than one input. Declare the
-operations as rules on a `Hegel::StateMachine`, and Hegel picks which runs
+operations as rules on a `Hegel::StateMachine`. Hegel picks which rule runs
 next, checks your invariants along the way, and shrinks a failure to the
 shortest sequence that still shows it:
 
@@ -245,32 +249,40 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 ```
 
 `tc.assume` inside a rule rejects that rule and lets Hegel choose another,
-rather than throwing the whole test case away. For a rule that has to act on
-something an earlier rule produced, such as freeing a handle that some
-`alloc` actually returned, put the value in a `Hegel::Stateful::Pool` and
-draw it back out.
+rather than throwing the whole test case away. When a rule must act on a value
+that an earlier rule made, such as freeing a handle that some `alloc` returned,
+put the value in a `Hegel::Stateful::Pool` and draw it back out.
 
 Every invariant runs before the first rule and after the last. Between rules,
-the engine samples each one, so that it runs about once in a test case
-that runs every step.
-Declare an invariant with `always_run: true` to check it after every rule
-instead. `Hegel::Stateful.run(machine, tc, step_count: 50)` sets the most
-rules one test case runs; 50 is the default.
+the engine samples each invariant. Declare an invariant with
+`always_run: true` to check it after every rule.
+`Hegel::Stateful.run(machine, tc, step_count: 50)` sets the largest number of
+rules that one test case runs; 50 is the default.
 
-### Shaping a run
+## Configuring a run
 
-`Hegel.test` takes keywords for the rest: `test_cases`, `seed`,
-`derandomize`, `verbosity`, `phases`, `suppress_health_check`, and
-`report_multiple_failures`. `report_multiple_failures` defaults to `false`.
-Each of the others left unset takes its value from the engine's settings
-profile. That is libhegel's own default, unless a
-`hegel.toml` or a `HEGEL_*` environment variable says otherwise. On a CI
-server the engine picks its `ci` profile, which derandomizes the run and
-turns the example database off.
+`Hegel.test` takes these keywords:
 
-Two more turn on libhegel's example database, which stores a failing case and
-replays it first next time. `database_key` is the switch and `database`
-chooses the directory:
+| Keyword | Effect |
+| --- | --- |
+| `test_cases` | How many test cases to generate |
+| `seed` | The seed for the random generation |
+| `derandomize` | Make the generation deterministic |
+| `verbosity` | How much the engine prints; `:quiet` also hides the failure report |
+| `phases` | Which engine phases run, such as generation and shrinking |
+| `suppress_health_check` | Which health checks to turn off |
+| `report_multiple_failures` | Report each distinct failure; `false` by default |
+| `database_key` | Turn the example database on for this property |
+| `database` | The directory of the example database |
+| `reproduce_failure` | Replay one failure from the blob in its report |
+
+A keyword that you do not set takes its value from the engine's settings
+profile. That is libhegel's own default, unless a `hegel.toml` file or a
+`HEGEL_*` environment variable changes it. On a CI server the engine uses its
+`ci` profile, which derandomizes the run and turns the example database off.
+
+The example database stores a failing case and replays it first next time.
+`database_key` turns it on, and `database` chooses the directory:
 
 ```ruby
 Hegel.test(database_key: "my_sort matches the builtin sort") { |tc| ... }
@@ -278,22 +290,49 @@ Hegel.test(database_key: "my_sort matches the builtin sort") { |tc| ... }
 
 Give each property its own key. See
 [ADR 0009](docs/adr/0009-turn-the-example-database-on-with-a-key.md) for why
-the key, rather than the directory, is what turns it on.
+the key, and not the directory, turns it on.
 
-Inside a test, `tc.note` records a message the failure report prints, and
+Inside a test, `tc.note` records a message that the failure report prints, and
 `tc.target` tells Hegel which inputs to search toward.
+
+## Agent skill
+
+[`skills/hegel-ruby`](skills/hegel-ruby/SKILL.md) teaches a coding agent how to
+write property-based tests with this gem. Claude Code can install it as a
+plugin from this repository:
+
+```
+/plugin marketplace add meganemura/hegel-ruby
+/plugin install hegel-ruby@meganemura
+```
 
 ## Development
 
 ```bash
 bin/setup                        # install dependencies
 bundle exec rake libhegel:fetch  # download the pinned engine, checked against its SHA-256
-bundle exec rake                 # run the tests and the linter
+bundle exec rake                 # run the tests with coverage, and the linter
+bundle exec rake mutation        # run mutation testing
 bin/console                      # open an interactive prompt
 ```
 
-`just` recipes call the same Rake tasks, so `just test` and `just lint` work
-for anyone who already uses `just` with the other Hegel implementations.
+`just` recipes call the same Rake tasks, so `just check`, `just test`, and
+`just lint` work for anyone who uses `just` with the other Hegel
+implementations.
+
+CI runs the suite on each pull request and on each push to main, on every
+platform in the table above, with Ruby 3.4 and 4.0.
+
+The design records are in [docs/](docs/README.md).
+
+### Releasing
+
+A merge into main that changes `lib/hegel/version.rb` starts a release. The
+Release workflow waits for an approval of the `release` environment. After
+the approval, it runs the tests, publishes the gems to RubyGems, and then
+creates the tag `v<version>` and the GitHub release. The release notes come
+from the version's section of [CHANGELOG.md](CHANGELOG.md). See
+[ADR 0024](docs/adr/0024-release-when-a-merge-changes-the-gem-version.md).
 
 ## Contributing
 
@@ -308,3 +347,7 @@ This gem is available under the [MIT License](LICENSE.txt).
 Released gems also carry `libhegel`'s own license, which is MIT and copyright
 Antithesis, LLC. Each platform gem ships `NOTICE-libhegel.txt` next to the
 engine, and that file holds the text.
+
+---
+
+[日本語版 README](README.ja.md)
