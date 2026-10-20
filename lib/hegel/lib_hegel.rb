@@ -30,6 +30,7 @@ module Hegel
     HEGEL_E_NOT_COMPLETE = -7
     HEGEL_E_INTERNAL = -8
     HEGEL_E_CONCURRENT_USE = -9
+    HEGEL_E_RETRY = -10
     HEGEL_E_NOT_FOUND = -11
 
     # The hegel.h name for each code above, so a translated error message
@@ -46,6 +47,7 @@ module Hegel
       HEGEL_E_NOT_COMPLETE => "HEGEL_E_NOT_COMPLETE",
       HEGEL_E_INTERNAL => "HEGEL_E_INTERNAL",
       HEGEL_E_CONCURRENT_USE => "HEGEL_E_CONCURRENT_USE",
+      HEGEL_E_RETRY => "HEGEL_E_RETRY",
       HEGEL_E_NOT_FOUND => "HEGEL_E_NOT_FOUND"
     }.freeze
 
@@ -145,6 +147,7 @@ module Hegel
       state_machine_should_check_invariant state_machine_free
       grammar_builder_new grammar_builder_file grammar_builder_provide grammar_builder_free
       grammar_new grammar_placeholder grammar_free generate_grammar
+      new_recursion recursion_branch recursion_leaf recursion_retry recursion_finish recursion_free
     ].freeze
 
     module_function

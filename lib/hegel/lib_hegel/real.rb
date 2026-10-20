@@ -201,6 +201,17 @@ module Hegel
         )
         @hegel_pool_free_fn = bind("hegel_pool_free", [:pointer, :pointer], :int32)
 
+        @hegel_new_recursion_fn = bind(
+          "hegel_new_recursion", [:pointer, :pointer, :uint64, :uint64, :pointer], :int32
+        )
+        @hegel_recursion_branch_fn = bind(
+          "hegel_recursion_branch", [:pointer, :pointer, :pointer, :uint64, :pointer], :int32
+        )
+        @hegel_recursion_leaf_fn = bind("hegel_recursion_leaf", [:pointer, :pointer, :pointer], :int32)
+        @hegel_recursion_retry_fn = bind("hegel_recursion_retry", [:pointer, :pointer, :pointer], :int32)
+        @hegel_recursion_finish_fn = bind("hegel_recursion_finish", [:pointer, :pointer, :pointer], :int32)
+        @hegel_recursion_free_fn = bind("hegel_recursion_free", [:pointer, :pointer], :int32)
+
         @hegel_new_state_machine_fn = bind(
           "hegel_new_state_machine",
           [
@@ -861,6 +872,55 @@ module Hegel
         nil
       end
 
+      # Returns a caller-owned recursion handle, released separately with
+      # #recursion_free.
+      def new_recursion(ctx, tc, max_depth, max_leaves)
+        out = FFI::MemoryPointer.new(:pointer)
+        code = @hegel_new_recursion_fn.call(ctx, tc, max_depth, max_leaves, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # Returns true when the sub-value at +depth+ is a branch, false when
+      # it is a leaf.
+      def recursion_branch(ctx, tc, recursion, depth)
+        out = FFI::MemoryPointer.new(:bool)
+        code = @hegel_recursion_branch_fn.call(ctx, tc, recursion, depth, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_uint8 != 0
+      end
+
+      # Returns false for HEGEL_E_RETRY: the attempt outgrew its leaf
+      # budget, and the caller unwinds it and calls #recursion_retry.
+      def recursion_leaf(ctx, tc, recursion)
+        code = @hegel_recursion_leaf_fn.call(ctx, tc, recursion)
+        retry_or_check!(ctx, code)
+      end
+
+      def recursion_retry(ctx, tc, recursion)
+        code = @hegel_recursion_retry_fn.call(ctx, tc, recursion)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Returns false for HEGEL_E_RETRY: the engine discarded the finished
+      # attempt, and the caller starts again from the root without calling
+      # #recursion_retry.
+      def recursion_finish(ctx, tc, recursion)
+        code = @hegel_recursion_finish_fn.call(ctx, tc, recursion)
+        retry_or_check!(ctx, code)
+      end
+
+      # No-op when +recursion+ is nil, matching hegel_recursion_free's
+      # documented no-op-on-NULL contract; not translated, for the same
+      # reason as #context_free.
+      def recursion_free(ctx, recursion)
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
+        @hegel_recursion_free_fn.call(ctx, recursion) # mutineer:disable-line statement_removal
+        nil
+      end
+
       # Returns a caller-owned state-machine handle, released separately
       # with #state_machine_free. +rule_names+ and +invariant_names+ are
       # each an Array of Ruby Strings, packed into the hegel_string_t arrays
@@ -1298,6 +1358,13 @@ module Hegel
       end
 
       private
+
+      def retry_or_check!(ctx, code)
+        return false if code == HEGEL_E_RETRY
+
+        LibHegel.check!(self, ctx, code)
+        true
+      end
 
       # Resolves +symbol+ against @handle and wraps it as a callable
       # FFI::Function, the direct form #initialize's own comment explains

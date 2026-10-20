@@ -608,6 +608,7 @@ module Hegel
     HEGEL_E_NOT_COMPLETE: Integer
     HEGEL_E_INTERNAL: Integer
     HEGEL_E_CONCURRENT_USE: Integer
+    HEGEL_E_RETRY: Integer
     HEGEL_E_NOT_FOUND: Integer
     CODE_NAMES: Hash[Integer, String]
     HEGEL_STATUS_VALID: Integer
@@ -715,6 +716,12 @@ module Hegel
       def state_machine_rule_rejected: (untyped ctx, untyped tc, untyped state_machine) -> nil
       def state_machine_should_check_invariant: (untyped ctx, untyped tc, untyped state_machine, Integer index) -> bool
       def state_machine_free: (untyped ctx, untyped state_machine) -> nil
+      def new_recursion: (untyped ctx, untyped tc, Integer max_depth, Integer max_leaves) -> untyped
+      def recursion_branch: (untyped ctx, untyped tc, untyped recursion, Integer depth) -> bool
+      def recursion_leaf: (untyped ctx, untyped tc, untyped recursion) -> bool
+      def recursion_retry: (untyped ctx, untyped tc, untyped recursion) -> nil
+      def recursion_finish: (untyped ctx, untyped tc, untyped recursion) -> bool
+      def recursion_free: (untyped ctx, untyped recursion) -> nil
       def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
       def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) -> untyped
       def string_generator_free: (untyped ctx, untyped generator) -> nil
