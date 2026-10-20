@@ -30,7 +30,7 @@ module Hegel
     # The class name, prefixed with this binding's name as hegel.h asks, to
     # keep clear of the engine's own hegel.<kind> labels.
     def self.label
-      LibHegel.label_from_name("hegel-ruby.#{name}")
+      @label ||= LibHegel.label_from_name("hegel-ruby.#{name}")
     end
 
     # Combines this generator's class label with the labels of +parts+, the

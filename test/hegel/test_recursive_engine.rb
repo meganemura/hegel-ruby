@@ -6,9 +6,9 @@ require "support/conformance"
 # recursive against the real engine, mirroring
 # frontends/rust/tests/test_recursive.rs in hegeldev/hegel. Apart from
 # test_recursive.rb, and left out of the mutation run (see the Rakefile),
-# because these shrink-quality tests take tens of seconds, past the time
-# limit for one mutant; the Fake tests in test_recursive.rb pin every call
-# the generator makes.
+# because the 30-leaf shrink alone takes about ten seconds, the time limit
+# for one mutant, and the two exhausted-stream tests two seconds each; the
+# Fake tests in test_recursive.rb pin every call the generator makes.
 class TestRecursiveEngine < Minitest::Test
   include HegelDirectoryGuard
   include Hegel::Syntax::Methods
@@ -20,9 +20,14 @@ class TestRecursiveEngine < Minitest::Test
 
   INT32 = {min_value: -(2**31), max_value: (2**31) - 1}.freeze
 
-  # Draws until the engine answers StopTest, the way a body may.
+  I64 = Hegel::Generators.integers(min_value: -(2**63), max_value: (2**63) - 1)
+
+  # Draws i64 values, as the Rust test does, until the engine answers
+  # StopTest, the way a body may. The generator is built once: the engine
+  # allows about a million draws before it stops, and building one per
+  # draw was a third of the time.
   def self.exhaust(tc)
-    loop { tc.draw(Hegel::Generators.integers) }
+    loop { tc.draw(I64) }
   rescue Hegel::StopTest
     nil
   end
@@ -146,8 +151,11 @@ class TestRecursiveEngine < Minitest::Test
     assert_equal 7, height(tree)
   end
 
+  # The Rust test leaves the seed random. The shrink calls the body 15,000 to
+  # 25,000 times whatever the seed, and seed 7 is among the cheapest of the 46
+  # measured, so it pins the run near the low end.
   def test_draws_and_shrinks_large_trees
-    assert_equal 30, leaf_count(minimal(trees) { |t| leaf_count(t) >= 30 })
+    assert_equal 30, leaf_count(minimal(trees, seed: 7) { |t| leaf_count(t) >= 30 })
   end
 
   def test_randomized_bounds_hold

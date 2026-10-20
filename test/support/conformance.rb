@@ -77,15 +77,18 @@ module Hegel
     # and the last (smallest) value that raise recorded is this method's
     # return value.
     #
+    # +seed+ pins the engine's random seed, as the seed option of hegel-rust's
+    # Minimal does; nil leaves it random.
+    #
     # Whether the block was ever satisfied is tracked by +any_found+, a
     # separate flag, not by +found+ being non-nil: nil is itself a value a
     # generator can draw (map { nil } already proves it), so a case that
     # draws nil and satisfies the block must still count as found.
-    def minimal(generator, test_cases: 500)
+    def minimal(generator, test_cases: 500, seed: nil)
       found = nil
       any_found = false
       begin
-        Hegel.test(test_cases: test_cases, **QUIET_SETTINGS) do |tc|
+        Hegel.test(test_cases: test_cases, seed: seed, **QUIET_SETTINGS) do |tc|
           value = tc.draw(generator)
           if yield(value)
             found = value

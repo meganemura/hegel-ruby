@@ -150,6 +150,12 @@ module Hegel
       new_recursion recursion_branch recursion_leaf recursion_retry recursion_finish recursion_free
     ].freeze
 
+    # label_combine answers from this table: a recursive generator builds a
+    # fresh branch generator at every node it draws, and each one combines
+    # the same few labels again. Measured on the 30-leaf shrink in
+    # test_recursive_engine.rb, hashing the labels was a third of the run.
+    COMBINED_LABELS = {}
+
     module_function
 
     # Runs the block with a context obtained from +impl.context_new+,
@@ -219,7 +225,7 @@ module Hegel
     end
 
     def label_combine(labels)
-      fnv1a(labels.pack("Q<*").bytes)
+      COMBINED_LABELS[labels] ||= fnv1a(labels.pack("Q<*").bytes)
     end
 
     def fnv1a(bytes)

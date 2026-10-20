@@ -31,9 +31,9 @@ task default: %i[coverage standard]
 #   reload, loads the whole mutated file by a relative path, which breaks
 #   Hegel::Runner.origin_for and killed three mutants the suite does not
 #   catch.
-# - test_recursive_engine.rb stays out too. Its shrink-quality tests take
-#   tens of seconds, past mutineer's 10-second limit for one mutant, so
-#   every mutant on a line it covers timed out without a verdict.
+# - test_recursive_engine.rb stays out too. Its 30-leaf shrink takes about
+#   ten seconds, mutineer's limit for one mutant, so a mutant on a line it
+#   covers timed out without a verdict.
 # MUTINEER_ARGS passes more flags, for example
 # MUTINEER_ARGS="--since origin/main" to mutate only the lines changed since
 # origin/main.
