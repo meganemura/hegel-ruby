@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.47.2 (was 0.47.1)
+
+The [libhegel 0.47.2 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.47.2)
+describe 0.47.2. It is the first engine release from the hegeldev/hegel
+repository.
+
+Each platform gem carries `libhegel` 0.47.2. The engine does not change its
+C interface. A caller has nothing to change in code, and gets the same
+results. The engine changes one text: the message of an internal engine
+error now gives <https://github.com/hegeldev/hegel/issues> as the place to
+report the problem, not the hegel-rust issue tracker.
+
+### Development
+
+- `rake libhegel:fetch` and `rake libhegel:fetch_all` download libhegel
+  0.47.2 and later from the hegeldev/hegel releases, and earlier versions
+  from the hegeldev/hegel-rust releases.
+
 ## [0.3.3] - 2026-10-17
 
 ### Engine: libhegel 0.47.1 (was 0.45.13)
