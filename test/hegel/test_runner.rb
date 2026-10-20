@@ -1190,13 +1190,15 @@ class TestRunner < Minitest::Test
   # A body that fails on every input. With stop_on_first_failure left on,
   # the engine stops generating at the first failure; turned off, it spends
   # its whole test_cases budget first, and failing cases count against that
-  # budget. Measured against libhegel 0.47.2 at test_cases: 50, over 10
-  # runs each: 22 calls with the setting on, 71 with it off.
+  # budget. Derandomized, so the counts repeat. Measured against libhegel
+  # 0.47.2 at test_cases: 50, over 10 runs each: 22 calls with the setting
+  # on, 71 with it off, every run.
   def test_stop_on_first_failure_false_spends_the_whole_budget_before_reporting
     calls = {true => 0, false => 0}
     [true, false].each do |stop|
       assert_raises(RuntimeError) do
-        Hegel.test(test_cases: 50, stop_on_first_failure: stop, verbosity: :quiet, output: StringIO.new) do |tc|
+        Hegel.test(test_cases: 50, derandomize: true, stop_on_first_failure: stop, verbosity: :quiet,
+          output: StringIO.new) do |tc|
           calls[stop] += 1
           tc.draw_integer(0, 10)
           raise "always"
@@ -1209,14 +1211,17 @@ class TestRunner < Minitest::Test
   end
 
   def test_print_blob_false_leaves_the_reproduction_line_out_of_the_report
-    output = StringIO.new
-
-    assert_raises(RuntimeError) do
-      Hegel.test(test_cases: 10, print_blob: false, output: output) { |_tc| raise "boom" }
+    reports = [true, false].to_h do |print_blob|
+      output = StringIO.new
+      assert_raises(RuntimeError) do
+        Hegel.test(test_cases: 10, print_blob: print_blob, output: output) { |_tc| raise "boom" }
+      end
+      [print_blob, output.string]
     end
 
-    assert_includes output.string, "Falsified after"
-    refute_includes output.string, "reproduce_failure"
+    assert_includes reports[true], "reproduce_failure"
+    assert_includes reports[false], "Falsified after"
+    refute_includes reports[false], "reproduce_failure"
   end
 
   # A nil print_blob keyword leaves the decision to the engine's resolved
@@ -1286,12 +1291,33 @@ class TestRunner < Minitest::Test
     assert_includes error.message, "Flaky test detected"
   end
 
-  def test_backend_urandom_runs_a_passing_property
-    result = Hegel.test(test_cases: 20, backend: :urandom, verbosity: :quiet, output: StringIO.new) do |tc|
-      tc.draw_integer(0, 10)
+  # A fixed seed repeats under :default and does not under :urandom, which
+  # takes fresh entropy on every draw. The range is wide enough that two
+  # urandom runs of 20 draws cannot collide in practice.
+  def test_backend_urandom_ignores_the_seed_that_default_repeats
+    draws = lambda do |backend|
+      seen = []
+      Hegel.test(test_cases: 20, seed: 7, backend: backend, verbosity: :quiet, output: StringIO.new) do |tc|
+        seen << tc.draw_integer(0, 1_000_000_000)
+      end
+      seen
     end
 
-    assert_nil result
+    assert_equal draws.call(:default), draws.call(:default)
+    refute_equal draws.call(:urandom), draws.call(:urandom)
+  end
+
+  def test_event_and_event_value_reach_the_engine
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 1
+
+    Hegel.test(impl: fake) do |tc|
+      tc.event("x")
+      tc.event_value("v", 3)
+    end
+
+    assert_equal ["x"], fake.event_calls
+    assert_equal [["v", 3]], fake.event_value_calls
   end
 
   # Hegel::TestCase#new_pool records the native handle it opens, and
