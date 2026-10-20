@@ -210,7 +210,7 @@ Expected: [0, 0]
 | 自作 | `composite`, `deferred` |
 
 どれも `map` と `filter` で組み合わせられます。オプションはキーワード引数で、
-`integers(min_value: 0, max_value: 9)` や `arrays(text, max_size: 5)` のように、
+`integers(min_value: 0, max_value: 9)`、`arrays(text, max_size: 5)`、`arrays(integers, unique: true)` のように、
 他の Hegel 実装と同じ名前を使います。オプションの組み合わせが不正な場合は、
 ジェネレーターを作ったときではなく draw したときに例外になります。
 

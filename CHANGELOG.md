@@ -66,6 +66,10 @@ hegel-rust's `TestCase#event` and `TestCase#event_value`.
 - `durations(min_value: 0, max_value: 2**64 - 1)` draws a duration as an
   `Integer` count of nanoseconds, as hegel-rust's `durations` does for a
   `Duration`. It follows [ADR 0030](docs/adr/0030-represent-a-duration-as-integer-nanoseconds.md).
+- `arrays(elements, unique: true)` draws an array with no two equal entries,
+  as hegel-rust's `vecs(...).unique(true)` does. An element equal to one
+  already drawn is rejected and drawn again, so `min_size` still counts
+  distinct entries.
 
 ## [0.3.4] - 2026-10-20
 

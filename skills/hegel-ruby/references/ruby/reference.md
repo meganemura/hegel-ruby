@@ -568,10 +568,11 @@ Unconfigured `text` draws from a much wider Unicode range. In 200 draws of
 characters, and control characters. The highest codepoint was U+10A78F. A
 property that accepts any string needs no character-set options.
 
-### `arrays(elements, min_size: 0, max_size: nil)`
+### `arrays(elements, min_size: 0, max_size: nil, unique: false)`
 
 An `Array` of values from the `elements` generator, with `[min_size,
-max_size]` entries, unbounded above by default.
+max_size]` entries, unbounded above by default. With `unique: true`, no two
+entries are equal.
 
 ```ruby
 Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
@@ -582,9 +583,23 @@ end
 
 `max_size < min_size` raises `Hegel::Error` at draw time: `"arrays:
 max_size < min_size"`. A negative `min_size` also raises at draw time:
-`"arrays: min_size must not be negative"`. `unique:` (deduplicating
-elements) is not available on `arrays`; `sets` (below) draws distinct
-elements instead.
+`"arrays: min_size must not be negative"`.
+
+With `unique: true`, an element equal (`==`) to one already drawn is
+rejected and drawn again, so `min_size` still counts distinct entries.
+Three slots over three values hold each exactly once:
+
+```ruby
+xs = nil
+Hegel.test(test_cases: 1, verbosity: :quiet) do |tc|
+  xs = tc.draw(arrays(sampled_from([0, 1, 2]), min_size: 3, max_size: 3, unique: true))
+end
+xs.sort # => [0, 1, 2]
+```
+
+A `min_size` the elements cannot satisfy, such as `arrays(just(1), min_size:
+5, unique: true)`, ends the run with a `Hegel::Error` from the FilterTooMuch
+health check.
 
 ### `just(value)`
 
