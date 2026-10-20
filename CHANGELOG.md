@@ -80,7 +80,7 @@ hegel-rust's `TestCase#event` and `TestCase#event_value`.
 `text` and `characters` take `categories:`, `exclude_categories:`,
 `include_characters:`, and `exclude_characters:`, with the names hegel-rust
 gives them. `text` also takes `alphabet:`, a `String` of the permitted
-characters or a `characters` generator, and raises `Hegel::Error` at draw
+characters, and raises `Hegel::Error` at draw
 time when it is combined with another character option. `from_regex` takes
 `alphabet:`, a `characters` generator that limits every character of the
 string, padding included. An unknown `codec:` now raises `"text: invalid

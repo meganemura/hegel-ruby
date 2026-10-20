@@ -38,8 +38,8 @@ module Hegel
       end
 
       # A Unicode string of [min_size, max_size] characters. +alphabet+ is a
-      # String of the permitted characters, or a #characters generator; it
-      # cannot be combined with the options after it.
+      # String of the permitted characters; it cannot be combined with the
+      # options after it.
       def text(min_size: 0, max_size: nil, alphabet: nil, codec: nil, min_codepoint: nil, max_codepoint: nil,
         categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)
         Generators::TextGenerator.new(

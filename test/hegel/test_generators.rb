@@ -514,12 +514,6 @@ class TestGenerators < Minitest::Test
     assert_equal "AAA", minimal(text(alphabet: "FEDCBA", min_size: 3)) { true }
   end
 
-  def test_text_alphabet_characters_generator_defines_the_alphabet
-    generator = text(alphabet: characters(codec: "ascii", categories: ["Lu"]), min_size: 3, max_size: 3)
-
-    assert_all_examples(generator) { |v| v.match?(/\A[A-Z]{3}\z/) }
-  end
-
   # An empty alphabet is legal when no character is drawn from it.
   def test_text_empty_alphabet_draws_the_empty_string_when_max_size_is_zero
     assert_all_examples(text(alphabet: "", max_size: 0)) { |v| v == "" }
@@ -532,18 +526,18 @@ class TestGenerators < Minitest::Test
     }
 
     options.each do |name, value|
-      ["abc", characters].each do |alphabet|
-        error = draw_error(text(alphabet: alphabet, **{name => value}))
+      error = draw_error(text(alphabet: "abc", **{name => value}))
 
-        assert_includes error.message, "Cannot combine .alphabet() with character methods.", "for #{name}"
-      end
+      assert_includes error.message, "Cannot combine .alphabet() with character methods.", "for #{name}"
     end
   end
 
-  def test_text_alphabet_that_is_neither_a_string_nor_a_characters_generator_raises_at_draw_time
-    error = draw_error(text(alphabet: 3))
+  def test_text_alphabet_that_is_not_a_string_raises_at_draw_time
+    [3, characters].each do |alphabet|
+      error = draw_error(text(alphabet: alphabet))
 
-    assert_includes error.message, "alphabet must be a String or a characters generator, not a Integer"
+      assert_includes error.message, "text: alphabet must be a String, not a #{alphabet.class}"
+    end
   end
 
   def test_text_unknown_codec_raises_at_draw_time
@@ -628,15 +622,6 @@ class TestGenerators < Minitest::Test
 
     assert_equal(
       [TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 4, categories: [], include_characters: "abc")],
-      fake.string_generator_text_calls.map(&:first)
-    )
-  end
-
-  def test_text_alphabet_characters_generator_builds_one_handle_sized_by_the_text
-    fake = draw_against_fake(text(alphabet: characters(max_codepoint: 90), min_size: 1, max_size: 4))
-
-    assert_equal(
-      [TEXT_HANDLE_DEFAULTS.merge(min_size: 1, max_size: 4, max_codepoint: 90)],
       fake.string_generator_text_calls.map(&:first)
     )
   end

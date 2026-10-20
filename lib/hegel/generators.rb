@@ -222,8 +222,8 @@ module Hegel
 
     # Hegel::Syntax::Methods#text. A Unicode string of [min_size, max_size]
     # characters, unbounded above by default. +alphabet+ is a String of the
-    # permitted characters or a CharactersGenerator, and cannot be combined
-    # with any of the character options.
+    # permitted characters, and cannot be combined with any of the character
+    # options.
     class TextGenerator < Generator
       def initialize(min_size:, max_size:, alphabet: nil, **character_options)
         @min_size = min_size
@@ -256,13 +256,11 @@ module Hegel
       def alphabet_generator
         return @characters if @alphabet.nil?
 
+        raise Hegel::Error, "text: alphabet must be a String, not a #{@alphabet.class}" unless @alphabet.is_a?(String)
+
         raise Hegel::Error, "text: Cannot combine .alphabet() with character methods." if @characters.options_given?
 
-        case @alphabet
-        when String then CharactersGenerator.new(categories: [], include_characters: @alphabet)
-        when CharactersGenerator then @alphabet
-        else raise Hegel::Error, "text: alphabet must be a String or a characters generator, not a #{@alphabet.class}"
-        end
+        CharactersGenerator.new(categories: [], include_characters: @alphabet)
       end
     end
 

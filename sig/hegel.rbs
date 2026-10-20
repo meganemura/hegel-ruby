@@ -140,7 +140,7 @@ module Hegel
     end
 
     class TextGenerator < Generator
-      def initialize: (min_size: Integer, max_size: Integer?, ?alphabet: (String | CharactersGenerator)?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> void
+      def initialize: (min_size: Integer, max_size: Integer?, ?alphabet: String?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> void
       def do_draw: (untyped tc) -> String
 
       private
@@ -398,9 +398,8 @@ module Hegel
       def booleans: (?p: Float) -> Generators::BooleanGenerator
       def integers: (?min_value: Integer?, ?max_value: Integer?) -> Generators::IntegerGenerator
       def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool?, ?allow_infinity: bool?, ?exclude_min: bool, ?exclude_max: bool, ?allow_subnormal: bool?) -> Generators::FloatGenerator
-      def text: (?min_size: Integer, ?max_size: Integer?, ?alphabet: (String | Generators::CharactersGenerator)?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::TextGenerator
+      def text: (?min_size: Integer, ?max_size: Integer?, ?alphabet: String?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::TextGenerator
       def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?, ?unique: bool) -> Generators::ArrayGenerator
-      def text: (?min_size: Integer, ?max_size: Integer?, ?alphabet: (String | Generators::CharactersGenerator)?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::TextGenerator
       def just: (untyped value) -> Generators::JustGenerator
       def sampled_from: (untyped collection) -> Generators::SampledFromGenerator
       def permutations: (untyped elements) -> Generators::PermutationsGenerator

@@ -568,9 +568,8 @@ Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
 end
 ```
 
-- `alphabet:` is a `String` of the permitted characters, or a `characters`
-  generator whose options define them. It cannot be combined with any of the
-  options below.
+- `alphabet:` is a `String` of the permitted characters. It cannot be combined
+  with any of the options below.
 - `codec:` is `"ascii"`, `"latin-1"` (or `"iso-8859-1"`), or `"utf-8"`. It
   sets the starting range, which `min_codepoint:` and `max_codepoint:`
   narrow.
@@ -592,9 +591,8 @@ These cases raise `Hegel::Error` at draw time:
 - `max_size < min_size`: `"text: max_size < min_size"`.
 - An `alphabet:` beside another character option: `"text: Cannot combine
   .alphabet() with character methods."`.
-- An `alphabet:` that is neither a `String` nor a `characters` generator:
-  `"text: alphabet must be a String or a characters generator, not a
-  Integer"`.
+- An `alphabet:` that is not a `String`: `"text: alphabet must be a String,
+  not a Integer"`.
 - An unknown codec: `"text: invalid codec: utf-16"`.
 - A surrogate category in `categories:`: `"text: Category \"Cs\" includes
   surrogate codepoints (Cs), which a valid UTF-8 String cannot hold."`.
@@ -858,7 +856,7 @@ max_size < min_size"`. A negative `min_size` also raises at draw time:
 ### `characters(codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)`
 
 A `String` of exactly one character, sharing `text`'s own alphabet options.
-Pass it as `text(alphabet:)` or `from_regex(alphabet:)` to reuse one alphabet.
+Pass it as `from_regex(alphabet:)` to limit the characters of a match.
 
 ```ruby
 result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|

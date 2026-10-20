@@ -26,11 +26,9 @@ hegel-rust differs from what a Ruby caller might expect in three places.
 
 The options carry hegel-rust's names and meanings. A `String` alphabet on
 `text` is what hegel-rust's `alphabet(&str)` is: no categories, with the
-string as `include_characters`. `text` also takes a `characters` generator
-as its alphabet, which is a divergence. It lets one alphabet be written once
-and passed to `text` and to `from_regex`, and it costs a type check on
-`alphabet` that hegel-rust's types make unnecessary. `from_regex` takes a
-`characters` generator, as hegel-rust does.
+string as `include_characters`. A value that is not a `String` raises at draw
+time, since Ruby has no type to make the case unrepresentable. `from_regex`
+takes a `characters` generator, as hegel-rust does.
 
 `categories` wins over `exclude_categories`, as in hegel-rust. `Cs` and `C`
 are rejected in `categories`. `Cs` is not added to the exclusions, since the
@@ -52,6 +50,3 @@ An alphabet handle is one more native construction on each `from_regex`
 draw. Measured against libhegel 0.47.2 over 5000 draws, `from_regex` took
 about 35 microseconds a draw without an alphabet and 47 with one, and
 `text(max_size: 5)` took about 31 without categories and 51 with two.
-
-`text(alphabet:)` accepting a `characters` generator differs from hegel-rust
-until hegel-rust takes it or this gem drops it.
