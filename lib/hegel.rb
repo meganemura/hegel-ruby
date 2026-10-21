@@ -54,6 +54,11 @@ module Hegel
   # keyword above: see Hegel::Runner.run's own comment for why it is always
   # passed.
   #
+  # +stop_on_first_failure+, +print_blob+, +show_statistics+,
+  # +nondeterminism_strictness+, and +backend+ default to nil, so the engine's
+  # profile decides as it does for +test_cases+; they follow hegel-rust's
+  # Settings.
+  #
   # +output+ (default $stderr) is where a failure report is written; a
   # caller passes its own IO to capture that report instead (tests do).
   #
@@ -67,12 +72,14 @@ module Hegel
   # (#default_impl) only runs when +impl+ is not given, so a test that does
   # pass one never opens the native library at all.
   def test(test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
-    phases: nil, suppress_health_check: nil, report_multiple_failures: false, output: $stderr,
+    phases: nil, suppress_health_check: nil, report_multiple_failures: false, stop_on_first_failure: nil,
+    print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil, backend: nil, output: $stderr,
     reproduce_failure: nil, impl: default_impl, &block)
     Runner.run(impl: impl, test_cases: test_cases, seed: seed, derandomize: derandomize, verbosity: verbosity,
       database: database, database_key: database_key, phases: phases, suppress_health_check: suppress_health_check,
-      report_multiple_failures: report_multiple_failures, output: output, reproduce_failure: reproduce_failure,
-      &block)
+      report_multiple_failures: report_multiple_failures, stop_on_first_failure: stop_on_first_failure,
+      print_blob: print_blob, show_statistics: show_statistics, nondeterminism_strictness: nondeterminism_strictness,
+      backend: backend, output: output, reproduce_failure: reproduce_failure, &block)
   end
 
   # The Hegel::LibHegel::Real instance #test uses by default, built once and

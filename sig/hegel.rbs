@@ -12,7 +12,7 @@ module Hegel
   class AssumeFailed < Exception
   end
 
-  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
+  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
   class TestCase
@@ -33,6 +33,8 @@ module Hegel
     def generate_boolean: (?Float p) -> bool
     def generate_float: (Integer width, Float min_value, Float max_value, allow_nan: bool, allow_infinity: bool, exclude_min: bool, exclude_max: bool, smallest_nonzero_magnitude: Float) -> Float
     def target: (Numeric value, ?label: String) -> nil
+    def event: (String label) -> nil
+    def event_value: (String label, Numeric value) -> nil
     def start_span: (Integer label) -> untyped
     def stop_span: (?discard: bool) -> untyped
     def new_collection: (Integer min_size, Integer max_size) -> untyped
@@ -372,15 +374,18 @@ module Hegel
 
   module Settings
     VERBOSITY_CODES: Hash[Symbol, Integer]
+    NONDETERMINISM_STRICTNESS_CODES: Hash[Symbol, Integer]
+    BACKEND_CODES: Hash[Symbol, Integer]
     PHASE_CODES: Hash[Symbol, Integer]
     HEALTH_CHECK_CODES: Hash[Symbol, Integer]
 
-    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool) -> void
+    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool, stop_on_first_failure: bool?, print_blob: bool?, show_statistics: bool?, nondeterminism_strictness: Symbol?, backend: Symbol?) -> void
     def self.apply_verbosity: (untyped impl, untyped ctx, untyped settings, Symbol verbosity) -> void
     def self.apply_database: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?) -> void
     def self.apply_phases: (untyped impl, untyped ctx, untyped settings, Array[Symbol] phases) -> void
     def self.apply_suppress_health_check: (untyped impl, untyped ctx, untyped settings, Array[Symbol] checks) -> void
-    def self.mask_for: (Array[Symbol] values, Hash[Symbol, Integer] codes) -> Integer
+    def self.mask_for: (Array[Symbol] values, Hash[Symbol, Integer] codes, String keyword) -> Integer
+    def self.lookup: (Hash[Symbol, Integer] codes, Symbol value, String keyword) -> Integer
   end
 
   module Runner
@@ -403,15 +408,15 @@ module Hegel
       def for: (String? origin) -> [Integer, Integer]
     end
 
-    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
-    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
+    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
+    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) { (TestCase) -> void } -> nil
     def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
     def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc) { (TestCase) -> R } -> R
     def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
     def self.keep_capture: (Hash[String, Capture] captures, String origin, Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
-    def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, output: untyped) -> nil
-    def self.report_failures: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, quiet: bool, output: untyped) -> bot
-    def self.failure_report: (untyped impl, untyped ctx, untyped failure, GenerationStats stats, Hash[String, Capture] captures) -> [Exception, Report::Failure]
+    def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) -> nil
+    def self.report_failures: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, quiet: bool, print_blob: bool, output: untyped) -> bot
+    def self.failure_report: (untyped impl, untyped ctx, untyped failure, GenerationStats stats, Hash[String, Capture] captures, print_blob: bool) -> [Exception, Report::Failure]
     def self.classify: (TestCase test_case) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
     def self.origin_for: (Exception exception) -> String
     def self.infrastructure?: (String path) -> bool
@@ -463,6 +468,11 @@ module Hegel
     HEGEL_VERBOSITY_QUIET: Integer
     HEGEL_VERBOSITY_VERBOSE: Integer
     HEGEL_VERBOSITY_DEBUG: Integer
+    HEGEL_NONDETERMINISM_QUIET: Integer
+    HEGEL_NONDETERMINISM_WARN: Integer
+    HEGEL_NONDETERMINISM_ERROR: Integer
+    HEGEL_BACKEND_DEFAULT: Integer
+    HEGEL_BACKEND_URANDOM: Integer
     HEGEL_PHASE_EXPLICIT: Integer
     HEGEL_PHASE_REUSE: Integer
     HEGEL_PHASE_GENERATE: Integer
@@ -503,6 +513,12 @@ module Hegel
       def settings_set_database_key: (untyped ctx, untyped s, String? key) -> nil
       def settings_set_phases: (untyped ctx, untyped s, Integer phases) -> nil
       def settings_set_suppress_health_check: (untyped ctx, untyped s, Integer checks) -> nil
+      def settings_set_stop_on_first_failure: (untyped ctx, untyped s, bool yes) -> nil
+      def settings_set_print_blob: (untyped ctx, untyped s, bool yes) -> nil
+      def settings_get_print_blob: (untyped ctx, untyped s) -> bool
+      def settings_set_show_statistics: (untyped ctx, untyped s, bool yes) -> nil
+      def settings_set_nondeterminism_strictness: (untyped ctx, untyped s, Integer strictness) -> nil
+      def settings_set_backend: (untyped ctx, untyped s, Integer backend) -> nil
       def run_start: (untyped ctx, untyped settings) -> untyped
       def run_start_blob: (untyped ctx, untyped settings, String blob) -> untyped
       def test_case_should_capture: (untyped ctx, untyped tc) -> bool
@@ -511,6 +527,8 @@ module Hegel
       def test_case_free: (untyped ctx, untyped tc) -> nil
       def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin) -> nil
       def target: (untyped ctx, untyped tc, Float value, String label) -> nil
+      def event: (untyped ctx, untyped tc, String label) -> nil
+      def event_value: (untyped ctx, untyped tc, String label, Numeric value) -> nil
       def generate_boolean: (untyped ctx, untyped tc, Float p, bool forced, bool has_forced) -> bool
       def generate_integer: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
       def generate_integer_big: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer

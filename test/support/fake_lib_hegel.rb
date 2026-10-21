@@ -126,7 +126,13 @@ module Hegel
       # matching hegel_settings_set_seed's two value arguments.
       attr_reader :settings_test_cases_calls, :settings_verbosity_calls, :settings_seed_calls,
         :settings_derandomize_calls, :settings_database_calls, :settings_database_key_calls,
-        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls
+        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls,
+        :settings_stop_on_first_failure_calls, :settings_print_blob_calls, :settings_show_statistics_calls,
+        :settings_nondeterminism_strictness_calls, :settings_backend_calls, :event_calls, :event_value_calls
+
+      # What #settings_get_print_blob reports: true, the engine's own default,
+      # unless a test sets it to stand in for a profile that turns it off.
+      attr_accessor :settings_print_blob_value
 
       def initialize
         @version = Hegel::LIBHEGEL_VERSION
@@ -152,6 +158,14 @@ module Hegel
         @settings_phases_calls = []
         @settings_suppress_health_check_calls = []
         @settings_report_multiple_failures_calls = []
+        @settings_stop_on_first_failure_calls = []
+        @settings_print_blob_calls = []
+        @settings_show_statistics_calls = []
+        @settings_nondeterminism_strictness_calls = []
+        @settings_backend_calls = []
+        @settings_print_blob_value = true
+        @event_calls = []
+        @event_value_calls = []
 
         @run_start_code = HEGEL_OK
         @run_start_returns_nil = false
@@ -581,6 +595,48 @@ module Hegel
       def settings_set_database_key(ctx, _s, key)
         @settings_database_key_calls << key
         LibHegel.check!(self, ctx, @settings_set_database_key_code)
+        nil
+      end
+
+      def settings_set_stop_on_first_failure(_ctx, _s, yes)
+        @settings_stop_on_first_failure_calls << yes
+        nil
+      end
+
+      # Also updates what #settings_get_print_blob reads back, as the engine
+      # does.
+      def settings_set_print_blob(_ctx, _s, yes)
+        @settings_print_blob_calls << yes
+        @settings_print_blob_value = yes
+        nil
+      end
+
+      def settings_get_print_blob(_ctx, _s)
+        @settings_print_blob_value
+      end
+
+      def settings_set_show_statistics(_ctx, _s, yes)
+        @settings_show_statistics_calls << yes
+        nil
+      end
+
+      def settings_set_nondeterminism_strictness(_ctx, _s, strictness)
+        @settings_nondeterminism_strictness_calls << strictness
+        nil
+      end
+
+      def settings_set_backend(_ctx, _s, backend)
+        @settings_backend_calls << backend
+        nil
+      end
+
+      def event(_ctx, _tc, label)
+        @event_calls << label
+        nil
+      end
+
+      def event_value(_ctx, _tc, label, value)
+        @event_value_calls << [label, value]
         nil
       end
 

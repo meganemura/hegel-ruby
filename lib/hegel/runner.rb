@@ -97,10 +97,8 @@ module Hegel
 
     module_function
 
-    # Runs +block+ as a Hegel property against +impl+, applying +test_cases+,
-    # +seed+, +derandomize+, +verbosity+, +database+, +database_key+,
-    # +phases+, +suppress_health_check+, and +report_multiple_failures+ (see
-    # Hegel::Settings) to a fresh settings handle first. Returns nil on a
+    # Runs +block+ as a Hegel property against +impl+, applying the
+    # settings keywords (see Hegel::Settings) to a fresh settings handle first. Returns nil on a
     # passing run, re-raises the exception the smallest failing case's body
     # raised on a failing run, and raises Hegel::Error for a run-level
     # failure (ERROR status, a blob that no longer reproduces, or more than
@@ -131,7 +129,8 @@ module Hegel
     # requires every other handle taken from the context to be freed first,
     # and Ruby's GC gives finalizers no ordering guarantee to rely on instead.
     def run(impl:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
-      phases: nil, suppress_health_check: nil, report_multiple_failures: false,
+      phases: nil, suppress_health_check: nil, report_multiple_failures: false, stop_on_first_failure: nil,
+      print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil, backend: nil,
       output: $stderr, reproduce_failure: nil, &block)
       quiet = verbosity == :quiet
       LibHegel.with_context(impl) do |ctx|
@@ -139,7 +138,12 @@ module Hegel
         run = begin
           Settings.apply(impl, ctx, settings, test_cases: test_cases, seed: seed, derandomize: derandomize,
             verbosity: verbosity, database: database, database_key: database_key, phases: phases,
-            suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures)
+            suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures,
+            stop_on_first_failure: stop_on_first_failure, print_blob: print_blob, show_statistics: show_statistics,
+            nondeterminism_strictness: nondeterminism_strictness, backend: backend)
+          # Read back rather than taken from the keyword, so that a profile
+          # or HEGEL_PRINT_BLOB decides when the keyword is nil.
+          print_blob = impl.settings_get_print_blob(ctx, settings)
           if reproduce_failure
             impl.run_start_blob(ctx, settings, reproduce_failure)
           else
@@ -150,19 +154,21 @@ module Hegel
           # hegel_run_start copies them.
           impl.settings_free(ctx, settings)
         end
-        run_and_finish(impl, ctx, run, reproducing: !reproduce_failure.nil?, quiet: quiet, output: output, &block)
+        run_and_finish(impl, ctx, run, reproducing: !reproduce_failure.nil?, quiet: quiet, print_blob: print_blob,
+          output: output, &block)
       end
     end
 
     # Drives +run+ and hands its result to #finish.
-    def run_and_finish(impl, ctx, run, reproducing:, quiet:, output:, &block)
+    def run_and_finish(impl, ctx, run, reproducing:, quiet:, print_blob:, output:, &block)
       stats = GenerationStats.new
       captures = {}
       drive(impl, ctx, run, stats, captures, &block)
 
       result = impl.run_result(ctx, run)
       begin
-        finish(impl, ctx, result, stats, captures, reproducing: reproducing, quiet: quiet, output: output)
+        finish(impl, ctx, result, stats, captures, reproducing: reproducing, quiet: quiet, print_blob: print_blob,
+          output: output)
       ensure
         impl.run_result_free(ctx, result)
       end
@@ -258,7 +264,7 @@ module Hegel
     # would mean this binding does not recognise a hegel_run_status_t value
     # the loaded engine returned, mirroring how LibHegel.check! names an
     # unrecognised result code instead of silently doing nothing with it.
-    def finish(impl, ctx, result, stats, captures, reproducing:, quiet:, output:)
+    def finish(impl, ctx, result, stats, captures, reproducing:, quiet:, print_blob:, output:)
       status = impl.run_result_status(ctx, result)
       case status
       when LibHegel::HEGEL_RUN_STATUS_PASSED
@@ -266,7 +272,7 @@ module Hegel
       when LibHegel::HEGEL_RUN_STATUS_ERROR
         raise Hegel::Error, impl.run_result_error(ctx, result) || UNKNOWN_RUN_ERROR_MESSAGE
       when LibHegel::HEGEL_RUN_STATUS_FAILED
-        report_failures(impl, ctx, result, stats, captures, quiet: quiet, output: output)
+        report_failures(impl, ctx, result, stats, captures, quiet: quiet, print_blob: print_blob, output: output)
       else
         raise Hegel::Error, "hegel: run finished with an unrecognized status (#{status})"
       end
@@ -286,13 +292,13 @@ module Hegel
     # guard. The report is written before either raise, not after: a host
     # framework that catches the re-raised exception would otherwise read
     # its own output before this one, out of order.
-    def report_failures(impl, ctx, result, stats, captures, quiet:, output:)
+    def report_failures(impl, ctx, result, stats, captures, quiet:, print_blob:, output:)
       exceptions = []
       failures = []
       impl.run_result_failure_count(ctx, result).times do |index|
         failure = impl.run_result_failure(ctx, result, index)
         begin
-          exception, report = failure_report(impl, ctx, failure, stats, captures)
+          exception, report = failure_report(impl, ctx, failure, stats, captures, print_blob: print_blob)
           exceptions << exception
           failures << report
         ensure
@@ -310,13 +316,13 @@ module Hegel
     # case the run produced, so every failure has a capture under its origin.
     # A capture with no entries came from an unstamped case, whose draws
     # went unrecorded, so its report lists no values.
-    def failure_report(impl, ctx, failure, stats, captures)
+    def failure_report(impl, ctx, failure, stats, captures, print_blob:)
       origin = impl.failure_origin(ctx, failure)
       capture = captures.fetch(origin)
       test_cases, discarded = stats.for(origin)
       report = Report::Failure.new(
         test_cases: test_cases, discarded: discarded, entries: capture.entries || [],
-        blob: impl.failure_reproduction_blob(ctx, failure), caveat: impl.failure_caveat(ctx, failure)
+        blob: (impl.failure_reproduction_blob(ctx, failure) if print_blob), caveat: impl.failure_caveat(ctx, failure)
       )
       [capture.exception, report]
     end

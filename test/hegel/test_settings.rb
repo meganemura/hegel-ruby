@@ -19,7 +19,8 @@ class TestSettings < Minitest::Test
   DEFAULT_KEYWORDS = {
     test_cases: nil, seed: nil, derandomize: nil, verbosity: nil,
     database: nil, database_key: nil, phases: nil, suppress_health_check: nil,
-    report_multiple_failures: false
+    report_multiple_failures: false, stop_on_first_failure: nil, print_blob: nil, show_statistics: nil,
+    nondeterminism_strictness: nil, backend: nil
   }.freeze
 
   def apply_with(fake = @fake, **overrides)
@@ -36,6 +37,11 @@ class TestSettings < Minitest::Test
     assert_empty @fake.settings_database_key_calls
     assert_empty @fake.settings_phases_calls
     assert_empty @fake.settings_suppress_health_check_calls
+    assert_empty @fake.settings_stop_on_first_failure_calls
+    assert_empty @fake.settings_print_blob_calls
+    assert_empty @fake.settings_show_statistics_calls
+    assert_empty @fake.settings_nondeterminism_strictness_calls
+    assert_empty @fake.settings_backend_calls
   end
 
   def test_apply_writes_test_cases_when_given
@@ -76,6 +82,64 @@ class TestSettings < Minitest::Test
 
     assert_includes error.message, "loud"
     assert_empty @fake.settings_verbosity_calls
+  end
+
+  def test_apply_writes_each_boolean_setting_when_given
+    {
+      stop_on_first_failure: :settings_stop_on_first_failure_calls,
+      print_blob: :settings_print_blob_calls,
+      show_statistics: :settings_show_statistics_calls
+    }.each do |keyword, calls|
+      [true, false].each do |value|
+        fake = Hegel::LibHegel::Fake.new
+
+        apply_with(fake, keyword => value)
+
+        assert_equal [value], fake.public_send(calls), "#{keyword}: #{value}"
+      end
+    end
+  end
+
+  def test_apply_maps_every_nondeterminism_strictness_symbol_to_its_code
+    {
+      quiet: Hegel::LibHegel::HEGEL_NONDETERMINISM_QUIET,
+      warn: Hegel::LibHegel::HEGEL_NONDETERMINISM_WARN,
+      error: Hegel::LibHegel::HEGEL_NONDETERMINISM_ERROR
+    }.each do |symbol, code|
+      fake = Hegel::LibHegel::Fake.new
+
+      apply_with(fake, nondeterminism_strictness: symbol)
+
+      assert_equal [code], fake.settings_nondeterminism_strictness_calls
+    end
+  end
+
+  def test_apply_raises_on_an_unknown_nondeterminism_strictness_symbol
+    error = assert_raises(Hegel::Error) { apply_with(nondeterminism_strictness: :loud) }
+
+    assert_equal "hegel: unknown nondeterminism_strictness :loud; expected one of [:quiet, :warn, :error]",
+      error.message
+    assert_empty @fake.settings_nondeterminism_strictness_calls
+  end
+
+  def test_apply_maps_every_backend_symbol_to_its_code
+    {
+      default: Hegel::LibHegel::HEGEL_BACKEND_DEFAULT,
+      urandom: Hegel::LibHegel::HEGEL_BACKEND_URANDOM
+    }.each do |symbol, code|
+      fake = Hegel::LibHegel::Fake.new
+
+      apply_with(fake, backend: symbol)
+
+      assert_equal [code], fake.settings_backend_calls
+    end
+  end
+
+  def test_apply_raises_on_an_unknown_backend_symbol
+    error = assert_raises(Hegel::Error) { apply_with(backend: :quantum) }
+
+    assert_equal "hegel: unknown backend :quantum; expected one of [:default, :urandom]", error.message
+    assert_empty @fake.settings_backend_calls
   end
 
   # The mandatory row of Hegel::Settings.apply_database's table: neither

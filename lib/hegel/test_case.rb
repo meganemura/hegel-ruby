@@ -223,6 +223,16 @@ module Hegel
       @impl.target(@ctx, @handle, value, label)
     end
 
+    def event(label)
+      @impl.event(@ctx, @handle, label)
+    end
+
+    # No finite check here: hegel_event_value's HEGEL_E_INVALID_ARG reaches
+    # the caller through LibHegel.check!, as it does for #target.
+    def event_value(label, value)
+      @impl.event_value(@ctx, @handle, label, value)
+    end
+
     # hegel_start_span, labelled with a generator's label (see
     # Hegel::Generator#label). Every compound Hegel::Generator (map, filter,
     # arrays) opens one of these around its own draw; see #stop_span.

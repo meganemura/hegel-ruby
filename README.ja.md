@@ -269,6 +269,11 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 | `phases` | 生成や縮小など、実行するエンジンのフェーズ |
 | `suppress_health_check` | 無効にするヘルスチェック |
 | `report_multiple_failures` | 異なる失敗をそれぞれ報告する。既定は `false` |
+| `stop_on_first_failure` | `false` にすると `test_cases` を使い切ってから報告する |
+| `print_blob` | `false` にすると失敗レポートから再現用の行を外す |
+| `show_statistics` | `tc.event` と `tc.event_value` で記録した内容を実行の最後に表示する |
+| `nondeterminism_strictness` | 再実行で振る舞いが変わるテストへの反応。`:quiet`、`:warn`、`:error` |
+| `backend` | `:default`、または値を引くたびに外部のエントロピーを使う `:urandom`(Antithesis 向け) |
 | `database_key` | このプロパティで example database を有効にする |
 | `database` | example database のディレクトリ |
 | `reproduce_failure` | レポートの blob から 1 つの失敗を再生する |
@@ -291,6 +296,24 @@ Hegel.test(database_key: "my_sort matches the builtin sort") { |tc| ... }
 
 テストの中では、`tc.note` で失敗レポートに出すメッセージを記録でき、
 `tc.target` で Hegel が探索を寄せる方向を指定できます。
+
+`tc.event` と `tc.event_value` は、テストが狙ったケースに届いているかを確かめる
+ためのものです。`show_statistics: true` にすると、各イベントが起きた割合と、
+各値の分布の要約をエンジンが表示します。数値は実行ごとに変わります。
+
+```ruby
+Hegel.test(show_statistics: true) do |tc|
+  xs = tc.draw(arrays(integers))
+  tc.event("empty") if xs.empty?
+  tc.event_value("size", xs.size)
+end
+```
+
+```
+Statistics (over 100 test cases):
+  * empty: 6.0% of test cases
+  * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
+```
 
 ## エージェント向けスキル
 

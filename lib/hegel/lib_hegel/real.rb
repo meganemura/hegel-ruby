@@ -109,6 +109,20 @@ module Hegel
         @hegel_settings_set_suppress_health_check_fn = bind(
           "hegel_settings_set_suppress_health_check", [:pointer, :pointer, :uint32], :int32
         )
+        @hegel_settings_set_stop_on_first_failure_fn = bind(
+          "hegel_settings_set_stop_on_first_failure", [:pointer, :pointer, :bool], :int32
+        )
+        @hegel_settings_set_print_blob_fn = bind("hegel_settings_set_print_blob", [:pointer, :pointer, :bool], :int32)
+        @hegel_settings_get_print_blob_fn = bind(
+          "hegel_settings_get_print_blob", [:pointer, :pointer, :pointer], :int32
+        )
+        @hegel_settings_set_show_statistics_fn = bind(
+          "hegel_settings_set_show_statistics", [:pointer, :pointer, :bool], :int32
+        )
+        @hegel_settings_set_nondeterminism_strictness_fn = bind(
+          "hegel_settings_set_nondeterminism_strictness", [:pointer, :pointer, :uint32], :int32
+        )
+        @hegel_settings_set_backend_fn = bind("hegel_settings_set_backend", [:pointer, :pointer, :uint32], :int32)
 
         @hegel_run_start_fn = bind(
           "hegel_run_start", [:pointer, :pointer, :pointer, :pointer, :pointer], :int32
@@ -124,6 +138,10 @@ module Hegel
         @hegel_test_case_free_fn = bind("hegel_test_case_free", [:pointer, :pointer], :int32)
         @hegel_mark_complete_fn = bind("hegel_mark_complete", [:pointer, :pointer, :uint32, :pointer], :int32)
         @hegel_target_fn = bind("hegel_target", [:pointer, :pointer, :double, StringStruct.by_value], :int32)
+        @hegel_event_fn = bind("hegel_event", [:pointer, :pointer, StringStruct.by_value], :int32)
+        @hegel_event_value_fn = bind(
+          "hegel_event_value", [:pointer, :pointer, :double, StringStruct.by_value], :int32
+        )
 
         @hegel_run_result_fn = bind("hegel_run_result", [:pointer, :pointer, :pointer], :int32)
         @hegel_run_result_free_fn = bind("hegel_run_result_free", [:pointer, :pointer], :int32)
@@ -373,6 +391,44 @@ module Hegel
         nil
       end
 
+      def settings_set_stop_on_first_failure(ctx, s, yes)
+        code = @hegel_settings_set_stop_on_first_failure_fn.call(ctx, s, yes)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_print_blob(ctx, s, yes)
+        code = @hegel_settings_set_print_blob_fn.call(ctx, s, yes)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # libhegel never prints the blob; the caller decides from the resolved value.
+      def settings_get_print_blob(ctx, s)
+        out = FFI::MemoryPointer.new(:bool)
+        code = @hegel_settings_get_print_blob_fn.call(ctx, s, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_uint8 != 0
+      end
+
+      def settings_set_show_statistics(ctx, s, yes)
+        code = @hegel_settings_set_show_statistics_fn.call(ctx, s, yes)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_nondeterminism_strictness(ctx, s, strictness)
+        code = @hegel_settings_set_nondeterminism_strictness_fn.call(ctx, s, strictness)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_backend(ctx, s, backend)
+        code = @hegel_settings_set_backend_fn.call(ctx, s, backend)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
       # +settings+ can be freed by the caller as soon as this call returns:
       # the header documents that hegel_run_start copies the settings it is
       # given rather than borrowing them. callback and user_data are always
@@ -457,6 +513,18 @@ module Hegel
       # argument-shape rule to the engine's own HEGEL_E_INVALID_ARG.
       def target(ctx, tc, value, label)
         code = @hegel_target_fn.call(ctx, tc, value, string_view(label))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def event(ctx, tc, label)
+        code = @hegel_event_fn.call(ctx, tc, string_view(label))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def event_value(ctx, tc, label, value)
+        code = @hegel_event_value_fn.call(ctx, tc, value, string_view(label))
         LibHegel.check!(self, ctx, code)
         nil
       end
