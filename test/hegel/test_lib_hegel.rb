@@ -1510,6 +1510,7 @@ class TestLibHegel < Minitest::Test
       assert_nil real.settings_set_suppress_health_check(ctx, settings, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
       assert_nil real.settings_set_report_multiple_failures(ctx, settings, true)
       assert_nil real.settings_set_database_key(ctx, settings, "hegel-ruby-test-key")
+      assert_nil real.settings_set_test_location(ctx, settings, "test/x_test.rb", 7, "XTest", "test_x")
 
       run = real.run_start(ctx, settings)
       real.settings_free(ctx, settings)
@@ -1847,6 +1848,8 @@ class TestLibHegel < Minitest::Test
     assert_nil fake.settings_set_suppress_health_check(ctx, Object.new, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
     assert_nil fake.settings_set_report_multiple_failures(ctx, Object.new, true)
     assert_nil fake.settings_set_database_key(ctx, Object.new, "key")
+    assert_nil fake.settings_set_test_location(ctx, Object.new, "f.rb", 1, "C", "m")
+    assert_equal [["f.rb", 1, "C", "m"]], fake.settings_test_location_calls
     assert_nil fake.target(ctx, Object.new, 1.0, "label")
   end
 
@@ -1865,6 +1868,9 @@ class TestLibHegel < Minitest::Test
 
     fake.settings_set_database_key_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
     assert_raises(Hegel::Error) { fake.settings_set_database_key(ctx, Object.new, "key") }
+
+    fake.settings_set_test_location_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_set_test_location(ctx, Object.new, "f.rb", 1, "C", "m") }
 
     fake.target_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
     assert_raises(Hegel::Error) { fake.target(ctx, Object.new, 1.0, "label") }

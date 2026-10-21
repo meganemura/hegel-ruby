@@ -135,7 +135,7 @@ module Hegel
       settings_set_phases settings_set_suppress_health_check settings_set_report_multiple_failures
       settings_set_database_key settings_set_stop_on_first_failure settings_set_print_blob
       settings_get_print_blob settings_set_show_statistics settings_set_nondeterminism_strictness
-      settings_set_backend
+      settings_set_backend settings_set_test_location
       target event event_value
       new_pool pool_add pool_generate pool_free
       new_state_machine state_machine_next_group state_machine_next_rule state_machine_rule_rejected

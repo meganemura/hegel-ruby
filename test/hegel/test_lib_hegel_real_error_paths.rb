@@ -42,6 +42,7 @@ class TestLibHegelRealErrorPaths < Minitest::Test
           real.settings_set_nondeterminism_strictness(ctx, nil, Hegel::LibHegel::HEGEL_NONDETERMINISM_QUIET)
         },
         settings_set_backend: -> { real.settings_set_backend(ctx, nil, Hegel::LibHegel::HEGEL_BACKEND_DEFAULT) },
+        settings_set_test_location: -> { real.settings_set_test_location(ctx, nil, "f.rb", 1, "C", "m") },
         run_start: -> { real.run_start(ctx, nil) }
       }
 
