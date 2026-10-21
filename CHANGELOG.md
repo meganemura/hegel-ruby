@@ -87,6 +87,18 @@ string, padding included. An unknown `codec:` now raises `"text: invalid
 codec: ..."` (or `characters:`) before the engine is called, and a
 surrogate category in `categories:` raises too.
 
+### Grammar strings
+
+`from_lark(grammar)` draws strings that a grammar written in the syntax of
+the [Lark](https://lark-parser.readthedocs.io/en/stable/grammar.html)
+parsing library accepts, as hegel-rust's `from_lark` does. It takes
+`start:`, `explicit:` (a `Hash` from terminal name to a generator of the
+values drawn for it), `alphabet:` (a `characters` generator),
+`max_size:`, `max_depth:`, and `import_path:`. An invalid option raises
+`Hegel::Error` at draw time, with hegel-rust's message where it has one.
+A grammar is compiled on its first draw in a run and freed when the run
+ends.
+
 ## [0.3.4] - 2026-10-20
 
 ### Engine: libhegel 0.47.2 (was 0.47.1)

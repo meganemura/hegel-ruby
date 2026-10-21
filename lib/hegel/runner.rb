@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "errors"
+require_relative "grammar_cache"
 require_relative "lib_hegel"
 require_relative "report"
 require_relative "settings"
@@ -135,6 +136,9 @@ module Hegel
     # `ensure` by the code that opened it, innermost first: hegel_context_free
     # requires every other handle taken from the context to be freed first,
     # and Ruby's GC gives finalizers no ordering guarantee to rely on instead.
+    #
+    # The grammars the run compiled are freed after the run and before the
+    # context (docs/adr/0033).
     def run(impl:, test_location:, profile: nil, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
       phases: nil, suppress_health_check: nil, report_multiple_failures: false, stop_on_first_failure: nil,
       print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil, backend: nil,
@@ -163,16 +167,21 @@ module Hegel
           # hegel_run_start copies them.
           impl.settings_free(ctx, settings)
         end
-        run_and_finish(impl, ctx, run, reproducing: !reproduce_failure.nil?, quiet: quiet, print_blob: print_blob,
-          output: output, &block)
+        grammars = GrammarCache.new
+        begin
+          run_and_finish(impl, ctx, run, grammars, reproducing: !reproduce_failure.nil?, quiet: quiet,
+            print_blob: print_blob, output: output, &block)
+        ensure
+          grammars.free_all(impl, ctx)
+        end
       end
     end
 
     # Drives +run+ and hands its result to #finish.
-    def run_and_finish(impl, ctx, run, reproducing:, quiet:, print_blob:, output:, &block)
+    def run_and_finish(impl, ctx, run, grammars, reproducing:, quiet:, print_blob:, output:, &block)
       stats = GenerationStats.new
       captures = {}
-      drive(impl, ctx, run, stats, captures, &block)
+      drive(impl, ctx, run, grammars, stats, captures, &block)
 
       result = impl.run_result(ctx, run)
       begin
@@ -197,12 +206,12 @@ module Hegel
     # run configured for 20 test cases whose body rejected nearly every case
     # took 811 to 1847 iterations. +stats+ does its own, different counting
     # -- see GenerationStats above.
-    def drive(impl, ctx, run, stats, captures, &block)
+    def drive(impl, ctx, run, grammars, stats, captures, &block)
       loop do
         tc = impl.next_test_case(ctx, run)
         break if tc.nil?
 
-        run_case(impl, ctx, tc, stats, captures, &block)
+        run_case(impl, ctx, tc, grammars, stats, captures, &block)
       end
     end
 
@@ -222,8 +231,8 @@ module Hegel
     # The case records its draws only when the engine stamped it for
     # capture. The stamp is read in here, inside the `ensure`, so the handle
     # is freed even when reading it raises.
-    def with_test_case(impl, ctx, tc)
-      test_case = TestCase.new(impl, ctx, tc, record: impl.test_case_should_capture(ctx, tc))
+    def with_test_case(impl, ctx, tc, grammars)
+      test_case = TestCase.new(impl, ctx, tc, record: impl.test_case_should_capture(ctx, tc), grammars: grammars)
       yield test_case
     ensure
       begin
@@ -243,8 +252,8 @@ module Hegel
     # and still reaches #with_test_case's own `ensure`, so the handle is
     # freed either way; its owner is this loop, not hegel_run_free (see
     # #run_and_finish's comment above).
-    def run_case(impl, ctx, tc, stats, captures, &block)
-      with_test_case(impl, ctx, tc) do |test_case|
+    def run_case(impl, ctx, tc, grammars, stats, captures, &block)
+      with_test_case(impl, ctx, tc, grammars) do |test_case|
         status, origin, exception, entries = classify(test_case, &block)
         stats.record(status, origin)
         keep_capture(captures, origin, exception, entries) if status == LibHegel::HEGEL_STATUS_INTERESTING

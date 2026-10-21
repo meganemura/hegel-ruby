@@ -20,7 +20,7 @@ module Hegel
     DRAW_METHOD_NAMES: Array[Symbol]
     DRAW_CALLER_DEPTH: Integer
 
-    def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool) -> void
+    def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool, ?grammars: GrammarCache?) -> void
     def entries: () -> Array[[:draw, String, untyped] | [:note, untyped]]?
     def draw_integer: (Integer min_value, Integer max_value, ?label: String?) -> Integer
     def draw_boolean: (?Float p, ?label: String?) -> bool
@@ -70,6 +70,28 @@ module Hegel
     def state_machine_rule_rejected: (untyped state_machine) -> nil
     def state_machine_should_check_invariant: (untyped state_machine, Integer index) -> bool
     def state_machine_free: (untyped state_machine) -> nil
+    def with_grammar: [R] (untyped key, ^() -> GrammarCache::Compiled build) { (GrammarCache::Compiled) -> R } -> R
+    def grammar_builder_new: (String text) -> untyped
+    def grammar_builder_file: (untyped builder, Integer index) -> String?
+    def grammar_builder_provide: (untyped builder, Integer index, String? text) -> nil
+    def grammar_builder_free: (untyped builder) -> nil
+    def grammar_new: (untyped builder, String? start, Integer max_size, Integer max_depth, untyped alphabet, Array[String] names) -> untyped
+    def grammar_placeholder: (untyped grammar, String name) -> String
+    def grammar_free: (untyped grammar) -> nil
+    def generate_grammar: (untyped grammar, Integer max_size) -> String
+  end
+
+  class GrammarCache
+    class Compiled
+      attr_reader grammar: untyped
+      attr_reader markers: Array[String]
+
+      def initialize: (grammar: untyped, markers: Array[String]) -> void
+    end
+
+    def initialize: () -> void
+    def fetch: (untyped key) { () -> Compiled } -> Compiled
+    def free_all: (untyped impl, untyped ctx) -> void
   end
 
   class Generator
@@ -131,6 +153,7 @@ module Hegel
     class CharactersGenerator < Generator
       def initialize: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> void
       def do_draw: (untyped tc) -> String
+      def options: () -> Hash[Symbol, untyped]
       def options_given?: () -> bool
       def with_alphabet: [R] (untyped tc, String name, Integer min_size, Integer max_size) { (untyped) -> R } -> R
 
@@ -250,6 +273,32 @@ module Hegel
       private
 
       def draw_regex: (untyped tc, untyped alphabet) -> String
+    end
+
+    class FromLarkGenerator < Generator
+      DEFAULT_MAX_SIZE: Integer
+      ATTEMPTS: Integer
+      ATTEMPT_LABEL: Integer
+      MAX_SIZE_LIMIT: Integer
+      MAX_DEPTH_LIMIT: Integer
+
+      def initialize: (untyped grammar, start: untyped, explicit: untyped, alphabet: untyped, max_size: Integer?, max_depth: Integer?, import_path: untyped) -> void
+      def do_draw: (untyped tc) -> String
+
+      private
+
+      def frozen: [T] (T value) -> T
+      def lark_label: (Array[untyped]? names) -> Integer
+      def text_label: (untyped value) -> Integer
+      def explicit_terminals: () -> Array[[String, Generator]]
+      def explicit_terminal: (untyped name, untyped generator) -> [String, Generator]
+      def compile: (untyped tc, Array[String] names) -> GrammarCache::Compiled
+      def compile_with: (untyped tc, Array[String] names, untyped alphabet) -> GrammarCache::Compiled
+      def provide_files: (untyped tc, untyped builder) -> void
+      def read_import: (String file) -> String?
+      def draw_with_values: (untyped tc, GrammarCache::Compiled compiled, Array[[String, Generator]] terminals) -> String
+      def splice: (untyped tc, GrammarCache::Compiled compiled, Regexp pattern, Array[[String, Generator]] terminals, Integer budget) -> [String, Integer, Integer, Integer]
+      def draw_value: (untyped tc, String name, Generator generator) -> String
     end
 
     class EmailsGenerator < Generator
@@ -413,6 +462,7 @@ module Hegel
       def characters: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::CharactersGenerator
       def binary: (?min_size: Integer, ?max_size: Integer?) -> Generators::BinaryGenerator
       def from_regex: (untyped pattern, ?fullmatch: bool, ?alphabet: Generators::CharactersGenerator?) -> Generators::FromRegexGenerator
+      def from_lark: (untyped grammar, ?start: String?, ?explicit: Hash[String | Symbol, Generator], ?alphabet: Generators::CharactersGenerator?, ?max_size: Integer?, ?max_depth: Integer?, ?import_path: untyped) -> Generators::FromLarkGenerator
       def emails: () -> Generators::EmailsGenerator
       def urls: () -> Generators::UrlsGenerator
       def domains: (?max_length: Integer) -> Generators::DomainsGenerator
@@ -511,10 +561,10 @@ module Hegel
     end
 
     def self.run: (impl: untyped, test_location: TestLocation, ?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
-    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) { (TestCase) -> void } -> nil
-    def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
-    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc) { (TestCase) -> R } -> R
-    def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
+    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, GrammarCache grammars, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) { (TestCase) -> void } -> nil
+    def self.drive: (untyped impl, untyped ctx, untyped run, GrammarCache grammars, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
+    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc, GrammarCache grammars) { (TestCase) -> R } -> R
+    def self.run_case: (untyped impl, untyped ctx, untyped tc, GrammarCache grammars, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
     def self.keep_capture: (Hash[String, Capture] captures, String origin, Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
     def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) -> nil
     def self.report_failures: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, quiet: bool, print_blob: bool, output: untyped) -> bot
@@ -558,6 +608,7 @@ module Hegel
     HEGEL_E_NOT_COMPLETE: Integer
     HEGEL_E_INTERNAL: Integer
     HEGEL_E_CONCURRENT_USE: Integer
+    HEGEL_E_NOT_FOUND: Integer
     CODE_NAMES: Hash[Integer, String]
     HEGEL_STATUS_VALID: Integer
     HEGEL_STATUS_INVALID: Integer
@@ -681,6 +732,14 @@ module Hegel
       def generate_date: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
       def generate_time: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
       def generate_datetime: (untyped ctx, untyped tc, Array[Integer] min_date, Array[Integer] min_time, Array[Integer] max_date, Array[Integer] max_time) -> [Array[Integer], Array[Integer]]
+      def grammar_builder_new: (untyped ctx, String text) -> untyped
+      def grammar_builder_file: (untyped ctx, untyped builder, Integer index) -> String?
+      def grammar_builder_provide: (untyped ctx, untyped builder, Integer index, String? text) -> nil
+      def grammar_builder_free: (untyped ctx, untyped builder) -> nil
+      def grammar_new: (untyped ctx, untyped builder, String? start, Integer max_size, Integer max_depth, untyped alphabet, Array[String] names) -> untyped
+      def grammar_placeholder: (untyped ctx, untyped grammar, String name) -> String
+      def grammar_free: (untyped ctx, untyped grammar) -> nil
+      def generate_grammar: (untyped ctx, untyped tc, untyped grammar, Integer max_size) -> String
     end
   end
 end

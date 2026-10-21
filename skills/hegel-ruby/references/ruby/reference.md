@@ -6,7 +6,7 @@
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
 - [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
-- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations`, `composite`, `deferred`
+- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `from_lark`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations`, `composite`, `deferred`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
 - [Gotchas](#gotchas)
@@ -943,6 +943,68 @@ the pattern: `from_regex("(?!)")` raises
 `"HEGEL_E_INVALID_ARG (-5): regex pattern \"(?!)\" matches no string the
 generator can produce"`. Since libhegel 0.45.7 the engine makes this
 check.
+
+### `from_lark(grammar, start: nil, explicit: {}, alphabet: nil, max_size: nil, max_depth: nil, import_path: nil)`
+
+A `String` that `grammar`, written in the syntax of the
+[Lark](https://lark-parser.readthedocs.io/en/stable/grammar.html) parsing
+library, accepts from its `start` rule (`"start"` when `start` is nil).
+`%import` of Lark's bundled `common`, `python`, `unicode`, and `lark`
+grammars works without `import_path`; `import_path` (a `String` or a
+`Pathname`) is the one directory other imports are read from, `%import
+a.b.X` reading `a/b.lark` there. Strings run up to 8192 characters by
+default; `max_size` caps the characters (at most 1048576) and `max_depth`
+how deeply rules nest (default 200, at most 500). `alphabet` is a
+`characters` generator limiting what a terminal's pattern draws.
+
+```ruby
+INT_LIST = "start: INT (\",\" INT)*\n%import common.INT\n"
+
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(from_lark(INT_LIST))
+  raise "not an int list" unless v.match?(/\A\d+(,\d+)*\z/)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(from_lark(INT_LIST, max_size: 12))
+end
+seen # => ["0", "7", "62010192143"]
+```
+
+`explicit` maps a terminal's name, a `String` or a `Symbol`, to a generator
+of `String`s drawn in its place. Every terminal the grammar `%declare`s
+needs one; any other terminal may be given one to override its pattern.
+The values count toward `max_size`: a string they push over it is drawn
+again with less room for the grammar's own text, and after three tries the
+test case is rejected, as a failed `assume` is.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(from_lark("start: WORD \"=\" NUM\n%declare NUM\nWORD: /[a-z]+/\n",
+    explicit: {NUM: integers(min_value: 0, max_value: 99).map(&:to_s)}, max_size: 10))
+end
+seen # => ["a=0", "t=99", "tokndf=53"]
+```
+
+The grammar is compiled on the first draw of a run and kept until the run
+ends, so a `from_lark` built inside the test body compiles once per run too.
+
+Each of these raises `Hegel::Error` at draw time, with a message starting
+`"from_lark: "`: a `grammar` or `start` that is not a `String`;
+`"max_size must be at least 1"` and `"max_depth must be at least 1"`; an
+`explicit` that is not a `Hash`, a name that is not a `String` or a
+`Symbol`, or a value that is not a generator; `"explicit terminal 'NUM' is
+given more than one generator"`, for `{:NUM => g, "NUM" => h}`; an `alphabet`
+that is not a `characters` generator; an `import_path` that is not a
+`String` or a `Pathname`; an explicit generator that draws something other
+than a `String`; and an import that exists but cannot be read, or is not
+UTF-8 (`"Could not read grammar"`, naming the file). A grammar the engine rejects
+raises with the engine's message: `from_lark("start: NUM\n%declare NUM\n")`
+raises `"HEGEL_E_INVALID_ARG (-5): Terminal 'NUM' is declared but has no
+definition: supply a generator for it with explicit"`.
 
 ### `emails`
 

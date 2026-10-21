@@ -54,13 +54,17 @@ module Hegel
     # +record+ defaults to false: recording is Hegel::Runner's decision, made
     # only for the one, already-shrunk replay that produces a failure report
     # (see #record_draw for why every other iteration skips it).
-    def initialize(impl, ctx, handle, record: false)
+    #
+    # +grammars+ is the run's Hegel::GrammarCache, which Hegel::Runner
+    # passes; a test case built without one compiles a grammar for each draw.
+    def initialize(impl, ctx, handle, record: false, grammars: nil)
       @impl = impl
       @ctx = ctx
       @handle = handle
       @record = record
       @entries = record ? [] : nil
       @pools = []
+      @grammars = grammars
     end
 
     # The [:draw, name, value] / [:note, message] entries recorded so far, in
@@ -503,6 +507,53 @@ module Hegel
     # [[year, month, day], [hour, minute, second, microsecond]] pair.
     def generate_datetime(min_date, min_time, max_date, max_time)
       @impl.generate_datetime(@ctx, @handle, min_date, min_time, max_date, max_time)
+    end
+
+    # Yields the Hegel::GrammarCache::Compiled under +key+ in the run's
+    # cache, calling +build+ to compile it on the first draw. Without a
+    # cache, it compiles one for this draw alone and frees it afterwards.
+    def with_grammar(key, build)
+      return yield @grammars.fetch(key, &build) if @grammars
+
+      compiled = build.call
+      begin
+        yield compiled
+      ensure
+        grammar_free(compiled.grammar)
+      end
+    end
+
+    def grammar_builder_new(text)
+      @impl.grammar_builder_new(@ctx, text)
+    end
+
+    def grammar_builder_file(builder, index)
+      @impl.grammar_builder_file(@ctx, builder, index)
+    end
+
+    def grammar_builder_provide(builder, index, text)
+      @impl.grammar_builder_provide(@ctx, builder, index, text)
+    end
+
+    def grammar_builder_free(builder)
+      @impl.grammar_builder_free(@ctx, builder)
+    end
+
+    def grammar_new(builder, start, max_size, max_depth, alphabet, names)
+      @impl.grammar_new(@ctx, builder, start, max_size, max_depth, alphabet, names)
+    end
+
+    def grammar_placeholder(grammar, name)
+      @impl.grammar_placeholder(@ctx, grammar, name)
+    end
+
+    def grammar_free(grammar)
+      @impl.grammar_free(@ctx, grammar)
+    end
+
+    # hegel_generate_grammar, without recording.
+    def generate_grammar(grammar, max_size)
+      @impl.generate_grammar(@ctx, @handle, grammar, max_size)
     end
 
     private

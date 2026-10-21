@@ -202,7 +202,7 @@ Expected: [0, 0]
 | 種類 | ジェネレーター |
 | --- | --- |
 | 数値と真偽値 | `integers`, `floats`, `booleans` |
-| 文字列とバイト列 | `text`, `characters`, `binary`, `from_regex` |
+| 文字列とバイト列 | `text`, `characters`, `binary`, `from_regex`, `from_lark` |
 | コレクション | `arrays`, `sets`, `hashes`, `tuples` |
 | 選択 | `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional` |
 | 書式 | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |

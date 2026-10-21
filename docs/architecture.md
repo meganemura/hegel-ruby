@@ -18,7 +18,7 @@ recorded, and prints a blob that `Hegel.test(reproduce_failure:)` replays.
 The report comes from the cases the engine stamps for capture during the
 run; see
 [ADR 0019](adr/0019-report-failures-from-the-cases-the-engine-stamps.md).
-The generator layer covers thirty-two generators composing through `map`
+The generator layer covers thirty-three generators composing through `map`
 and `filter`, reachable bare through `Hegel::Syntax::Methods`. A test case
 can discard itself with `tc.assume` or `tc.reject`. A run can be shaped by
 `phases:`, `suppress_health_check:`, `report_multiple_failures:`, and the
@@ -120,6 +120,12 @@ every pool opened from it and `Hegel::Runner` releases them alongside the
 test-case handle, in nested `ensure`s so a failure releasing one cannot skip
 the other. See
 [ADR 0011](adr/0011-let-the-test-case-own-every-pool-drawn-from-it.md).
+
+A compiled grammar outlives the test case that compiled it, since compiling
+costs far more than drawing. `Hegel::Runner.run` keeps the run's grammars
+in a `Hegel::GrammarCache` and frees them after the run and before the
+context. See
+[ADR 0033](adr/0033-cache-compiled-grammars-for-the-length-of-a-run.md).
 
 ## A rule's own control flow
 

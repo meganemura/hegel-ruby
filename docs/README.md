@@ -33,7 +33,12 @@ An index of the design records for `hegel-ruby`.
 - [0024: Release when a merge changes the gem version](adr/0024-release-when-a-merge-changes-the-gem-version.md)
 - [0025: Copy each string input into a hegel_string_t](adr/0025-copy-each-string-input-into-a-hegel-string-t.md)
 - [0026: Select the engine release repository by version](adr/0026-select-the-engine-release-repository-by-version.md)
+- [0027: Report each run's test location from the caller's frame](adr/0027-report-each-runs-test-location-from-the-callers-frame.md)
+- [0028: Expose settings profiles as a keyword and module functions](adr/0028-expose-settings-profiles-as-a-keyword-and-module-functions.md)
+- [0029: Keep notes local, and defer run error kinds](adr/0029-keep-notes-local-and-defer-run-error-kinds.md)
+- [0030: Represent a duration as Integer nanoseconds](adr/0030-represent-a-duration-as-integer-nanoseconds.md)
 - [0031: Take the alphabet options from hegel-rust](adr/0031-take-the-alphabet-options-from-hegel-rust.md)
+- [0033: Cache compiled grammars for the length of a run](adr/0033-cache-compiled-grammars-for-the-length-of-a-run.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.
