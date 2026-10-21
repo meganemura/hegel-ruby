@@ -313,6 +313,21 @@ class TestGenerators < Minitest::Test
     assert_includes error.message, "max_value < min_value"
   end
 
+  # A bound of infinity with allow_infinity: false leaves no value to draw.
+  # The engine rejects it as an argument error since libhegel 0.48.0.
+  # Measured against 0.47.2, the same draw raised HEGEL_E_INTERNAL, which
+  # calls itself a bug in hegel rather than in the arguments.
+  def test_floats_only_infinity_left_with_allow_infinity_false_raises_at_draw_time
+    [{min_value: Float::INFINITY}, {max_value: -Float::INFINITY}].each do |bound|
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) { |tc| tc.draw(floats(allow_infinity: false, **bound)) }
+      end
+
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+      assert_includes error.message, "leaves no value"
+    end
+  end
+
   # min_value == max_value is the boundary the < check must not reject: it
   # names an exact value, not an empty range.
   def test_floats_min_value_equals_max_value_returns_that_value
@@ -1489,6 +1504,14 @@ class TestGenerators < Minitest::Test
   # case, and the empty pattern fully matches only the empty string.
   def test_from_regex_empty_pattern_fullmatch_draws_the_empty_string
     assert_all_examples(from_regex("", fullmatch: true)) { |v| v == "" }
+  end
+
+  # \z is the end-of-string anchor in Ruby, and Python 3.14 added it to re
+  # as a spelling of \Z. The engine accepts it since libhegel 0.48.0, so a
+  # pattern written for Ruby can end with it. Measured against 0.47.2, the
+  # same pattern raised HEGEL_E_INVALID_ARG ("bad escape \z").
+  def test_from_regex_accepts_the_end_of_string_anchor
+    assert_all_examples(from_regex("ab\\z")) { |v| v.end_with?("ab") }
   end
 
   # Construction alone must not raise (a Regexp is a legal, if useless,
