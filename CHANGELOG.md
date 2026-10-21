@@ -106,6 +106,15 @@ values drawn for it), `alphabet:` (a `characters` generator),
 A grammar is compiled on its first draw in a run and freed when the run
 ends.
 
+### Added
+
+- `rule(name, weight: 1.0)` sets how often the engine picks a rule relative to
+  the machine's other rules, as `#[rule(weight = w)]` does in hegel-rust. A
+  weight that is not finite and positive raises `Hegel::Error` when the machine
+  runs. `Hegel::StateMachine.rule_definitions` now maps each name to a
+  `Hegel::StateMachine::Rule` with `block` and `weight`, where it mapped to the
+  block alone.
+
 ## [0.3.4] - 2026-10-20
 
 ### Engine: libhegel 0.47.2 (was 0.47.1)

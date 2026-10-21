@@ -257,7 +257,9 @@ Every invariant runs before the first rule and after the last. Between rules,
 the engine samples each invariant. Declare an invariant with
 `always_run: true` to check it after every rule.
 `Hegel::Stateful.run(machine, tc, step_count: 50)` sets the largest number of
-rules that one test case runs; 50 is the default.
+rules that one test case runs; 50 is the default. `rule :name, weight: 2.5`
+asks Hegel to pick a rule more often than the others; the default weight is
+1.0.
 
 ## Configuring a run
 

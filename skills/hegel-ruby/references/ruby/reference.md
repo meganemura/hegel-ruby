@@ -1367,7 +1367,7 @@ block: `Hegel.test { |tc| Hegel::Stateful.run(machine, tc) }` (see
 
 ### Declaring a machine
 
-`rule(name, &block)` and `invariant(name, &block)` are class-level
+`rule(name, weight: 1.0, &block)` and `invariant(name, &block)` are class-level
 declarations. `block` runs via `instance_exec` against the machine instance
 under test, and is handed the running `Hegel::TestCase` as its one argument
 (ignored if the block takes none). So it reads and writes the machine's own
@@ -1440,6 +1440,13 @@ Hegel::Stateful.run(NoRulesMachine.new, nil)
 A test case with more than one declared rule enables only a random subset of
 them, and picks each step from that subset. So a machine with two rules can
 run a case where one of them never appears at all.
+
+`rule(:name, weight: 2.5)` makes the engine pick a rule more often than the
+others in the cases that enable it. The weight must be a finite number above
+zero. A weight that is not a number raises `Hegel::Error` at declaration, and
+one that is zero, negative, NaN, or infinite raises it when the machine runs.
+It is a hint, not a distribution: which rules a case enables also decides how
+often each runs.
 
 Inside a rule, `tc.assume(false)` means something narrower than it does
 everywhere else in this library: it discards only that one rule application

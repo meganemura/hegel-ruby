@@ -136,7 +136,7 @@ module Hegel
       attr_writer :run_start_returns_nil
 
       attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
-        :freed_pools
+        :freed_pools, :state_machine_rule_weights
 
       # The arguments of each #string_generator_text call (a Hash of its
       # keywords) and each #string_generator_regex call (a Hash of pattern,
@@ -176,6 +176,7 @@ module Hegel
         @string_generator_text_calls = []
         @string_generator_regex_calls = []
         @freed_pools = []
+        @state_machine_rule_weights = []
 
         @settings_new_code = HEGEL_OK
         @settings_new_for_profile_code = HEGEL_OK
@@ -771,7 +772,8 @@ module Hegel
         nil
       end
 
-      def new_state_machine(ctx, _tc, _rule_names, _invariant_names, _always_check, _step_count)
+      def new_state_machine(ctx, _tc, _rule_names, rule_weights, _invariant_names, _always_check, _step_count)
+        @state_machine_rule_weights << rule_weights
         LibHegel.check!(self, ctx, @new_state_machine_code)
         Object.new
       end

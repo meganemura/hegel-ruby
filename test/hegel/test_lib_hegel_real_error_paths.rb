@@ -103,7 +103,7 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         stop_span: -> { real.stop_span(ctx, nil, false) },
         new_collection: -> { real.new_collection(ctx, nil, 0, 1) },
         new_pool: -> { real.new_pool(ctx, nil) },
-        new_state_machine: -> { real.new_state_machine(ctx, nil, ["a"], [], [], 50) },
+        new_state_machine: -> { real.new_state_machine(ctx, nil, ["a"], [1.0], [], [], 50) },
         generate_string: -> { real.generate_string(ctx, nil, nil) },
         collection_more: -> { real.collection_more(ctx, nil, nil) },
         collection_reject: -> { real.collection_reject(ctx, nil, nil) },

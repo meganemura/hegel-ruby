@@ -453,8 +453,8 @@ module Hegel
     # here rather than on that module, the same reason every other native
     # call is a method on this class: Hegel::Stateful never touches @impl or
     # @ctx directly, only this handle-scoped surface.
-    def new_state_machine(rule_names, invariant_names, always_check, step_count)
-      @impl.new_state_machine(@ctx, live_handle, rule_names, invariant_names, always_check, step_count)
+    def new_state_machine(rule_names, rule_weights, invariant_names, always_check, step_count)
+      @impl.new_state_machine(@ctx, live_handle, rule_names, rule_weights, invariant_names, always_check, step_count)
     end
 
     # hegel_state_machine_next_group: starts the next round, or returns

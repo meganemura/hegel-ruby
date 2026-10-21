@@ -653,7 +653,7 @@ class TestLibHegel < Minitest::Test
       assert_nil real.event(ctx, tc, "e")
       assert_nil real.event_value(ctx, tc, "v", 1.0)
 
-      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [], [], 50)
+      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [1.0], [], [], 50)
       real.state_machine_next_group(ctx, tc, state_machine)
       real.state_machine_next_rule(ctx, tc, state_machine)
       assert_nil real.state_machine_rule_rejected(ctx, tc, state_machine)
@@ -1844,7 +1844,7 @@ class TestLibHegel < Minitest::Test
       tc = real.next_test_case(ctx, run)
       refute_nil tc
 
-      state_machine = real.new_state_machine(ctx, tc, ["increment", "decrement"], ["invariant"], [true], 3)
+      state_machine = real.new_state_machine(ctx, tc, ["increment", "decrement"], [1.0, 1.0], ["invariant"], [true], 3)
 
       rejected_once = false
       completed_rounds = 0
@@ -1905,7 +1905,7 @@ class TestLibHegel < Minitest::Test
       refute_nil tc
 
       error = assert_raises(Hegel::Error) do
-        real.new_state_machine(ctx, tc, ["\xFF".b, "good_rule"], [], [], 50)
+        real.new_state_machine(ctx, tc, ["\xFF".b, "good_rule"], [1.0, 1.0], [], [], 50)
       end
       assert_includes error.message, "HEGEL_E_INVALID_ARG"
 
@@ -1945,7 +1945,7 @@ class TestLibHegel < Minitest::Test
       tc = real.next_test_case(ctx, run)
       refute_nil tc
 
-      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [], [], 50)
+      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [1.0], [], [], 50)
       refute_nil state_machine
       real.state_machine_free(ctx, state_machine)
 
@@ -2140,7 +2140,7 @@ class TestLibHegel < Minitest::Test
   def test_fake_state_machine_calls_return_configured_values_and_state_machine_free_is_a_no_op
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
-    state_machine = fake.new_state_machine(ctx, Object.new, ["a"], [], [], 50)
+    state_machine = fake.new_state_machine(ctx, Object.new, ["a"], [1.0], [], [], 50)
     refute_nil state_machine
 
     assert_equal Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE, fake.state_machine_next_group(ctx, Object.new, state_machine)
@@ -2192,7 +2192,7 @@ class TestLibHegel < Minitest::Test
     ctx = fake.context_new
 
     fake.new_state_machine_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
-    assert_raises(Hegel::StopTest) { fake.new_state_machine(ctx, Object.new, ["a"], [], [], 50) }
+    assert_raises(Hegel::StopTest) { fake.new_state_machine(ctx, Object.new, ["a"], [1.0], [], [], 50) }
 
     fake.state_machine_next_group_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
     assert_raises(Hegel::StopTest) { fake.state_machine_next_group(ctx, Object.new, Object.new) }

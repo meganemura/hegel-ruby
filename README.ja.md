@@ -254,7 +254,8 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 エンジンが各不変条件をサンプリングします。毎回のルールの後に確かめたい不変条件は
 `always_run: true` 付きで宣言してください。
 `Hegel::Stateful.run(machine, tc, step_count: 50)` で 1 テストケースあたりの最大
-ルール数を指定できます。既定は 50 です。
+ルール数を指定できます。既定は 50 です。`rule :name, weight: 2.5` と書くと、そのルールが
+他より選ばれやすくなります。既定の重みは 1.0 です。
 
 ## 実行の設定
 
