@@ -29,6 +29,13 @@ module Hegel
   # assertion failure rather than as a Hegel-specific one. Raises
   # Hegel::Error for a run-level failure instead of a property failure.
   #
+  # +profile+ names the settings profile the run starts from: one of the
+  # engine's shipped profiles, one in hegel.toml, or one registered with
+  # Hegel::Settings.register_profile. Left nil, the run starts from the
+  # default profile. A keyword passed alongside still beats the profile, and
+  # report_multiple_failures is always passed, so a profile's value for it
+  # never applies (see docs/adr/0028). An unknown name raises Hegel::Error.
+  #
   # +test_cases+, +seed+, +derandomize+, +verbosity+, +phases+, and
   # +suppress_health_check+ all default to nil, which means the same thing
   # for each of them: do not call the matching libhegel setter, and let the
@@ -72,11 +79,11 @@ module Hegel
   # real engine. Ordinary callers never pass it. Its default expression
   # (#default_impl) only runs when +impl+ is not given, so a test that does
   # pass one never opens the native library at all.
-  def test(test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
+  def test(profile: nil, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
     phases: nil, suppress_health_check: nil, report_multiple_failures: false, stop_on_first_failure: nil,
     print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil, backend: nil, output: $stderr,
     reproduce_failure: nil, impl: default_impl, &block)
-    Runner.run(impl: impl, test_cases: test_cases, seed: seed, derandomize: derandomize, verbosity: verbosity,
+    Runner.run(impl: impl, profile: profile, test_cases: test_cases, seed: seed, derandomize: derandomize, verbosity: verbosity,
       database: database, database_key: database_key, phases: phases, suppress_health_check: suppress_health_check,
       report_multiple_failures: report_multiple_failures, stop_on_first_failure: stop_on_first_failure,
       print_blob: print_blob, show_statistics: show_statistics, nondeterminism_strictness: nondeterminism_strictness,

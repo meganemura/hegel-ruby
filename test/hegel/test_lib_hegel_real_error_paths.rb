@@ -43,6 +43,7 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         },
         settings_set_backend: -> { real.settings_set_backend(ctx, nil, Hegel::LibHegel::HEGEL_BACKEND_DEFAULT) },
         settings_set_test_location: -> { real.settings_set_test_location(ctx, nil, "f.rb", 1, "C", "m") },
+        settings_register_profile: -> { real.settings_register_profile(ctx, "p", nil) },
         run_start: -> { real.run_start(ctx, nil) }
       }
 
@@ -50,6 +51,28 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         error = assert_raises(Hegel::Error) { call.call }
         assert_includes error.message, "HEGEL_E_INVALID_HANDLE", "#{name} did not report an invalid handle"
       end
+    end
+  end
+
+  # The profile calls validate names rather than handles: an unknown or
+  # reserved name is HEGEL_E_INVALID_ARG.
+  def test_profile_calls_raise_on_a_bad_name
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      calls = {
+        settings_new_for_profile: -> { real.settings_new_for_profile(ctx, "no-such-profile-hegel-ruby") },
+        settings_register_profile: -> { real.settings_register_profile(ctx, "base", settings) },
+        set_default_profile: -> { real.set_default_profile(ctx, "default") }
+      }
+
+      calls.each do |name, call|
+        error = assert_raises(Hegel::Error) { call.call }
+        assert_includes error.message, "HEGEL_E_INVALID_ARG", "#{name} did not report an invalid argument"
+      end
+    ensure
+      real.settings_free(ctx, settings)
     end
   end
 

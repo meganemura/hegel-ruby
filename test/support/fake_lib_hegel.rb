@@ -34,7 +34,8 @@ module Hegel
       # the one it wants to drive down a specific LibHegel.check!
       # translation path. Mirrors the per-primitive return-code fields on
       # hegel-java's FakeLibhegel.
-      attr_writer :settings_new_code, :settings_set_test_cases_code, :settings_set_verbosity_code,
+      attr_writer :settings_new_code, :settings_new_for_profile_code, :settings_register_profile_code,
+        :set_default_profile_code, :settings_set_test_cases_code, :settings_set_verbosity_code,
         :settings_set_seed_code, :settings_set_derandomize_code, :settings_set_database_code,
         :run_start_code, :next_test_case_code, :mark_complete_code,
         :generate_boolean_code, :generate_integer_code, :generate_integer_big_code,
@@ -116,7 +117,7 @@ module Hegel
       # HEGEL_OK result, distinct from an error via #run_start_code=.
       attr_writer :run_start_returns_nil
 
-      attr_reader :freed_contexts, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
+      attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
         :freed_pools
 
       # The value passed to each settings setter, one array per keyword, so
@@ -128,7 +129,8 @@ module Hegel
         :settings_derandomize_calls, :settings_database_calls, :settings_database_key_calls,
         :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls,
         :settings_stop_on_first_failure_calls, :settings_print_blob_calls, :settings_show_statistics_calls,
-        :settings_nondeterminism_strictness_calls, :settings_backend_calls, :settings_test_location_calls, :event_calls, :event_value_calls
+        :settings_nondeterminism_strictness_calls, :settings_backend_calls, :settings_test_location_calls, :event_calls, :event_value_calls,
+        :settings_new_for_profile_calls, :settings_register_profile_calls, :set_default_profile_calls
 
       # What #settings_get_print_blob reports: true, the engine's own default,
       # unless a test sets it to stand in for a profile that turns it off.
@@ -139,11 +141,18 @@ module Hegel
         @version_code = HEGEL_OK
         @last_error = "fake error"
         @freed_contexts = []
+        @freed_settings = []
         @freed_test_cases = []
         @freed_string_generators = []
         @freed_pools = []
 
         @settings_new_code = HEGEL_OK
+        @settings_new_for_profile_code = HEGEL_OK
+        @settings_register_profile_code = HEGEL_OK
+        @set_default_profile_code = HEGEL_OK
+        @settings_new_for_profile_calls = []
+        @settings_register_profile_calls = []
+        @set_default_profile_calls = []
         @settings_set_test_cases_code = HEGEL_OK
         @settings_set_verbosity_code = HEGEL_OK
         @settings_set_seed_code = HEGEL_OK
@@ -293,7 +302,26 @@ module Hegel
         Object.new
       end
 
-      def settings_free(_ctx, _s)
+      def settings_new_for_profile(ctx, name)
+        @settings_new_for_profile_calls << name
+        LibHegel.check!(self, ctx, @settings_new_for_profile_code)
+        Object.new
+      end
+
+      def settings_register_profile(ctx, name, s)
+        @settings_register_profile_calls << [name, s]
+        LibHegel.check!(self, ctx, @settings_register_profile_code)
+        nil
+      end
+
+      def set_default_profile(ctx, name)
+        @set_default_profile_calls << name
+        LibHegel.check!(self, ctx, @set_default_profile_code)
+        nil
+      end
+
+      def settings_free(_ctx, s)
+        @freed_settings << s
         nil
       end
 

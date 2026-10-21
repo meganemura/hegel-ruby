@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Profiles
+
+`Hegel.test` takes `profile:`, the name of a settings profile to start the
+run from: a shipped one, one in `hegel.toml`, or one you register. Left
+`nil`, the run starts from the default profile as before, and a keyword
+passed alongside still beats the profile.
+
+`Hegel::Settings.register_profile(name, profile: nil, **keywords)`
+registers a profile for the whole process, and
+`Hegel::Settings.set_default_profile(name)` makes a profile the default
+for every run; `""` clears it. They follow hegel-rust's
+`Settings::register_profile` and `set_default_profile`. An unknown or
+reserved name raises `Hegel::Error` with the engine's message. See
+[ADR 0028](docs/adr/0028-expose-settings-profiles-as-a-keyword-and-module-functions.md).
+
 ### Settings
 
 `Hegel.test` takes five more keywords, with the names and meanings of

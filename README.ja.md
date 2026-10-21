@@ -262,6 +262,7 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 
 | キーワード | 効果 |
 | --- | --- |
+| `profile` | 実行の出発点にする設定プロファイル。[プロファイル](#プロファイル)を参照 |
 | `test_cases` | 生成するテストケースの数 |
 | `seed` | ランダム生成のシード |
 | `derandomize` | 生成を決定的にする |
@@ -314,6 +315,31 @@ Statistics (over 100 test cases):
   * empty: 6.0% of test cases
   * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
 ```
+
+## プロファイル
+
+プロファイルは名前の付いた設定の組です。エンジンは `development`、`ci`、
+`workload` を同梱しており、`hegel.toml` でさらに定義できます。`profile:` を
+渡すと 1 回の実行をそのプロファイルから始められ、独自のプロファイルは
+`Hegel::Settings.register_profile` で登録できます。
+
+```ruby
+Hegel::Settings.register_profile("nightly", profile: "ci", test_cases: 10_000)
+
+Hegel.test(profile: "nightly") { |tc| ... }
+```
+
+`Hegel.test` に渡したキーワードはプロファイルより優先されます。名前を指定した
+プロファイルは既定のプロファイルを継承するので、設定していない項目は既定の
+プロファイルから来ます。`Hegel::Settings.set_default_profile("nightly")` は
+そのプロセスのすべての実行の既定にし、`set_default_profile("")` で解除します。
+登録と既定はプロセス全体に効き、すでに始まった実行は変わりません。
+`register_profile` は `database_key` を除く `Hegel.test` のキーワードを受け取ります。
+プロファイルは `database_key` を持たないためです。また `Hegel.test` は常に
+`report_multiple_failures` を渡すので、プロファイル側の値は使われません。
+未知の名前は `Hegel::Error` になります。
+[ADR 0028](docs/adr/0028-expose-settings-profiles-as-a-keyword-and-module-functions.md)
+を参照してください。
 
 ## エージェント向けスキル
 

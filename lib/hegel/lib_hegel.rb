@@ -117,7 +117,8 @@ module Hegel
     # responds to each name here.
     METHODS = %i[
       context_new context_free context_last_error version
-      settings_new settings_free settings_set_test_cases settings_set_verbosity
+      settings_new settings_new_for_profile settings_register_profile set_default_profile
+      settings_free settings_set_test_cases settings_set_verbosity
       settings_set_seed settings_set_derandomize settings_set_database
       run_start next_test_case run_free test_case_free mark_complete
       generate_boolean generate_integer generate_integer_big

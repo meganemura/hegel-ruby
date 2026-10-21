@@ -3,6 +3,7 @@
 require "test_helper"
 require "hegel/runner"
 require "support/fake_lib_hegel"
+require "securerandom"
 require "stringio"
 require "tmpdir"
 require "fileutils"
@@ -1434,6 +1435,74 @@ class TestRunner < Minitest::Test
     end
 
     assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING], fake.marked_statuses
+  end
+
+  def test_no_profile_builds_the_settings_from_the_default_profile
+    fake = failing_fake
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise "boom" } }
+
+    assert_empty fake.settings_new_for_profile_calls
+  end
+
+  def test_a_profile_builds_the_settings_from_that_profile
+    fake = failing_fake
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, profile: "nightly", output: StringIO.new) { |_tc| raise "boom" }
+    end
+
+    assert_equal ["nightly"], fake.settings_new_for_profile_calls
+  end
+
+  # An explicit keyword must still beat the profile, so its setter runs
+  # after the profile resolved.
+  def test_keywords_still_apply_after_a_profile
+    fake = failing_fake
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, profile: "nightly", test_cases: 7, print_blob: false, output: StringIO.new) do |_tc|
+        raise "boom"
+      end
+    end
+
+    assert_equal [7], fake.settings_test_cases_calls
+    assert_equal [false], fake.settings_print_blob_calls
+    assert_equal [false], fake.settings_report_multiple_failures_calls
+  end
+
+  def test_reproduce_failure_honors_the_profile
+    fake = reproducing_fake
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, profile: "nightly", reproduce_failure: "blob", output: StringIO.new) do |_tc|
+        raise "boom"
+      end
+    end
+
+    assert_equal ["nightly"], fake.settings_new_for_profile_calls
+    assert_equal ["blob"], fake.run_start_blobs
+  end
+
+  def test_an_unknown_profile_raises_before_the_body_runs_and_frees_the_context
+    fake = failing_fake
+    fake.settings_new_for_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    ran = false
+
+    assert_raises(Hegel::Error) do
+      Hegel.test(impl: fake, profile: "nightly", output: StringIO.new) { |_tc| ran = true }
+    end
+
+    refute ran
+    assert_equal 1, fake.freed_contexts.size
+  end
+
+  def test_an_unknown_profile_raises_the_engines_error_from_the_real_engine
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(profile: "no-such-profile-#{SecureRandom.hex(4)}", output: StringIO.new) { |_tc| nil }
+    end
+
+    assert_includes error.message, "HEGEL_E_INVALID_ARG"
   end
 
   private
