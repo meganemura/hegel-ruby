@@ -131,8 +131,12 @@ class TestTestLocation < Minitest::Test
   end
 
   def test_an_antithesis_run_writes_one_assertion_per_test_location
+    # libhegel writes no sdk.jsonl on Windows; hegel-rust's own test_antithesis.rs is cfg(not(windows)).
+    skip "the engine's Antithesis output is not written on Windows" if Gem.win_platform?
+
     Dir.mktmpdir do |output_dir|
-      Dir.mktmpdir do |script_dir|
+      Dir.mktmpdir do |tmp_dir|
+        script_dir = File.realpath(tmp_dir)
         script = File.join(script_dir, "probe.rb")
         File.write(script, <<~RUBY)
           require "hegel"
