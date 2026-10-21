@@ -768,6 +768,56 @@ module Hegel
       end
     end
 
+    # Formats a drawn [year, month, day] as hegel-rust's format_date does,
+    # "YYYY-MM-DD" with the year zero-padded to four digits.
+    def self.format_date(date)
+      format("%04d-%02d-%02d", *date)
+    end
+
+    # Formats a drawn [hour, minute, second, nanosecond] as hegel-rust's
+    # format_time does: nine fractional digits, present only when the
+    # nanosecond is not zero.
+    def self.format_time(time)
+      hour, minute, second, nanosecond = time
+      base = format("%02d:%02d:%02d", hour, minute, second)
+      nanosecond.zero? ? base : format("%s.%09d", base, nanosecond)
+    end
+
+    # Hegel::Syntax::Methods#date_strings. A "YYYY-MM-DD" String over the
+    # years 1 through 9999, the range hegel-rust passes. Takes no options,
+    # as in hegel-rust.
+    #
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
+    class DateStringsGenerator < Generator
+      def do_draw(tc)
+        Generators.format_date(tc.generate_date([1, 1, 1], [9999, 12, 31]))
+      end
+    end
+
+    # Hegel::Syntax::Methods#time_strings. An "HH:MM:SS" String over the
+    # whole day, with ".fffffffff" appended when the drawn nanosecond is not
+    # zero. Unlike #times, it keeps the engine's nanoseconds, as hegel-rust
+    # does (see docs/adr/0022).
+    #
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
+    class TimeStringsGenerator < Generator
+      def do_draw(tc)
+        Generators.format_time(tc.generate_time([0, 0, 0, 0], [23, 59, 59, 999_999_999]))
+      end
+    end
+
+    # Hegel::Syntax::Methods#datetime_strings. A "YYYY-MM-DDTHH:MM:SS" String
+    # over years 1 through 9999, formatted as #date_strings and #time_strings
+    # are.
+    #
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
+    class DatetimeStringsGenerator < Generator
+      def do_draw(tc)
+        date, time = tc.generate_datetime([1, 1, 1], [0, 0, 0, 0], [9999, 12, 31], [23, 59, 59, 999_999_999])
+        "#{Generators.format_date(date)}T#{Generators.format_time(time)}"
+      end
+    end
+
     # Hegel::Syntax::Methods#composite. Builds a generator from imperative
     # code, the way Hypothesis's @composite decorator and hegel-rust's
     # compose!/hegel-go's Composite let a caller assemble one value out of

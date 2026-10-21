@@ -206,7 +206,7 @@ Expected: [0, 0]
 | コレクション | `arrays`, `sets`, `hashes`, `tuples` |
 | 選択 | `just`, `sampled_from`, `one_of`, `optional` |
 | 書式 | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
-| 日時 | `dates`, `times`, `datetimes` |
+| 日時 | `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings` |
 | 自作 | `composite`, `deferred` |
 
 どれも `map` と `filter` で組み合わせられます。オプションはキーワード引数で、

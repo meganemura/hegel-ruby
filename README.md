@@ -206,7 +206,7 @@ Expected: [0, 0]
 | Collections | `arrays`, `sets`, `hashes`, `tuples` |
 | Choice | `just`, `sampled_from`, `one_of`, `optional` |
 | Formats | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
-| Time | `dates`, `times`, `datetimes` |
+| Time | `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings` |
 | Your own | `composite`, `deferred` |
 
 Each one composes through `map` and `filter`. Options are keywords, with the
