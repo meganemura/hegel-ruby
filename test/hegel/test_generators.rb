@@ -435,6 +435,205 @@ class TestGenerators < Minitest::Test
     assert_includes error.message, "max_size < min_size"
   end
 
+  # ---- text: alphabet options ----
+
+  # The engine's Unicode tables can be newer than Ruby's, so a codepoint
+  # Ruby calls unassigned (Cn) may be a letter to the engine.
+  def uppercase_or_unassigned?(char)
+    char.match?(/\p{Lu}|\p{Cn}/)
+  end
+
+  def draw_failure(generator)
+    assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+  end
+
+  # What Fake#string_generator_text records for a call that leaves every
+  # character option at its default, which is what the engine then sees.
+  TEXT_HANDLE_DEFAULTS = {
+    codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF, categories: nil, exclude_categories: nil,
+    include_characters: "", exclude_characters: ""
+  }.freeze
+
+  def draw_against_fake(generator, fake = Hegel::LibHegel::Fake.new)
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+    generator.do_draw(tc)
+    fake
+  end
+
+  def test_text_categories_restrict_the_alphabet
+    assert_all_examples(text(categories: ["Lu"], max_size: 20)) do |v|
+      v.each_char.all? { |c| uppercase_or_unassigned?(c) }
+    end
+  end
+
+  def test_text_categories_take_precedence_over_exclude_categories
+    assert_all_examples(text(categories: ["Lu"], exclude_categories: ["Lu"], min_size: 1, max_size: 5)) do |v|
+      !v.empty? && v.each_char.all? { |c| uppercase_or_unassigned?(c) }
+    end
+  end
+
+  def test_text_exclude_categories_removes_the_named_categories
+    assert_all_examples(text(exclude_categories: ["Cc", "Cs"])) { |v| !v.include?("\n") }
+  end
+
+  def test_text_include_characters_with_no_categories_draws_only_those
+    assert_all_examples(text(categories: [], include_characters: "xyz", max_size: 20)) { |v| v.match?(/\A[xyz]*\z/) }
+  end
+
+  def test_text_exclude_characters_are_never_drawn
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      excluded = tc.draw(text(codec: "ascii"))
+      value = tc.draw(text(codec: "ascii", exclude_characters: excluded))
+      assert value.each_char.none? { |c| excluded.include?(c) }, "drew an excluded character from #{value.inspect}"
+    end
+  end
+
+  def test_text_never_draws_a_surrogate
+    assert_all_examples(text(min_codepoint: 0xD700, max_codepoint: 0xE000)) do |v|
+      v.valid_encoding? && v.codepoints.none? { |cp| cp.between?(0xD800, 0xDFFF) }
+    end
+  end
+
+  def test_text_alphabet_string_restricts_the_alphabet
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      alphabet = tc.draw(text(codec: "ascii", min_size: 1))
+      value = tc.draw(text(alphabet: alphabet))
+      assert value.each_char.all? { |c| alphabet.include?(c) }, "#{value.inspect} left #{alphabet.inspect}"
+    end
+  end
+
+  def test_text_alphabet_string_reaches_every_character_of_it
+    find_any(text(alphabet: "abc", min_size: 10)) { |v| v.include?("a") && v.include?("b") && v.include?("c") }
+  end
+
+  def test_text_single_character_alphabet_draws_only_that_character
+    assert_all_examples(text(alphabet: "x", min_size: 1, max_size: 5)) { |v| v.match?(/\Ax{1,5}\z/) }
+  end
+
+  def test_text_alphabet_string_shrinks_to_its_first_character
+    assert_equal "AAA", minimal(text(alphabet: "FEDCBA", min_size: 3)) { true }
+  end
+
+  # An empty alphabet is legal when no character is drawn from it.
+  def test_text_empty_alphabet_draws_the_empty_string_when_max_size_is_zero
+    assert_all_examples(text(alphabet: "", max_size: 0)) { |v| v == "" }
+  end
+
+  def test_text_alphabet_with_a_character_option_raises_at_draw_time
+    options = {
+      codec: "ascii", min_codepoint: 0, max_codepoint: 127, categories: ["Lu"], exclude_categories: ["Ll"],
+      include_characters: "a", exclude_characters: "b"
+    }
+
+    options.each do |name, value|
+      error = draw_failure(text(alphabet: "abc", **{name => value}))
+
+      assert_includes error.message, "Cannot combine .alphabet() with character methods.", "for #{name}"
+    end
+  end
+
+  def test_text_alphabet_that_is_not_a_string_raises_at_draw_time
+    [3, characters].each do |alphabet|
+      error = draw_failure(text(alphabet: alphabet))
+
+      assert_includes error.message, "text: alphabet must be a String, not a #{alphabet.class}"
+    end
+  end
+
+  def test_text_unknown_codec_raises_at_draw_time
+    error = draw_failure(text(codec: "not-a-real-codec"))
+
+    assert_includes error.message, "text: invalid codec: not-a-real-codec"
+  end
+
+  def test_text_accepts_every_supported_codec
+    %w[ascii latin-1 iso-8859-1 utf-8].each do |codec|
+      assert_all_examples(text(codec: codec)) { |v| v.is_a?(String) }
+    end
+  end
+
+  def test_text_latin_1_codec_bounds_the_codepoints_to_one_byte
+    assert_all_examples(text(codec: "latin-1")) { |v| v.codepoints.all? { |cp| cp <= 0xFF } }
+  end
+
+  def test_text_categories_naming_a_surrogate_category_raise_at_draw_time
+    %w[Cs C].each do |category|
+      error = draw_failure(text(categories: [category]))
+
+      assert_includes error.message, "\"#{category}\" includes surrogate codepoints"
+    end
+  end
+
+  def test_text_nonexistent_category_raises_at_draw_time
+    error = draw_failure(text(exclude_categories: ["foo"]))
+
+    assert_includes error.message, "foo"
+  end
+
+  def test_text_min_codepoint_above_max_codepoint_raises_at_draw_time
+    error = draw_failure(text(min_codepoint: 200, max_codepoint: 100))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_text_include_characters_overlapping_exclude_characters_raise_at_draw_time
+    error = draw_failure(text(include_characters: "abc", exclude_characters: "cde"))
+
+    assert_includes error.message, "overlap"
+  end
+
+  def test_text_passes_its_options_to_a_text_handle_and_frees_it
+    fake = draw_against_fake(
+      text(
+        min_size: 2, max_size: 7, codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"],
+        exclude_categories: ["Ll"], include_characters: "xy", exclude_characters: "z"
+      )
+    )
+
+    options, handle = fake.string_generator_text_calls.fetch(0)
+    assert_equal(
+      {min_size: 2, max_size: 7, codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"],
+       exclude_categories: nil, include_characters: "xy", exclude_characters: "z"},
+      options
+    )
+    assert_equal [handle], fake.freed_string_generators
+  end
+
+  def test_text_passes_exclude_categories_when_there_are_no_categories
+    fake = draw_against_fake(text(exclude_categories: ["Ll"], max_size: 3))
+
+    assert_equal(
+      [TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 3, exclude_categories: ["Ll"])],
+      fake.string_generator_text_calls.map(&:first)
+    )
+  end
+
+  def test_text_without_options_sends_the_unbounded_size_and_no_character_options
+    fake = draw_against_fake(text)
+
+    assert_equal(
+      [TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: Hegel::LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED)],
+      fake.string_generator_text_calls.map(&:first)
+    )
+  end
+
+  def test_text_alphabet_string_builds_an_empty_category_handle_that_includes_the_string
+    fake = draw_against_fake(text(alphabet: "abc", max_size: 4))
+
+    assert_equal(
+      [TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 4, categories: [], include_characters: "abc")],
+      fake.string_generator_text_calls.map(&:first)
+    )
+  end
+
+  def test_text_frees_its_handle_when_the_draw_raises
+    fake = Hegel::LibHegel::Fake.new
+    fake.generate_string_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    assert_raises(Hegel::StopTest) { draw_against_fake(text, fake) }
+    assert_equal fake.string_generator_text_calls.map(&:last), fake.freed_string_generators
+  end
+
   # ---- arrays ----
 
   def test_arrays_draws_against_the_real_engine
@@ -1010,6 +1209,148 @@ class TestGenerators < Minitest::Test
     assert_all_examples(characters(max_codepoint: 0x7A)) { |v| v.codepoints.all? { |cp| cp <= 0x7A } }
   end
 
+  def test_characters_categories_restrict_the_alphabet
+    assert_all_examples(characters(categories: ["Lu"])) { |v| uppercase_or_unassigned?(v) }
+  end
+
+  def test_characters_exclude_categories_with_a_bounded_range
+    generator = characters(exclude_categories: ["Lu"], min_codepoint: 0x30, max_codepoint: 0x39)
+
+    assert_all_examples(generator) { |v| v.match?(/\A[0-9]\z/) }
+  end
+
+  def test_characters_include_characters_with_no_categories_draws_only_those
+    assert_all_examples(characters(categories: [], include_characters: "xyz")) { |v| "xyz".include?(v) }
+  end
+
+  def test_characters_exclude_characters_are_never_drawn
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      excluded = tc.draw(text(codec: "ascii"))
+      value = tc.draw(characters(codec: "ascii", exclude_characters: excluded))
+      assert_equal false, excluded.include?(value), "drew #{value.inspect} from #{excluded.inspect}"
+    end
+  end
+
+  def test_characters_codepoint_range_holds_for_any_bounds
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      low = tc.draw(integers(min_value: 0, max_value: 0x10FFFF))
+      high = tc.draw(integers(min_value: low, max_value: 0x10FFFF))
+      tc.assume(low < 0xD800 || high > 0xDFFF)
+      codepoint = tc.draw(characters(min_codepoint: low, max_codepoint: high)).ord
+      assert codepoint.between?(low, high), "#{codepoint} is outside #{low}..#{high}"
+    end
+  end
+
+  def test_characters_single_codepoint_range_shrinks_to_that_character
+    assert_equal "0", minimal(characters(min_codepoint: 48, max_codepoint: 48)) { true }
+  end
+
+  def test_characters_exclude_characters_shrink_past_the_excluded_ones
+    generator = characters(min_codepoint: 0x30, max_codepoint: 0x39, exclude_characters: "te02тест49st")
+
+    assert_equal "1", minimal(generator) { true }
+  end
+
+  def test_characters_include_characters_override_the_codepoint_range
+    generator = characters(min_codepoint: 0x30, max_codepoint: 0x39, include_characters: "teтестst")
+
+    find_any(generator) { |v| "teтестst".include?(v) }
+    find_any(generator) { |v| "0123456789".include?(v) }
+    assert_no_examples(generator) { |v| !"teтестst0123456789".include?(v) }
+  end
+
+  def test_characters_exclude_characters_disjoint_from_include_characters_are_never_drawn
+    generator = characters(min_codepoint: 0x30, max_codepoint: 0x39, exclude_characters: "456def",
+      include_characters: "123abc")
+
+    assert_no_examples(generator) { |v| "456def".include?(v) }
+  end
+
+  def test_characters_large_exclude_characters_are_never_drawn
+    identifier_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+
+    assert_all_examples(characters(exclude_characters: identifier_characters)) { |v| !identifier_characters.include?(v) }
+  end
+
+  def test_characters_unknown_codec_raises_at_draw_time
+    error = draw_failure(characters(codec: "not-a-real-codec"))
+
+    assert_includes error.message, "characters: invalid codec: not-a-real-codec"
+  end
+
+  def test_characters_accepts_every_supported_codec
+    %w[ascii latin-1 iso-8859-1 utf-8].each do |codec|
+      assert_all_examples(characters(codec: codec)) { |v| v.length == 1 }
+    end
+  end
+
+  def test_characters_categories_naming_a_surrogate_category_raise_at_draw_time
+    %w[Cs C].each do |category|
+      error = draw_failure(characters(categories: [category]))
+
+      assert_includes error.message, "characters: Category \"#{category}\" includes surrogate codepoints"
+    end
+  end
+
+  def test_characters_exclude_categories_naming_a_surrogate_category_are_accepted
+    assert_all_examples(characters(exclude_categories: ["Cs"])) { |v| v.valid_encoding? }
+  end
+
+  def test_characters_nonexistent_category_raises_at_draw_time
+    error = draw_failure(characters(exclude_categories: ["foo"]))
+
+    assert_includes error.message, "foo"
+  end
+
+  def test_characters_min_codepoint_above_max_codepoint_raises_at_draw_time
+    error = draw_failure(characters(min_codepoint: 42, max_codepoint: 24))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_characters_excluding_every_available_character_raises_at_draw_time
+    error = draw_failure(characters(min_codepoint: 0x30, max_codepoint: 0x30, exclude_characters: "0"))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_characters_categories_that_leave_nothing_in_the_range_raise_at_draw_time
+    error = draw_failure(characters(categories: ["Cc"], min_codepoint: 0x30, max_codepoint: 0x39))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_characters_include_characters_overlapping_exclude_characters_raise_at_draw_time
+    error = draw_failure(
+      characters(min_codepoint: 0x30, max_codepoint: 0x39, include_characters: "te02тест49st",
+        exclude_characters: "ts94тсет")
+    )
+
+    assert_includes error.message, "overlap"
+  end
+
+  def test_characters_passes_its_options_to_a_one_character_handle_and_frees_it
+    fake = draw_against_fake(
+      characters(
+        codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"], include_characters: "xy",
+        exclude_characters: "z"
+      )
+    )
+
+    options, handle = fake.string_generator_text_calls.fetch(0)
+    assert_equal(
+      {min_size: 1, max_size: 1, codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"],
+       exclude_categories: nil, include_characters: "xy", exclude_characters: "z"},
+      options
+    )
+    assert_equal [handle], fake.freed_string_generators
+  end
+
+  def test_characters_options_given_is_false_without_options_and_true_with_any
+    refute characters.options_given?
+    assert characters(categories: []).options_given?
+  end
+
   # ---- binary ----
 
   def test_binary_draws_against_the_real_engine
@@ -1086,6 +1427,105 @@ class TestGenerators < Minitest::Test
       Hegel.test(test_cases: 20, verbosity: :quiet, output: StringIO.new) { |tc| tc.draw(from_regex("(?!)")) }
     end
     assert_includes error.message, "matches no string"
+  end
+
+  # ---- from_regex: alphabet ----
+
+  def test_from_regex_alphabet_restricts_every_character
+    generator = from_regex("[a-z]+", fullmatch: true, alphabet: characters(max_codepoint: 0x7F))
+
+    assert_all_examples(generator) { |v| v.match?(/\A[a-z]+\z/) }
+  end
+
+  # The padding around a partial match comes from the alphabet too.
+  def test_from_regex_alphabet_restricts_the_padding_of_a_partial_match
+    generator = from_regex("x", fullmatch: false, alphabet: characters(categories: [], include_characters: "xy"))
+
+    assert_all_examples(generator) { |v| v.match?(/\A[xy]*x[xy]*\z/) }
+  end
+
+  def test_from_regex_generates_each_pattern_over_a_wide_alphabet
+    patterns = [
+      ".", "a", "abc", "[a][b][c]", "[^a][^b][^c]", "[a-z0-9_]", "[^a-z0-9_]", "ab?", "ab*", "ab+", "ab{5,10}",
+      "ab|cd|ef", "(foo)+", '\d', '\w', '\s'
+    ]
+
+    patterns.each do |pattern|
+      generator = from_regex(pattern, fullmatch: true, alphabet: characters(max_codepoint: 1000))
+
+      assert_all_examples(generator) { |v| v.codepoints.all? { |cp| cp <= 1000 } }
+    end
+  end
+
+  def test_from_regex_alphabet_keeps_a_flag_scoped_literal_out_of_the_draw
+    generator = from_regex("(?-i:Ā)*k", fullmatch: true, alphabet: characters(max_codepoint: 127))
+
+    assert_all_examples(generator) { |v| v == "k" }
+  end
+
+  def test_from_regex_alphabet_that_cannot_match_the_pattern_raises_at_draw_time
+    {
+      "abc" => characters(min_codepoint: 128),
+      "aa|bb" => characters(include_characters: "c", max_codepoint: 0),
+      "[abc]" => characters(include_characters: "def", max_codepoint: 0),
+      "[ab]x[de]" => characters(min_codepoint: "a".ord, max_codepoint: "f".ord),
+      "[a-z]" => characters(codec: "ascii", categories: ["Nd"]),
+      '\d' => characters(include_characters: "abc", max_codepoint: 0),
+      "[^a]" => characters(min_codepoint: "a".ord, max_codepoint: "a".ord)
+    }.each do |pattern, alphabet|
+      error = draw_failure(from_regex(pattern, alphabet: alphabet))
+
+      assert_includes error.message, "matches no string over the alphabet", "for #{pattern}"
+    end
+  end
+
+  def test_from_regex_alternative_outside_the_alphabet_is_skipped
+    generator = from_regex("[^a]|a", fullmatch: true, alphabet: characters(min_codepoint: "a".ord, max_codepoint: "a".ord))
+
+    assert_all_examples(generator) { |v| v == "a" }
+  end
+
+  # An alphabet with no characters still builds, because its handle draws
+  # strings of length zero; a pattern that needs no character matches.
+  def test_from_regex_empty_alphabet_matches_a_pattern_that_needs_no_character
+    assert_all_examples(from_regex("", fullmatch: true, alphabet: characters(categories: []))) { |v| v == "" }
+  end
+
+  def test_from_regex_alphabet_that_is_not_a_characters_generator_raises_at_draw_time
+    error = draw_failure(from_regex("a", alphabet: "abc"))
+
+    assert_includes error.message, "from_regex: alphabet must be a characters generator, not a String"
+  end
+
+  def test_from_regex_alphabet_with_an_unknown_codec_raises_at_draw_time
+    error = draw_failure(from_regex("a", alphabet: characters(codec: "not-a-real-codec")))
+
+    assert_includes error.message, "from_regex: invalid codec: not-a-real-codec"
+  end
+
+  def test_from_regex_alphabet_builds_a_zero_length_text_handle_and_frees_both_handles
+    fake = draw_against_fake(from_regex("a+", fullmatch: true, alphabet: characters(max_codepoint: 90)))
+
+    (text_options, alphabet_handle) = fake.string_generator_text_calls.fetch(0)
+    (regex_arguments, regex_handle) = fake.string_generator_regex_calls.fetch(0)
+    assert_equal TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 0, max_codepoint: 90), text_options
+    assert_equal({pattern: "a+", fullmatch: true, alphabet: alphabet_handle}, regex_arguments)
+    assert_equal [regex_handle, alphabet_handle], fake.freed_string_generators
+  end
+
+  def test_from_regex_without_an_alphabet_builds_no_text_handle
+    fake = draw_against_fake(from_regex("a+"))
+
+    assert_empty fake.string_generator_text_calls
+    assert_equal [{pattern: "a+", fullmatch: false, alphabet: nil}], fake.string_generator_regex_calls.map(&:first)
+  end
+
+  def test_from_regex_frees_the_alphabet_handle_when_building_the_regex_handle_raises
+    fake = Hegel::LibHegel::Fake.new
+    fake.string_generator_regex_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+
+    assert_raises(Hegel::Error) { draw_against_fake(from_regex("a", alphabet: characters), fake) }
+    assert_equal fake.string_generator_text_calls.map(&:last), fake.freed_string_generators
   end
 
   # ---- emails ----

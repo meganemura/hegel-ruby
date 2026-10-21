@@ -75,6 +75,18 @@ hegel-rust's `TestCase#event` and `TestCase#event_value`.
   the bounds admit one. A `floats` call whose bounds admit none, such as
   `floats(min_value: 1.0, max_value: 2.0)`, now tells the engine so.
 
+### Text generators
+
+`text` and `characters` take `categories:`, `exclude_categories:`,
+`include_characters:`, and `exclude_characters:`, with the names hegel-rust
+gives them. `text` also takes `alphabet:`, a `String` of the permitted
+characters, and raises `Hegel::Error` at draw
+time when it is combined with another character option. `from_regex` takes
+`alphabet:`, a `characters` generator that limits every character of the
+string, padding included. An unknown `codec:` now raises `"text: invalid
+codec: ..."` (or `characters:`) before the engine is called, and a
+surrogate category in `categories:` raises too.
+
 ## [0.3.4] - 2026-10-20
 
 ### Engine: libhegel 0.47.2 (was 0.47.1)

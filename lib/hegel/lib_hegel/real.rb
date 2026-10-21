@@ -227,10 +227,6 @@ module Hegel
           [:pointer, :pointer, :uint32, :double, :double, :bool, :bool, :bool, :bool, :double, :pointer], :int32
         )
 
-        # hegel_string_generator_text takes 12 arguments past ctx; the
-        # last 6 (categories through exclude_characters) are the category
-        # and explicit-character filter parameters this binding does not
-        # wire up (see #string_generator_text).
         @hegel_string_generator_text_fn = bind(
           "hegel_string_generator_text",
           [:pointer, :uint64, :uint64, :pointer, :uint32, :uint32,
@@ -953,17 +949,19 @@ module Hegel
       # Returns a caller-owned string generator handle, released
       # separately with #string_generator_free (or scoped with
       # Hegel::TestCase#with_text_generator). +categories+ and
-      # +exclude_categories+ are always passed as NULL/0 below, and
-      # +include_characters+ and +exclude_characters+ as empty strings:
-      # this call only wires up the codepoint-range constraints of the
-      # 12-argument bind; the category and explicit-character filter
-      # arguments are a later generator's scope, layered on top of this
-      # same bind.
-      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF)
+      # +exclude_categories+ are Arrays of Unicode general category names,
+      # or nil for none: nil goes over as NULL, which is no restriction,
+      # while an empty Array goes over as a non-NULL pointer with length
+      # zero, which the header reads as an empty alphabet.
+      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF,
+        categories: nil, exclude_categories: nil, include_characters: "", exclude_characters: "")
         out = FFI::MemoryPointer.new(:pointer)
+        category_array, category_slots = optional_name_array(categories)
+        exclude_array, exclude_slots = optional_name_array(exclude_categories)
         code = @hegel_string_generator_text_fn.call(
           ctx, min_size, max_size, optional_string(codec), min_codepoint, max_codepoint,
-          nil, 0, nil, 0, StringStruct.new, StringStruct.new,
+          category_array, category_slots.size, exclude_array, exclude_slots.size,
+          string_view(include_characters), string_view(exclude_characters),
           out
         )
         LibHegel.check!(self, ctx, code)
@@ -1287,6 +1285,16 @@ module Hegel
           write_string(StringStruct.new(array + (i * StringStruct.size)), name)
         end
         [array, slots]
+      end
+
+      # #pack_name_array for an argument where nil and an empty Array mean
+      # different things: nil stays NULL, and an empty Array becomes a
+      # non-NULL pointer, which #pack_name_array alone would turn into NULL.
+      def optional_name_array(names)
+        return [nil, []] unless names
+
+        array, slots = pack_name_array(names)
+        [array || FFI::MemoryPointer.new(StringStruct), slots]
       end
 
       # Packs +flags+ (an Array of true/false) into a const bool * buffer,

@@ -976,6 +976,107 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # Draws one string from a text generator built with +options+ against the
+  # real engine. The database is disabled ("") so the run leaves nothing on
+  # disk.
+  def draw_real_text(**options)
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      generator = real.string_generator_text(ctx, **options)
+      begin
+        value = real.generate_string(ctx, tc, generator)
+      ensure
+        real.string_generator_free(ctx, generator)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+      value
+    end
+  end
+
+  # Both category arguments are read as an array of hegel_string_t with a
+  # separate count. A draw is free to repeat one character, so each name is
+  # pinned by a range that only it can supply: a binding that packed one name
+  # fewer leaves that range with no character, and the engine rejects it.
+  def test_real_string_generator_text_reads_every_name_in_categories
+    assert_equal "9999", draw_real_text(
+      min_size: 4, max_size: 4, min_codepoint: 0x39, max_codepoint: 0x39, categories: %w[Nd Lu]
+    )
+    assert_equal "AAAA", draw_real_text(
+      min_size: 4, max_size: 4, min_codepoint: 0x41, max_codepoint: 0x41, categories: %w[Nd Lu]
+    )
+  end
+
+  def test_real_string_generator_text_reads_every_name_in_exclude_categories
+    [0x39, 0x41].each do |codepoint|
+      error = assert_raises(Hegel::Error) do
+        draw_real_text(
+          min_size: 4, max_size: 4, min_codepoint: codepoint, max_codepoint: codepoint, exclude_categories: %w[Nd Lu]
+        )
+      end
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+    end
+  end
+
+  def test_real_string_generator_text_excludes_the_named_categories
+    value = draw_real_text(
+      min_size: 5, max_size: 5, min_codepoint: 0x30, max_codepoint: 0x3A, exclude_categories: %w[Nd]
+    )
+
+    assert_equal ":::::", value
+  end
+
+  # nil is NULL, which means no restriction; an empty Array is a non-NULL
+  # pointer with a zero count, which means an empty alphabet. With the
+  # alphabet emptied, only include_characters can supply a character.
+  def test_real_string_generator_text_reads_an_empty_category_list_as_an_empty_alphabet
+    value = draw_real_text(min_size: 40, max_size: 40, categories: [], include_characters: "xyz")
+
+    assert_match(/\A[xyz]+\z/, value)
+    assert_raises(Hegel::Error) { draw_real_text(min_size: 1, max_size: 1, categories: []) }
+  end
+
+  def test_real_string_generator_text_reads_nil_categories_as_no_restriction
+    value = draw_real_text(min_size: 4, max_size: 4, min_codepoint: 0x30, max_codepoint: 0x30)
+
+    assert_equal "0000", value
+  end
+
+  def test_real_string_generator_text_include_characters_reach_the_engine_by_byte_length
+    value = draw_real_text(min_size: 40, max_size: 40, categories: [], include_characters: "é€")
+
+    assert_match(/\A[é€]+\z/, value)
+  end
+
+  def test_real_string_generator_text_exclude_characters_are_removed
+    value = draw_real_text(
+      min_size: 40, max_size: 40, min_codepoint: 0x30, max_codepoint: 0x32, exclude_characters: "01"
+    )
+
+    assert_equal "2" * 40, value
+  end
+
   def test_fake_collection_more_yields_true_the_configured_count_then_false
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
@@ -988,6 +1089,33 @@ class TestLibHegel < Minitest::Test
     assert_equal true, first
     assert_equal true, second
     assert_equal false, third
+  end
+
+  def test_fake_string_generator_text_records_its_options_and_the_handle_it_returned
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    handle = fake.string_generator_text(ctx, min_size: 1, max_size: 2, categories: %w[Lu], include_characters: "x")
+
+    options, recorded = fake.string_generator_text_calls.fetch(0)
+    assert_same handle, recorded
+    assert_equal(
+      {min_size: 1, max_size: 2, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF, categories: %w[Lu],
+       exclude_categories: nil, include_characters: "x", exclude_characters: ""},
+      options
+    )
+  end
+
+  def test_fake_string_generator_regex_records_its_arguments_and_the_handle_it_returned
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    alphabet = Object.new
+
+    handle = fake.string_generator_regex(ctx, "a+", true, alphabet)
+
+    arguments, recorded = fake.string_generator_regex_calls.fetch(0)
+    assert_same handle, recorded
+    assert_equal({pattern: "a+", fullmatch: true, alphabet: alphabet}, arguments)
   end
 
   def test_fake_run_result_status_and_error_return_the_configured_values

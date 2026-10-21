@@ -41,8 +41,8 @@ module Hegel
     def collection_more: (untyped collection) -> bool
     def collection_reject: (untyped collection, ?why: String?) -> untyped
     def collection_free: (untyped collection) -> untyped
-    def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
-    def with_regex_generator: [R] (String pattern, fullmatch: bool) { (untyped) -> R } -> R
+    def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) { (untyped) -> R } -> R
+    def with_regex_generator: [R] (String pattern, fullmatch: bool, ?alphabet: untyped) { (untyped) -> R } -> R
     def with_email_generator: [R] () { (untyped) -> R } -> R
     def with_url_generator: [R] () { (untyped) -> R } -> R
     def with_domain_generator: [R] (max_length: Integer) { (untyped) -> R } -> R
@@ -125,9 +125,27 @@ module Hegel
       def subnormal_default: () -> bool
     end
 
-    class TextGenerator < Generator
-      def initialize: (min_size: Integer, max_size: Integer?, codec: String?, min_codepoint: Integer?, max_codepoint: Integer?) -> void
+    CODECS: Array[String]
+    SURROGATE_CATEGORIES: Array[String]
+
+    class CharactersGenerator < Generator
+      def initialize: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> void
       def do_draw: (untyped tc) -> String
+      def options_given?: () -> bool
+      def with_alphabet: [R] (untyped tc, String name, Integer min_size, Integer max_size) { (untyped) -> R } -> R
+
+      private
+
+      def engine_options: (String name) -> Hash[Symbol, untyped]
+    end
+
+    class TextGenerator < Generator
+      def initialize: (min_size: Integer, max_size: Integer?, ?alphabet: String?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> void
+      def do_draw: (untyped tc) -> String
+
+      private
+
+      def alphabet_generator: () -> CharactersGenerator
     end
 
     class ArrayGenerator < Generator
@@ -220,19 +238,18 @@ module Hegel
       def draw_entry: (untyped tc) -> [untyped, untyped]
     end
 
-    class CharactersGenerator < Generator
-      def initialize: (codec: String?, min_codepoint: Integer?, max_codepoint: Integer?) -> void
-      def do_draw: (untyped tc) -> String
-    end
-
     class BinaryGenerator < Generator
       def initialize: (min_size: Integer, max_size: Integer?) -> void
       def do_draw: (untyped tc) -> String
     end
 
     class FromRegexGenerator < Generator
-      def initialize: (untyped pattern, fullmatch: bool) -> void
+      def initialize: (untyped pattern, fullmatch: bool, ?alphabet: CharactersGenerator?) -> void
       def do_draw: (untyped tc) -> String
+
+      private
+
+      def draw_regex: (untyped tc, untyped alphabet) -> String
     end
 
     class EmailsGenerator < Generator
@@ -381,7 +398,7 @@ module Hegel
       def booleans: (?p: Float) -> Generators::BooleanGenerator
       def integers: (?min_value: Integer?, ?max_value: Integer?) -> Generators::IntegerGenerator
       def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool?, ?allow_infinity: bool?, ?exclude_min: bool, ?exclude_max: bool, ?allow_subnormal: bool?) -> Generators::FloatGenerator
-      def text: (?min_size: Integer, ?max_size: Integer?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::TextGenerator
+      def text: (?min_size: Integer, ?max_size: Integer?, ?alphabet: String?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::TextGenerator
       def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?, ?unique: bool) -> Generators::ArrayGenerator
       def just: (untyped value) -> Generators::JustGenerator
       def sampled_from: (untyped collection) -> Generators::SampledFromGenerator
@@ -393,9 +410,9 @@ module Hegel
       def tuples: (*Generator generators) -> Generators::TupleGenerator
       def sets: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::SetGenerator
       def hashes: (Generator keys, Generator values, ?min_size: Integer, ?max_size: Integer?) -> Generators::HashGenerator
-      def characters: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::CharactersGenerator
+      def characters: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::CharactersGenerator
       def binary: (?min_size: Integer, ?max_size: Integer?) -> Generators::BinaryGenerator
-      def from_regex: (untyped pattern, ?fullmatch: bool) -> Generators::FromRegexGenerator
+      def from_regex: (untyped pattern, ?fullmatch: bool, ?alphabet: Generators::CharactersGenerator?) -> Generators::FromRegexGenerator
       def emails: () -> Generators::EmailsGenerator
       def urls: () -> Generators::UrlsGenerator
       def domains: (?max_length: Integer) -> Generators::DomainsGenerator
@@ -648,7 +665,7 @@ module Hegel
       def state_machine_should_check_invariant: (untyped ctx, untyped tc, untyped state_machine, Integer index) -> bool
       def state_machine_free: (untyped ctx, untyped state_machine) -> nil
       def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
-      def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) -> untyped
+      def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) -> untyped
       def string_generator_free: (untyped ctx, untyped generator) -> nil
       def generate_string: (untyped ctx, untyped tc, untyped generator) -> String
       def owned_string_free: (untyped ctx, untyped result) -> nil

@@ -37,11 +37,16 @@ module Hegel
         )
       end
 
-      # A Unicode string of [min_size, max_size] characters.
-      def text(min_size: 0, max_size: nil, codec: nil, min_codepoint: nil, max_codepoint: nil)
+      # A Unicode string of [min_size, max_size] characters. +alphabet+ is a
+      # String of the permitted characters; it cannot be combined with the
+      # options after it.
+      def text(min_size: 0, max_size: nil, alphabet: nil, codec: nil, min_codepoint: nil, max_codepoint: nil,
+        categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)
         Generators::TextGenerator.new(
-          min_size: min_size, max_size: max_size, codec: codec,
-          min_codepoint: min_codepoint, max_codepoint: max_codepoint
+          min_size: min_size, max_size: max_size, alphabet: alphabet, codec: codec,
+          min_codepoint: min_codepoint, max_codepoint: max_codepoint, categories: categories,
+          exclude_categories: exclude_categories, include_characters: include_characters,
+          exclude_characters: exclude_characters
         )
       end
 
@@ -113,8 +118,13 @@ module Hegel
 
       # A String of exactly one character, sharing #text's own alphabet
       # options.
-      def characters(codec: nil, min_codepoint: nil, max_codepoint: nil)
-        Generators::CharactersGenerator.new(codec: codec, min_codepoint: min_codepoint, max_codepoint: max_codepoint)
+      def characters(codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil,
+        include_characters: nil, exclude_characters: nil)
+        Generators::CharactersGenerator.new(
+          codec: codec, min_codepoint: min_codepoint, max_codepoint: max_codepoint, categories: categories,
+          exclude_categories: exclude_categories, include_characters: include_characters,
+          exclude_characters: exclude_characters
+        )
       end
 
       # A byte String of [min_size, max_size] bytes.
@@ -125,8 +135,10 @@ module Hegel
       # A String matching +pattern+ (Python `re` syntax, not Ruby's
       # Regexp syntax; see Generators::FromRegexGenerator). fullmatch
       # requires the whole string to match, not just contain a match.
-      def from_regex(pattern, fullmatch: false)
-        Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch)
+      # +alphabet+ is a #characters generator limiting every character of the
+      # string.
+      def from_regex(pattern, fullmatch: false, alphabet: nil)
+        Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch, alphabet: alphabet)
       end
 
       # An RFC 5321/5322 email address String.
