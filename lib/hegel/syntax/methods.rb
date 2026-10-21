@@ -27,11 +27,13 @@ module Hegel
       # A double in [min_value, max_value]. allow_nan and allow_infinity
       # default to what the bounds imply: NaN when the caller passed
       # neither bound, an infinity when the caller left either side open.
+      # allow_subnormal defaults to true whenever the bounds admit a
+      # subnormal.
       def floats(min_value: nil, max_value: nil, allow_nan: nil, allow_infinity: nil, exclude_min: false,
-        exclude_max: false)
+        exclude_max: false, allow_subnormal: nil)
         Generators::FloatGenerator.new(
           min_value: min_value, max_value: max_value, allow_nan: allow_nan, allow_infinity: allow_infinity,
-          exclude_min: exclude_min, exclude_max: exclude_max
+          exclude_min: exclude_min, exclude_max: exclude_max, allow_subnormal: allow_subnormal
         )
       end
 

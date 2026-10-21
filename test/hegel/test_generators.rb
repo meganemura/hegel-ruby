@@ -77,6 +77,24 @@ class RejectRecordingFake < Hegel::LibHegel::Fake
   end
 end
 
+# Which values reach hegel_generate_float is invisible to a real run when
+# the bounds hold no subnormal, so the default allow_subnormal derives
+# from the bounds is pinned on what the Fake receives.
+class FloatRecordingFake < Hegel::LibHegel::Fake
+  attr_reader :magnitudes
+
+  def initialize
+    super
+    @magnitudes = []
+  end
+
+  def generate_float(ctx, tc, width, min_value, max_value, allow_nan, allow_infinity, exclude_min, exclude_max,
+    smallest_nonzero_magnitude)
+    @magnitudes << smallest_nonzero_magnitude
+    super
+  end
+end
+
 class TestGenerators < Minitest::Test
   include HegelDirectoryGuard
   include Hegel::Syntax::Methods
@@ -276,6 +294,111 @@ class TestGenerators < Minitest::Test
   # names an exact value, not an empty range.
   def test_floats_min_value_equals_max_value_returns_that_value
     assert_all_examples(floats(min_value: 1.0, max_value: 1.0)) { |v| v.between?(1.0, 1.0) }
+  end
+
+  def subnormal?(value)
+    value != 0.0 && value.abs < Float::MIN
+  end
+
+  def test_floats_allow_subnormal_false_never_draws_a_subnormal
+    assert_all_examples(floats(allow_nan: false, allow_infinity: false, allow_subnormal: false)) do |v|
+      !subnormal?(v)
+    end
+  end
+
+  def test_floats_draw_a_subnormal_by_default
+    assert subnormal?(find_any(floats(allow_nan: false, allow_infinity: false)) { |v| subnormal?(v) })
+  end
+
+  def test_floats_allow_subnormal_true_can_draw_a_subnormal
+    found = find_any(floats(allow_nan: false, allow_infinity: false, allow_subnormal: true)) { |v| subnormal?(v) }
+
+    assert subnormal?(found)
+  end
+
+  # A range whose only normal values are its two ends: the check that
+  # allow_subnormal: false leaves something to draw must not count an end
+  # as a subnormal.
+  def test_floats_allow_subnormal_false_draws_the_smallest_normal_at_either_end
+    assert_all_examples(floats(min_value: Float::MIN, max_value: Float::MIN, allow_subnormal: false)) { |v| v == Float::MIN }
+    assert_all_examples(floats(min_value: -Float::MIN, max_value: -Float::MIN, allow_subnormal: false)) { |v| v == -Float::MIN }
+  end
+
+  def test_floats_allow_subnormal_false_with_zero_at_either_end_of_a_subnormal_range_draws_zero
+    assert_all_examples(floats(min_value: 0.0, max_value: 1e-310, allow_subnormal: false)) { |v| v == 0.0 }
+    assert_all_examples(floats(min_value: -1e-310, max_value: 0.0, allow_subnormal: false)) { |v| v == 0.0 }
+  end
+
+  def test_floats_allow_subnormal_true_accepts_a_bound_just_below_the_smallest_normal
+    assert_all_examples(floats(min_value: Float::MIN.prev_float, max_value: 1.0, allow_subnormal: true)) do |v|
+      v >= Float::MIN.prev_float
+    end
+    assert_all_examples(floats(min_value: -1.0, max_value: (-Float::MIN).next_float, allow_subnormal: true)) do |v|
+      v <= (-Float::MIN).next_float
+    end
+  end
+
+  def test_floats_allow_subnormal_true_with_a_min_value_of_the_smallest_normal_or_more_raises_at_draw_time
+    [1.0, Float::MIN].each do |min_value|
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) { |tc| tc.draw(floats(min_value: min_value, allow_subnormal: true)) }
+      end
+
+      assert_equal "floats: InvalidArgument: allow_subnormal=true, but min_value excludes " \
+        "all values below the smallest positive normal #{Float::MIN}", error.message
+    end
+  end
+
+  def test_floats_allow_subnormal_true_with_a_max_value_of_the_negated_smallest_normal_or_less_raises_at_draw_time
+    [-1.0, -Float::MIN].each do |max_value|
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) { |tc| tc.draw(floats(max_value: max_value, allow_subnormal: true)) }
+      end
+
+      assert_equal "floats: InvalidArgument: allow_subnormal=true, but max_value excludes " \
+        "all values above the smallest negative normal -#{Float::MIN}", error.message
+    end
+  end
+
+  def test_floats_allow_subnormal_false_with_a_range_of_only_subnormals_raises_at_draw_time
+    [[5e-324, 1e-310], [-1e-310, -5e-324]].each do |min_value, max_value|
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) do |tc|
+          tc.draw(floats(min_value: min_value, max_value: max_value, allow_subnormal: false))
+        end
+      end
+
+      assert_equal "floats: InvalidArgument: allow_subnormal=false leaves no 64-bit " \
+        "floating-point values in [#{min_value}, #{max_value}]", error.message
+    end
+  end
+
+  def smallest_nonzero_magnitude_sent_for(generator)
+    fake = FloatRecordingFake.new
+    generator.do_draw(Hegel::TestCase.new(fake, fake.context_new, Object.new))
+    fake.magnitudes.fetch(0)
+  end
+
+  def test_floats_allow_subnormal_defaults_to_what_the_bounds_admit
+    subnormal = Hegel::LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+    {
+      {} => subnormal,
+      {min_value: -1.0, max_value: 1.0} => subnormal,
+      {min_value: 0.0, max_value: 0.0} => subnormal,
+      {min_value: Float::MIN.prev_float} => subnormal,
+      {max_value: (-Float::MIN).next_float} => subnormal,
+      {min_value: Float::MIN} => Float::MIN,
+      {min_value: 1.0, max_value: 2.0} => Float::MIN,
+      {max_value: -Float::MIN} => Float::MIN,
+      {max_value: -1.0} => Float::MIN
+    }.each do |options, expected|
+      assert_equal expected, smallest_nonzero_magnitude_sent_for(floats(**options)), options.inspect
+    end
+  end
+
+  def test_floats_explicit_allow_subnormal_overrides_the_default
+    assert_equal Float::MIN, smallest_nonzero_magnitude_sent_for(floats(allow_subnormal: false))
+    assert_equal 5e-324, smallest_nonzero_magnitude_sent_for(floats(min_value: -1.0, allow_subnormal: true))
   end
 
   # ---- text ----
