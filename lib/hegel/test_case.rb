@@ -46,6 +46,16 @@ module Hegel
     # loudly.
     DRAW_CALLER_DEPTH = 3
 
+    # The largest minimum length #repeat draws for its loop: 2**40, the
+    # bound hegel-rust's TestCase::repeat draws its own minimum under
+    # (max_safe_min_size).
+    REPEAT_MAX_MIN_SIZE = 2**40
+
+    # How many columns further #repeat indents the entries one iteration
+    # records: the indent hegel-rust's TestCase::repeat gives the block
+    # handle it runs each iteration under.
+    REPEAT_INDENT = 2
+
     # +impl+ and +ctx+ are carried alongside +handle+ so each draw call can
     # reach the same LibHegel implementation and context the run loop opened,
     # without this class knowing anything about the native binding layer or
@@ -65,11 +75,15 @@ module Hegel
       @entries = record ? [] : nil
       @pools = []
       @grammars = grammars
-      @poison = nil
+      # Only declares the ivar: an unset one already reads as nil.
+      @poison = nil # mutineer:disable-line statement_removal
+      @indent = 0
     end
 
-    # The [:draw, name, value] / [:note, message] entries recorded so far, in
-    # call order, or nil when this instance was not built to record.
+    # The [:draw, name, value, indent] / [:note, message, indent] entries
+    # recorded so far, in call order, or nil when this instance was not
+    # built to record. +indent+ is how many columns further in the report
+    # puts the entry; #repeat raises it around each iteration.
     # Hegel::Runner reads this once, after the block that owns this test
     # case has run to completion or raised. One tagged list rather than a
     # draws list and a separate notes list, so a note recorded between two
@@ -156,7 +170,42 @@ module Hegel
 
       return unless @record
 
-      @entries << [:note, has_message ? message : yield]
+      @entries << [:note, has_message ? message : yield, @indent]
+    end
+
+    # Runs the block over and over, for as long as the engine keeps the
+    # loop going, and never returns normally: when the engine ends the loop
+    # it raises Hegel::LoopDone, which Hegel::Runner.classify reports as a
+    # passing case. A `break` in the block ends the loop early and returns
+    # from this method instead; hegel-rust's TestCase::repeat has no
+    # counterpart, since a Rust closure cannot break its caller's loop.
+    # docs/adr/0034 records both decisions.
+    #
+    # The loop is a collection whose minimum length is drawn first, from 0
+    # up to REPEAT_MAX_MIN_SIZE, with no maximum, the way hegel-rust draws
+    # it. Each iteration notes "// Repetition #N", then records what the
+    # block records REPEAT_INDENT columns further in. An iteration whose
+    # assumption failed is skipped rather than discarding the whole case;
+    # any other exception ends the loop (see #repeat_iteration).
+    #
+    # The minimum length is drawn with no span around it. hegel-rust's
+    # draw_silent opens one around every draw, and this library opens a
+    # span only around a generator that makes more than one native call
+    # (.claude/skills/new-generator), which one generate_integer is not.
+    def repeat(&block)
+      min_size = generate_integer(0, REPEAT_MAX_MIN_SIZE)
+      collection = new_collection(min_size, LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED)
+      begin
+        iteration = 0
+        while collection_more(collection)
+          iteration += 1
+          note { "// Repetition ##{iteration}" }
+          repeat_iteration(&block)
+        end
+      ensure
+        collection_free(collection)
+      end
+      raise Hegel::LoopDone, "hegel: repeat finished its loop"
     end
 
     # hegel_generate_integer, without recording. Hegel::Generators::
@@ -635,6 +684,39 @@ module Hegel
       @handle
     end
 
+    # Runs one #repeat iteration with the indent raised by REPEAT_INDENT.
+    # hegel-rust indents an iteration's output through hegel_test_case_block,
+    # which indents only what the engine printer prints. This library
+    # renders its report itself (Hegel::Report, docs/adr/0005), so the
+    # indent is kept on this side and recorded with each entry.
+    #
+    # The rescue order follows hegel-rust's TestCase::repeat, after the
+    # fatal exceptions every `rescue Exception` here lets through first. The
+    # library's own control exceptions, a nested #repeat's Hegel::LoopDone
+    # among them, and Hegel::Error, which stands where hegel-rust's
+    # InvalidArgument and InternalError stand, re-raise unchanged. A failed
+    # assumption skips to the next iteration. Anything else is a failure:
+    # one boolean is drawn before it re-raises, as hegel-rust draws one.
+    #
+    # standard:disable Lint/RescueException -- the same reason as
+    # Hegel::Runner.classify: a failing assertion descends from Exception.
+    def repeat_iteration
+      @indent += REPEAT_INDENT
+      begin
+        yield
+      ensure
+        @indent -= REPEAT_INDENT
+      end
+    rescue *Hegel::FATAL_EXCEPTIONS, Hegel::StopTest, Hegel::LoopDone, Hegel::Error
+      raise
+    rescue Hegel::AssumeFailed
+      # Skips this iteration; #repeat goes on to the next one.
+    rescue Exception
+      generate_boolean
+      raise
+    end
+    # standard:enable Lint/RescueException
+
     # Runs the block with +generator+, freeing it via #string_generator_free
     # whether the block returns or raises. The one #ensure
     # #with_regex_generator/#with_email_generator/#with_url_generator/
@@ -661,7 +743,7 @@ module Hegel
     def record_draw(label, value)
       return unless @record
 
-      @entries << [:draw, name_for(label, DRAW_CALLER_DEPTH), value]
+      @entries << [:draw, name_for(label, DRAW_CALLER_DEPTH), value, @indent]
     end
 
     # The single place a draw's name is decided, tried in this order: the

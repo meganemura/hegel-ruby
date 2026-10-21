@@ -376,6 +376,12 @@ module Hegel
       [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil]
     rescue Hegel::StopTest
       [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil]
+    rescue Hegel::LoopDone
+      # Hegel::TestCase#repeat ran until the engine stopped it, with no
+      # failure; hegel-rust's run lifecycle maps its LoopDone to VALID too.
+      # .mutineer.yml ignores the mutants of its last two elements by id, for
+      # the reason given at the first VALID above.
+      [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil]
     rescue Exception => e
       [LibHegel::HEGEL_STATUS_INTERESTING, origin_for(e), e, test_case.entries]
     end

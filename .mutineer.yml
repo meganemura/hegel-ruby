@@ -7,6 +7,8 @@ ignore:
   # tuple past its first two elements.
   - 6f5a56541400 # VALID, third element
   - 87afa9403063 # VALID, fourth element
+  - ec47230b188d # VALID from Hegel::LoopDone, third element
+  - ff62af6bdc22 # VALID from Hegel::LoopDone, fourth element
   - 6dd4d55ae010 # INVALID, third element
   - 825623e39444 # INVALID, fourth element
   - b03a50a3cba2 # OVERRUN, third element

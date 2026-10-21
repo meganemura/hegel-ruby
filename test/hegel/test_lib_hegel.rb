@@ -8,11 +8,13 @@ require "securerandom"
 require "stringio"
 
 class TestLibHegel < Minitest::Test
-  def test_stop_test_and_assume_failed_do_not_inherit_standard_error
+  def test_control_exceptions_do_not_inherit_standard_error
     refute_includes Hegel::StopTest.ancestors, StandardError
     refute_includes Hegel::AssumeFailed.ancestors, StandardError
+    refute_includes Hegel::LoopDone.ancestors, StandardError
     assert_includes Hegel::StopTest.ancestors, Exception
     assert_includes Hegel::AssumeFailed.ancestors, Exception
+    assert_includes Hegel::LoopDone.ancestors, Exception
   end
 
   def test_real_opens_libhegel_and_reports_the_pinned_version

@@ -129,6 +129,23 @@ ends.
   `#filter`. A generator whose draws have effects that a rejected value must
   not keep overrides it.
 
+### Repeat a test body
+
+`tc.repeat { ... }` runs its block again and again, for as long as the
+engine keeps the loop going, the way hegel-rust's `TestCase::repeat` does.
+The engine chooses how many times it runs, and shrinks a failure toward
+fewer iterations. Each iteration shows in the failure report as a
+`// Repetition #N` line, with what the iteration recorded indented under
+it. A `tc.assume` or `tc.reject` inside the block skips that iteration
+instead of discarding the whole test case.
+
+The loop does not return when it ends. It raises `Hegel::LoopDone`, which
+`Hegel.test` counts as a passing test case. It descends from `Exception`,
+like the other control exceptions, so a `rescue => e` in the body does not
+catch it. A `break` in the block ends the loop and returns from
+`tc.repeat`. See
+[ADR 0034](docs/adr/0034-repeat-a-test-body-with-a-ruby-side-indent.md).
+
 ## [0.3.4] - 2026-10-20
 
 ### Engine: libhegel 0.47.2 (was 0.47.1)
