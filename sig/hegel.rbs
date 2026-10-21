@@ -145,6 +145,9 @@ module Hegel
   end
 
   module Generators
+    DEFAULT_MAX_SIZE: Integer
+
+    def self.default_max_size: (Integer min_size) -> Integer
     def self.first_nanosecond: (Array[Integer] parts) -> Array[Integer]
     def self.last_nanosecond: (Array[Integer] parts) -> Array[Integer]
     def self.format_date: (Array[Integer] date) -> String

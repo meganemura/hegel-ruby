@@ -123,6 +123,18 @@ ends.
 
 ### Changed
 
+Three defaults now match hegel-rust, which defines the interface. The results
+change for a caller who relied on the old default.
+
+- `from_regex` defaults to `fullmatch: true`, where it was `false`. The whole
+  drawn string matches the pattern, instead of merely containing a match. To
+  keep the old behaviour, pass `fullmatch: false`.
+- `text` defaults `max_size` to 100, where it was unbounded. When `min_size`
+  is above 100, the default is `min_size + 100`. Strings drawn without a
+  `max_size` are shorter than before. To draw longer strings, pass the
+  larger `max_size` you need.
+- `binary` defaults `max_size` the same way, to 100 or `min_size + 100`.
+
 - A filter over a filter now spends 3 attempts between the two predicates, as
   hegel-rust does, where each level used to spend 3 of its own.
 - `Hegel::Generator#do_draw_filtered(tc, predicate)` is the draw behind

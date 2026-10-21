@@ -37,9 +37,10 @@ module Hegel
         )
       end
 
-      # A Unicode string of [min_size, max_size] characters. +alphabet+ is a
-      # String of the permitted characters; it cannot be combined with the
-      # options after it.
+      # A Unicode string of [min_size, max_size] characters; max_size
+      # defaults to 100, or min_size + 100 when min_size exceeds 100.
+      # +alphabet+ is a String of the permitted characters; it cannot be
+      # combined with the options after it.
       def text(min_size: 0, max_size: nil, alphabet: nil, codec: nil, min_codepoint: nil, max_codepoint: nil,
         categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)
         Generators::TextGenerator.new(
@@ -127,17 +128,19 @@ module Hegel
         )
       end
 
-      # A byte String of [min_size, max_size] bytes.
+      # A byte String of [min_size, max_size] bytes; max_size defaults as
+      # in #text.
       def binary(min_size: 0, max_size: nil)
         Generators::BinaryGenerator.new(min_size: min_size, max_size: max_size)
       end
 
       # A String matching +pattern+ (Python `re` syntax, not Ruby's
       # Regexp syntax; see Generators::FromRegexGenerator). fullmatch
-      # requires the whole string to match, not just contain a match.
+      # (the default) requires the whole string to match, not just contain
+      # a match.
       # +alphabet+ is a #characters generator limiting every character of the
       # string.
-      def from_regex(pattern, fullmatch: false, alphabet: nil)
+      def from_regex(pattern, fullmatch: true, alphabet: nil)
         Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch, alphabet: alphabet)
       end
 
