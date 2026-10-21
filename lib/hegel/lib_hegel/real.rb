@@ -89,6 +89,7 @@ module Hegel
           "hegel_settings_register_profile", [:pointer, StringStruct.by_value, :pointer], :int32
         )
         @hegel_set_default_profile_fn = bind("hegel_set_default_profile", [:pointer, StringStruct.by_value], :int32)
+        @hegel_set_unicode_version_fn = bind("hegel_set_unicode_version", [:pointer, StringStruct.by_value], :int32)
         @hegel_settings_set_test_cases_fn = bind(
           "hegel_settings_set_test_cases", [:pointer, :pointer, :uint64], :int32
         )
@@ -307,7 +308,7 @@ module Hegel
           "hegel_generate_grammar", [:pointer, :pointer, :pointer, :uint64, :pointer], :int32
         )
 
-        LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
+        LibHegel.with_context(self) { |ctx| LibHegel.prepare(self, ctx, io: io) }
       end
 
       # hegel_context_new never returns NULL (guaranteed by the header), so
@@ -378,6 +379,14 @@ module Hegel
       # "" clears an earlier call.
       def set_default_profile(ctx, name)
         code = @hegel_set_default_profile_fn.call(ctx, string_view(name))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Sets the Unicode version for the whole process. "" selects the
+      # engine's newest tables.
+      def set_unicode_version(ctx, version)
+        code = @hegel_set_unicode_version_fn.call(ctx, string_view(version))
         LibHegel.check!(self, ctx, code)
         nil
       end

@@ -707,6 +707,8 @@ module Hegel
     def self.with_context: [R] (untyped impl) { (untyped) -> R } -> R
     def self.check!: (untyped impl, untyped ctx, Integer code) -> void
     def self.warn_on_version_mismatch: (untyped impl, untyped ctx, ?io: untyped) -> void
+    def self.prepare: (untyped impl, untyped ctx, ?io: untyped) -> nil
+    def self.follow_host_unicode_version: (untyped impl, untyped ctx) -> nil
     def self.label_from_name: (String name) -> Integer
     def self.label_combine: (Array[Integer] labels) -> Integer
     def self.encode_integer_le: (Integer n) -> String
@@ -722,6 +724,7 @@ module Hegel
       def settings_new_for_profile: (untyped ctx, String name) -> untyped
       def settings_register_profile: (untyped ctx, String name, untyped s) -> nil
       def set_default_profile: (untyped ctx, String name) -> nil
+      def set_unicode_version: (untyped ctx, String version) -> nil
       def settings_free: (untyped ctx, untyped s) -> nil
       def settings_set_test_cases: (untyped ctx, untyped s, Integer n) -> nil
       def settings_set_verbosity: (untyped ctx, untyped s, Integer v) -> nil
