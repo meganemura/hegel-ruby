@@ -467,8 +467,9 @@ Three combinations raise `Hegel::Error` at draw time:
 
 ### `text(min_size: 0, max_size: nil, codec: nil, min_codepoint: nil, max_codepoint: nil)`
 
-A Unicode string of `[min_size, max_size]` characters, unbounded above by
-default.
+A Unicode string of `[min_size, max_size]` characters. `max_size` defaults
+to 100, as in hegel-rust, or to `min_size + 100` when `min_size` is above
+100.
 
 ```ruby
 Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
@@ -697,8 +698,8 @@ seen # => ["A", "Z", "E", "T", "G"]
 
 ### `binary(min_size: 0, max_size: nil)`
 
-A byte `String` of `[min_size, max_size]` bytes, unbounded above by
-default.
+A byte `String` of `[min_size, max_size]` bytes. `max_size` defaults to 100,
+as in hegel-rust, or to `min_size + 100` when `min_size` is above 100.
 
 ```ruby
 result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
@@ -717,22 +718,22 @@ seen # => ["\x00\x00", "\xCA\x95", "\xD5N"]
 `max_size < min_size` raises `Hegel::Error` at draw time: `"binary:
 max_size < min_size"`.
 
-### `from_regex(pattern, fullmatch: false)`
+### `from_regex(pattern, fullmatch: true)`
 
 A `String` matching `pattern` (Python `re` syntax, not Ruby's `Regexp`
-syntax). `fullmatch` requires the whole string to match, not just contain
-a match.
+syntax). `fullmatch`, true by default as in hegel-rust, requires the whole
+string to match; `fullmatch: false` lets the string merely contain a match.
 
 ```ruby
 result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
-  v = tc.draw(from_regex("[a-z]{3}"))
+  v = tc.draw(from_regex("[a-z]{3}", fullmatch: false))
   raise "no match" unless v.match?(/[a-z]{3}/)
 end
 result # => nil
 
 seen = []
 Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
-  seen << tc.draw(from_regex("[a-z]{3}", fullmatch: true))
+  seen << tc.draw(from_regex("[a-z]{3}"))
 end
 seen # => ["aaa", "pgq", "iqy"]
 ```

@@ -35,7 +35,8 @@ module Hegel
         )
       end
 
-      # A Unicode string of [min_size, max_size] characters.
+      # A Unicode string of [min_size, max_size] characters; max_size
+      # defaults to 100, or min_size + 100 when min_size exceeds 100.
       def text(min_size: 0, max_size: nil, codec: nil, min_codepoint: nil, max_codepoint: nil)
         Generators::TextGenerator.new(
           min_size: min_size, max_size: max_size, codec: codec,
@@ -92,15 +93,17 @@ module Hegel
         Generators::CharactersGenerator.new(codec: codec, min_codepoint: min_codepoint, max_codepoint: max_codepoint)
       end
 
-      # A byte String of [min_size, max_size] bytes.
+      # A byte String of [min_size, max_size] bytes; max_size defaults as
+      # in #text.
       def binary(min_size: 0, max_size: nil)
         Generators::BinaryGenerator.new(min_size: min_size, max_size: max_size)
       end
 
       # A String matching +pattern+ (Python `re` syntax, not Ruby's
       # Regexp syntax; see Generators::FromRegexGenerator). fullmatch
-      # requires the whole string to match, not just contain a match.
-      def from_regex(pattern, fullmatch: false)
+      # (the default) requires the whole string to match, not just contain
+      # a match.
+      def from_regex(pattern, fullmatch: true)
         Generators::FromRegexGenerator.new(pattern, fullmatch: fullmatch)
       end
 

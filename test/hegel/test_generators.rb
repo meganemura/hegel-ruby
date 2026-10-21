@@ -32,6 +32,35 @@ class SpanRecordingFake < Hegel::LibHegel::Fake
   end
 end
 
+# Remembers the arguments that reach the engine for a string, a byte
+# string, and a regex, because a default is only visible there: the real
+# engine does not report the bounds it was given.
+class StringArgumentRecordingFake < Hegel::LibHegel::Fake
+  attr_reader :text_sizes, :byte_sizes, :regex_fullmatches
+
+  def initialize
+    super
+    @text_sizes = []
+    @byte_sizes = []
+    @regex_fullmatches = []
+  end
+
+  def string_generator_text(ctx, min_size:, max_size:, **)
+    @text_sizes << [min_size, max_size]
+    super
+  end
+
+  def generate_bytes(ctx, tc, min_size, max_size)
+    @byte_sizes << [min_size, max_size]
+    super
+  end
+
+  def string_generator_regex(ctx, pattern, fullmatch, alphabet = nil)
+    @regex_fullmatches << fullmatch
+    super
+  end
+end
+
 class TestGenerators < Minitest::Test
   include HegelDirectoryGuard
   include Hegel::Syntax::Methods
@@ -265,6 +294,35 @@ class TestGenerators < Minitest::Test
     end
 
     assert_includes error.message, "max_size < min_size"
+  end
+
+  # hegel-rust's DEFAULT_MAX_SIZE is 100 (frontends/rust/src/generators/
+  # strings.rs), and a min_size above it moves the default to min_size + 100.
+  def draw_string_arguments(generator)
+    fake = StringArgumentRecordingFake.new
+    generator.do_draw(Hegel::TestCase.new(fake, fake.context_new, Object.new))
+    fake
+  end
+
+  def test_text_max_size_defaults_to_100
+    assert_equal [[0, 100]], draw_string_arguments(text).text_sizes
+  end
+
+  def test_text_max_size_defaults_to_100_when_min_size_equals_it
+    assert_equal [[100, 100]], draw_string_arguments(text(min_size: 100)).text_sizes
+  end
+
+  def test_text_max_size_defaults_to_min_size_plus_100_above_the_default
+    assert_equal [[101, 201]], draw_string_arguments(text(min_size: 101)).text_sizes
+  end
+
+  def test_text_explicit_max_size_overrides_the_default
+    assert_equal [[0, 500]], draw_string_arguments(text(max_size: 500)).text_sizes
+  end
+
+  def test_text_default_max_size_bounds_the_draw_against_the_real_engine
+    assert_all_examples(text) { |v| v.length <= 100 }
+    assert_all_examples(text(min_size: 150)) { |v| v.length.between?(150, 250) }
   end
 
   # ---- arrays ----
@@ -593,16 +651,47 @@ class TestGenerators < Minitest::Test
     assert_all_examples(binary(min_size: 3, max_size: 3)) { |v| v.bytesize == 3 }
   end
 
+  def test_binary_max_size_defaults_to_100
+    assert_equal [[0, 100]], draw_string_arguments(binary).byte_sizes
+  end
+
+  def test_binary_max_size_defaults_to_100_when_min_size_equals_it
+    assert_equal [[100, 100]], draw_string_arguments(binary(min_size: 100)).byte_sizes
+  end
+
+  def test_binary_max_size_defaults_to_min_size_plus_100_above_the_default
+    assert_equal [[101, 201]], draw_string_arguments(binary(min_size: 101)).byte_sizes
+  end
+
+  def test_binary_explicit_max_size_overrides_the_default
+    assert_equal [[0, 500]], draw_string_arguments(binary(max_size: 500)).byte_sizes
+  end
+
+  def test_binary_default_max_size_bounds_the_draw_against_the_real_engine
+    assert_all_examples(binary) { |v| v.bytesize <= 100 }
+    assert_all_examples(binary(min_size: 150)) { |v| v.bytesize.between?(150, 250) }
+  end
+
   # ---- from_regex ----
 
-  # fullmatch: false (the default): the drawn string only has to contain a
-  # match, not equal one, so this checks for the pattern anywhere in the
-  # result rather than anchoring it. "[a-z]{3}" is simple enough to mean
-  # the same thing in Python re syntax (what the engine draws against) and
-  # Ruby's Regexp syntax (what this assertion checks with), so the
-  # assertion cannot pass or fail on a difference between the two.
-  def test_from_regex_draws_against_the_real_engine
-    assert_all_examples(from_regex("[a-z]{3}")) { |v| v.match?(/[a-z]{3}/) }
+  # fullmatch: false lets the drawn string merely contain a match, not equal
+  # one, so this checks for the pattern anywhere in the result rather than
+  # anchoring it. "[a-z]{3}" is simple enough to mean the same thing in
+  # Python re syntax (what the engine draws against) and Ruby's Regexp
+  # syntax (what this assertion checks with), so the assertion cannot pass
+  # or fail on a difference between the two.
+  def test_from_regex_fullmatch_false_draws_against_the_real_engine
+    assert_all_examples(from_regex("[a-z]{3}", fullmatch: false)) { |v| v.match?(/[a-z]{3}/) }
+  end
+
+  # hegel-rust's from_regex matches the whole string unless told otherwise.
+  def test_from_regex_fullmatch_defaults_to_true
+    assert_equal [true], draw_string_arguments(from_regex("[a-z]{3}")).regex_fullmatches
+    assert_equal [false], draw_string_arguments(from_regex("[a-z]{3}", fullmatch: false)).regex_fullmatches
+  end
+
+  def test_from_regex_draws_the_whole_string_by_default_against_the_real_engine
+    assert_all_examples(from_regex("[a-z]{3}")) { |v| v.match?(/\A[a-z]{3}\z/) }
   end
 
   # fullmatch: true requires the whole drawn string to match, which this

@@ -19,6 +19,15 @@ module Hegel
   # generator built once and drawn from many times fails the same way
   # hegel-rust's does.
   module Generators
+    # hegel-rust's DEFAULT_MAX_SIZE for text and binary. A min_size above it
+    # moves the default to min_size + 100, so a lone min_size never makes
+    # the range empty.
+    DEFAULT_MAX_SIZE = 100
+
+    def self.default_max_size(min_size)
+      (min_size > DEFAULT_MAX_SIZE) ? min_size + DEFAULT_MAX_SIZE : DEFAULT_MAX_SIZE
+    end
+
     # Hegel::Syntax::Methods#booleans. A boolean, true with probability +p+.
     class BooleanGenerator < Generator
       def initialize(p:)
@@ -119,7 +128,7 @@ module Hegel
     end
 
     # Hegel::Syntax::Methods#text. A Unicode string of [min_size, max_size]
-    # characters, unbounded above by default.
+    # characters, at most 100 by default.
     class TextGenerator < Generator
       def initialize(min_size:, max_size:, codec:, min_codepoint:, max_codepoint:)
         @min_size = min_size
@@ -130,7 +139,7 @@ module Hegel
       end
 
       def do_draw(tc)
-        max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+        max_size = @max_size || Generators.default_max_size(@min_size)
         raise Hegel::Error, "text: max_size < min_size" if max_size < @min_size
 
         # A fresh generator handle every draw, freed before this method
@@ -450,7 +459,7 @@ module Hegel
     end
 
     # Hegel::Syntax::Methods#binary. A byte String of [min_size, max_size]
-    # bytes, unbounded above by default.
+    # bytes, at most 100 by default.
     class BinaryGenerator < Generator
       def initialize(min_size:, max_size:)
         @min_size = min_size
@@ -458,7 +467,7 @@ module Hegel
       end
 
       def do_draw(tc)
-        max_size = @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+        max_size = @max_size || Generators.default_max_size(@min_size)
         raise Hegel::Error, "binary: max_size < min_size" if max_size < @min_size
 
         # hegel_generate_bytes already returns an Encoding::BINARY String
@@ -473,8 +482,8 @@ module Hegel
     # the header documents as Python `re` syntax -- a different grammar
     # from Ruby's own Regexp, even though the two agree on simple patterns
     # (character classes, quantifiers, alternation). fullmatch defaults to
-    # false, matching hegel_string_generator_regex's own documented
-    # default: the drawn string only has to contain a match, not equal one.
+    # true, as hegel-rust's from_regex does: the whole string matches,
+    # rather than merely containing a match.
     #
     # +pattern+ must be a String, checked at draw time like every other
     # validation in this file. A Ruby Regexp is rejected rather than
