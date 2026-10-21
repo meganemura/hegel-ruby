@@ -444,7 +444,7 @@ class TestFromLark < Minitest::Test
 
   def test_compile_passes_each_option_and_provides_each_import
     Dir.mktmpdir do |dir|
-      File.write(File.join(dir, "lib.lark"), "WORD: /[a-z]+/\n")
+      File.binwrite(File.join(dir, "lib.lark"), "WORD: /[a-z]+/\n")
       fake = Hegel::LibHegel::Fake.new
       fake.grammar_builder_files = ["lib.lark", "common.lark"]
       generator = from_lark(
