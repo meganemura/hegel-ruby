@@ -192,6 +192,12 @@ module Hegel
         Generators::DatetimeStringsGenerator.new
       end
 
+      # A duration as Integer nanoseconds in [min_value, max_value], up to
+      # 2**64 - 1 (see Generators::DurationsGenerator and docs/adr/0030).
+      def durations(min_value: 0, max_value: (2**64) - 1)
+        Generators::DurationsGenerator.new(min_value: min_value, max_value: max_value)
+      end
+
       # A value built from imperative code: +block+ receives a draw
       # surface and may call #draw on it any number of times to assemble
       # one value (see Generators::CompositeGenerator).

@@ -1285,6 +1285,72 @@ class TestGenerators < Minitest::Test
     end
   end
 
+  # ---- durations ----
+
+  def test_durations_default_range_is_unsigned_64_bit_nanoseconds
+    assert_all_examples(durations) { |v| v.is_a?(Integer) && v.between?(0, 2**64 - 1) }
+  end
+
+  def test_durations_bounds_the_draw
+    assert_all_examples(durations(min_value: 5, max_value: 60)) { |v| v.between?(5, 60) }
+  end
+
+  # The engine's integer draw above int64_t goes through a different native
+  # call than below it, so only a draw that cannot fit in 63 bits shows the
+  # unsigned range is reachable.
+  def test_durations_draw_above_the_signed_64_bit_range
+    assert find_any(durations(min_value: 2**63)) { |v| v >= 2**63 }
+  end
+
+  def test_durations_min_value_equals_max_value_returns_that_value
+    assert_all_examples(durations(min_value: 2**64 - 1)) { |v| v == 2**64 - 1 }
+  end
+
+  def test_durations_max_value_above_the_largest_duration_saturates
+    assert_all_examples(durations(min_value: 2**64 - 1, max_value: 2**70)) { |v| v == 2**64 - 1 }
+  end
+
+  def test_durations_shrinks_to_min_value
+    assert_equal 1_000, minimal(durations(min_value: 1_000)) { |_| true }
+  end
+
+  def test_durations_composed_inside_arrays_respect_the_bounds
+    assert_all_examples(arrays(durations(max_value: 60), max_size: 5)) { |v| v.all? { |d| d <= 60 } }
+  end
+
+  def test_durations_min_value_negative_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(min_value: -1)) }
+    end
+
+    assert_equal "durations: min_value must not be negative", error.message
+  end
+
+  def test_durations_min_value_above_the_largest_duration_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(min_value: 2**64)) }
+    end
+
+    assert_equal "durations: min_value exceeds the largest generatable Duration " \
+      "(u64::MAX nanoseconds, about 584 years)", error.message
+  end
+
+  def test_durations_max_value_less_than_min_value_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(min_value: 5, max_value: 1)) }
+    end
+
+    assert_equal "durations: Cannot have max_value < min_value", error.message
+  end
+
+  def test_durations_max_value_negative_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(max_value: -1)) }
+    end
+
+    assert_includes error.message, "max_value < min_value"
+  end
+
   # ---- composite ----
 
   def test_composite_draws_against_the_real_engine
