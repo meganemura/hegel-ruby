@@ -30,6 +30,8 @@ module Hegel
     HEGEL_E_NOT_COMPLETE = -7
     HEGEL_E_INTERNAL = -8
     HEGEL_E_CONCURRENT_USE = -9
+    HEGEL_E_RETRY = -10
+    HEGEL_E_NOT_FOUND = -11
 
     # The hegel.h name for each code above, so a translated error message
     # names the code instead of leaving the reader to cross-reference the
@@ -44,7 +46,9 @@ module Hegel
       HEGEL_E_ALREADY_COMPLETE => "HEGEL_E_ALREADY_COMPLETE",
       HEGEL_E_NOT_COMPLETE => "HEGEL_E_NOT_COMPLETE",
       HEGEL_E_INTERNAL => "HEGEL_E_INTERNAL",
-      HEGEL_E_CONCURRENT_USE => "HEGEL_E_CONCURRENT_USE"
+      HEGEL_E_CONCURRENT_USE => "HEGEL_E_CONCURRENT_USE",
+      HEGEL_E_RETRY => "HEGEL_E_RETRY",
+      HEGEL_E_NOT_FOUND => "HEGEL_E_NOT_FOUND"
     }.freeze
 
     # hegel_status_t, named from hegel.h's enum of the same name. Passed to
@@ -66,6 +70,15 @@ module Hegel
     HEGEL_VERBOSITY_QUIET = 1
     HEGEL_VERBOSITY_VERBOSE = 2
     HEGEL_VERBOSITY_DEBUG = 3
+
+    # hegel_nondeterminism_strictness_t
+    HEGEL_NONDETERMINISM_QUIET = 0
+    HEGEL_NONDETERMINISM_WARN = 1
+    HEGEL_NONDETERMINISM_ERROR = 2
+
+    # hegel_backend_t
+    HEGEL_BACKEND_DEFAULT = 1
+    HEGEL_BACKEND_URANDOM = 2
 
     # hegel_phase_t, named from hegel.h's enum of the same name. A bitwise
     # OR of these is passed to hegel_settings_set_phases; the default is
@@ -108,7 +121,8 @@ module Hegel
     # responds to each name here.
     METHODS = %i[
       context_new context_free context_last_error version
-      settings_new settings_free settings_set_test_cases settings_set_verbosity
+      settings_new settings_new_for_profile settings_register_profile set_default_profile
+      settings_free settings_set_test_cases settings_set_verbosity
       settings_set_seed settings_set_derandomize settings_set_database
       run_start next_test_case run_free test_case_free mark_complete
       generate_boolean generate_integer generate_integer_big
@@ -124,12 +138,23 @@ module Hegel
       generate_ipv4 generate_ipv6 generate_uuid
       generate_date generate_time generate_datetime
       settings_set_phases settings_set_suppress_health_check settings_set_report_multiple_failures
-      settings_set_database_key
-      target
-      new_pool pool_add pool_generate pool_free
+      settings_set_database_key settings_set_stop_on_first_failure settings_set_print_blob
+      settings_get_print_blob settings_set_show_statistics settings_set_nondeterminism_strictness
+      settings_set_backend settings_set_test_location
+      target event event_value
+      new_pool pool_add pool_generate pool_restore pool_free
       new_state_machine state_machine_next_group state_machine_next_rule state_machine_rule_rejected
       state_machine_should_check_invariant state_machine_free
+      grammar_builder_new grammar_builder_file grammar_builder_provide grammar_builder_free
+      grammar_new grammar_placeholder grammar_free generate_grammar
+      new_recursion recursion_branch recursion_leaf recursion_retry recursion_finish recursion_free
     ].freeze
+
+    # label_combine answers from this table: a recursive generator builds a
+    # fresh branch generator at every node it draws, and each one combines
+    # the same few labels again. Measured on the 30-leaf shrink in
+    # test_recursive_engine.rb, hashing the labels was a third of the run.
+    COMBINED_LABELS = {}
 
     module_function
 
@@ -200,7 +225,7 @@ module Hegel
     end
 
     def label_combine(labels)
-      fnv1a(labels.pack("Q<*").bytes)
+      COMBINED_LABELS[labels] ||= fnv1a(labels.pack("Q<*").bytes)
     end
 
     def fnv1a(bytes)

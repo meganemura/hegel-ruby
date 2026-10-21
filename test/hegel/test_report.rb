@@ -5,13 +5,13 @@ require "hegel/report"
 
 class TestReport < Minitest::Test
   def test_assign_names_leaves_a_single_occurrence_unsuffixed
-    assert_equal [[:draw, "n", 501]], Hegel::Report.assign_names([[:draw, "n", 501]])
+    assert_equal [[:draw, "n", 501, 0]], Hegel::Report.assign_names([[:draw, "n", 501, 0]])
   end
 
   def test_assign_names_suffixes_every_repeated_name_in_draw_order
-    entries = [[:draw, "draw", 3], [:draw, "draw", 7], [:draw, "x", 1]]
+    entries = [[:draw, "draw", 3, 0], [:draw, "draw", 7, 0], [:draw, "x", 1, 0]]
 
-    assert_equal [[:draw, "draw_1", 3], [:draw, "draw_2", 7], [:draw, "x", 1]], Hegel::Report.assign_names(entries)
+    assert_equal [[:draw, "draw_1", 3, 0], [:draw, "draw_2", 7, 0], [:draw, "x", 1, 0]], Hegel::Report.assign_names(entries)
   end
 
   def test_assign_names_on_no_draws_returns_an_empty_array
@@ -22,9 +22,9 @@ class TestReport < Minitest::Test
   # against the :draw tally that shares its fallback name, and it must
   # stay exactly where it was recorded relative to the draws around it.
   def test_assign_names_counts_only_draws_when_a_note_is_interleaved
-    entries = [[:draw, "draw", 1], [:note, "checkpoint"], [:draw, "draw", 2]]
+    entries = [[:draw, "draw", 1, 0], [:note, "checkpoint", 0], [:draw, "draw", 2, 0]]
 
-    assert_equal [[:draw, "draw_1", 1], [:note, "checkpoint"], [:draw, "draw_2", 2]],
+    assert_equal [[:draw, "draw_1", 1, 0], [:note, "checkpoint", 0], [:draw, "draw_2", 2, 0]],
       Hegel::Report.assign_names(entries)
   end
 
@@ -34,15 +34,15 @@ class TestReport < Minitest::Test
   # the tally coming up empty. A :note's message reused as a repeated
   # draw's own name is the one case that tells the two apart -- without
   # the guard, this :note's own count would read the draws' tally (2, so
-  # "> 1") and get rebuilt as a third, spurious [:draw, "n_3", nil].
+  # "> 1") and get rebuilt as a third, spurious [:draw, "n_3", nil, nil].
   def test_assign_names_never_renames_a_note_even_when_its_message_repeats_a_draw_name
-    entries = [[:draw, "n", 1], [:draw, "n", 2], [:note, "n"]]
+    entries = [[:draw, "n", 1, 0], [:draw, "n", 2, 0], [:note, "n", 0]]
 
-    assert_equal [[:draw, "n_1", 1], [:draw, "n_2", 2], [:note, "n"]], Hegel::Report.assign_names(entries)
+    assert_equal [[:draw, "n_1", 1, 0], [:draw, "n_2", 2, 0], [:note, "n", 0]], Hegel::Report.assign_names(entries)
   end
 
   def test_render_one_failure_has_no_distinct_failures_heading
-    failure = Hegel::Report::Failure.new(test_cases: 8, discarded: 2, entries: [[:draw, "n", 501]], blob: "AXicY2Ig...")
+    failure = Hegel::Report::Failure.new(test_cases: 8, discarded: 2, entries: [[:draw, "n", 501, 0]], blob: "AXicY2Ig...")
 
     text = Hegel::Report.render([failure])
 
@@ -54,8 +54,8 @@ class TestReport < Minitest::Test
   end
 
   def test_render_many_failures_gets_a_distinct_failures_heading_with_a_blank_line_before_each_block
-    first = Hegel::Report::Failure.new(test_cases: 3, discarded: 0, entries: [[:draw, "a", 1]], blob: "blob-a")
-    second = Hegel::Report::Failure.new(test_cases: 5, discarded: 1, entries: [[:draw, "b", 2]], blob: "blob-b")
+    first = Hegel::Report::Failure.new(test_cases: 3, discarded: 0, entries: [[:draw, "a", 1, 0]], blob: "blob-a")
+    second = Hegel::Report::Failure.new(test_cases: 5, discarded: 1, entries: [[:draw, "b", 2, 0]], blob: "blob-b")
 
     text = Hegel::Report.render([first, second])
 
@@ -68,7 +68,7 @@ class TestReport < Minitest::Test
   def test_render_failure_interleaves_notes_and_draws_in_call_order
     failure = Hegel::Report::Failure.new(
       test_cases: 8, discarded: 2,
-      entries: [[:note, "starting the queue"], [:draw, "n", 501], [:note, "queue was empty"]],
+      entries: [[:note, "starting the queue", 0], [:draw, "n", 501, 0], [:note, "queue was empty", 0]],
       blob: "blob"
     )
 
@@ -79,7 +79,7 @@ class TestReport < Minitest::Test
 
   # A failure with no draws at all -- only notes -- must still render.
   def test_render_failure_with_only_notes_and_no_draws
-    failure = Hegel::Report::Failure.new(test_cases: 1, discarded: 0, entries: [[:note, "no draws here"]], blob: "blob")
+    failure = Hegel::Report::Failure.new(test_cases: 1, discarded: 0, entries: [[:note, "no draws here", 0]], blob: "blob")
 
     text = Hegel::Report.render_failure(failure)
 
@@ -91,7 +91,7 @@ class TestReport < Minitest::Test
   # (the array literal #render_failure starts from) -- without it, the
   # last entry and the footer's first line would run together.
   def test_render_failure_has_a_blank_line_before_the_reproduce_footer
-    failure = Hegel::Report::Failure.new(test_cases: 1, discarded: 0, entries: [[:draw, "n", 501]], blob: "blob")
+    failure = Hegel::Report::Failure.new(test_cases: 1, discarded: 0, entries: [[:draw, "n", 501, 0]], blob: "blob")
 
     text = Hegel::Report.render_failure(failure)
 

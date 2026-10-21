@@ -18,8 +18,8 @@ end
 
 task default: %i[coverage standard]
 
-# Mutation testing with mutineer, over lib/. Four settings make the suite
-# run under it; ADR 0016 records why:
+# Mutation testing with mutineer, over lib/. Five settings make the suite
+# run under it; ADR 0016 records the first four, and ADR 0032 the fifth:
 # - RUBYOPT gets -Itest, since mutineer puts only lib/ on the load path and
 #   every test file starts with `require "test_helper"`.
 # - Each test file gets its own --test flag. The flag takes one file, and a
@@ -31,6 +31,9 @@ task default: %i[coverage standard]
 #   reload, loads the whole mutated file by a relative path, which breaks
 #   Hegel::Runner.origin_for and killed three mutants the suite does not
 #   catch.
+# - test_recursive_engine.rb stays out too. Its 30-leaf shrink takes about
+#   ten seconds, mutineer's limit for one mutant, so a mutant on a line it
+#   covers timed out without a verdict.
 # MUTINEER_ARGS passes more flags, for example
 # MUTINEER_ARGS="--since origin/main" to mutate only the lines changed since
 # origin/main.
@@ -42,7 +45,7 @@ MUTATION_BASELINE = "test/mutation-baseline.json"
 def run_mutineer(*extra)
   require "shellwords"
   tests = Dir["test/*.rb", "test/hegel/*.rb"].sort -
-    %w[test/test_helper.rb test/hegel/test_conformance.rb]
+    %w[test/test_helper.rb test/hegel/test_conformance.rb test/hegel/test_recursive_engine.rb]
   args = ["lib", "--strategy", "redefine", *tests.flat_map { |t| ["--test", t] }, *extra, *Shellwords.split(ENV.fetch("MUTINEER_ARGS", ""))]
   rubyopt = ["-Itest", ENV["RUBYOPT"]].compact.join(" ")
   # mutineer keeps its cache here, and refuses an --output path whose

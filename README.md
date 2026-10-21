@@ -202,16 +202,16 @@ Expected: [0, 0]
 | Kind | Generators |
 | --- | --- |
 | Numbers and booleans | `integers`, `floats`, `booleans` |
-| Text and bytes | `text`, `characters`, `binary`, `from_regex` |
+| Text and bytes | `text`, `characters`, `binary`, `from_regex`, `from_lark` |
 | Collections | `arrays`, `sets`, `hashes`, `tuples` |
-| Choice | `just`, `sampled_from`, `one_of`, `optional` |
+| Choice | `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional` |
 | Formats | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
-| Time | `dates`, `times`, `datetimes` |
-| Your own | `composite`, `deferred` |
+| Time | `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations` |
+| Your own | `composite`, `deferred`, `recursive` |
 
 Each one composes through `map` and `filter`. Options are keywords, with the
 names the other Hegel implementations use, such as
-`integers(min_value: 0, max_value: 9)` or `arrays(text, max_size: 5)`. An
+`integers(min_value: 0, max_value: 9)`, `arrays(text, max_size: 5)`, or `arrays(integers, unique: true)`. An
 invalid combination of options raises when the generator is drawn, not when it
 is built.
 
@@ -257,7 +257,9 @@ Every invariant runs before the first rule and after the last. Between rules,
 the engine samples each invariant. Declare an invariant with
 `always_run: true` to check it after every rule.
 `Hegel::Stateful.run(machine, tc, step_count: 50)` sets the largest number of
-rules that one test case runs; 50 is the default.
+rules that one test case runs; 50 is the default. `rule :name, weight: 2.5`
+asks Hegel to pick a rule more often than the others; the default weight is
+1.0.
 
 ## Configuring a run
 
@@ -265,6 +267,7 @@ rules that one test case runs; 50 is the default.
 
 | Keyword | Effect |
 | --- | --- |
+| `profile` | The settings profile the run starts from; see [Profiles](#profiles) |
 | `test_cases` | How many test cases to generate |
 | `seed` | The seed for the random generation |
 | `derandomize` | Make the generation deterministic |
@@ -272,6 +275,11 @@ rules that one test case runs; 50 is the default.
 | `phases` | Which engine phases run, such as generation and shrinking |
 | `suppress_health_check` | Which health checks to turn off |
 | `report_multiple_failures` | Report each distinct failure; `false` by default |
+| `stop_on_first_failure` | `false` spends the whole `test_cases` budget before reporting |
+| `print_blob` | `false` leaves the reproduction line out of the failure report |
+| `show_statistics` | Print what `tc.event` and `tc.event_value` recorded, at the end of the run |
+| `nondeterminism_strictness` | `:quiet`, `:warn`, or `:error` when the test behaves differently on a replay |
+| `backend` | `:default`, or `:urandom` to take fresh entropy on every draw, for Antithesis |
 | `database_key` | Turn the example database on for this property |
 | `database` | The directory of the example database |
 | `reproduce_failure` | Replay one failure from the blob in its report |
@@ -292,8 +300,51 @@ Give each property its own key. See
 [ADR 0009](docs/adr/0009-turn-the-example-database-on-with-a-key.md) for why
 the key, and not the directory, turns it on.
 
-Inside a test, `tc.note` records a message that the failure report prints, and
-`tc.target` tells Hegel which inputs to search toward.
+Inside a test, `tc.note` records a message that the failure report prints,
+`tc.target` tells Hegel which inputs to search toward, and `tc.repeat` runs a
+block for as many iterations as Hegel chooses.
+
+`tc.event` and `tc.event_value` check that a test reaches the cases you care
+about. With `show_statistics: true`, the engine prints how often each event
+happened and a summary of each value. The numbers change from run to run:
+
+```ruby
+Hegel.test(show_statistics: true) do |tc|
+  xs = tc.draw(arrays(integers))
+  tc.event("empty") if xs.empty?
+  tc.event_value("size", xs.size)
+end
+```
+
+```
+Statistics (over 100 test cases):
+  * empty: 6.0% of test cases
+  * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
+```
+
+## Profiles
+
+A profile is a named set of settings. The engine ships `development`, `ci`,
+and `workload`, and a `hegel.toml` file can define more. Pass `profile:` to
+start one run from a profile, and register your own with
+`Hegel::Settings.register_profile`:
+
+```ruby
+Hegel::Settings.register_profile("nightly", profile: "ci", test_cases: 10_000)
+
+Hegel.test(profile: "nightly") { |tc| ... }
+```
+
+A keyword passed to `Hegel.test` still beats the profile. A profile you
+name extends the default profile, so what it does not set comes from
+there. `Hegel::Settings.set_default_profile("nightly")` makes a profile the
+default for every run in the process, and `set_default_profile("")` clears
+it. Registration and the default are process-wide, and they do not change
+runs that have already started. `register_profile` takes the keywords of
+`Hegel.test` except `database_key`, which a profile does not carry, and
+`Hegel.test` always passes `report_multiple_failures`, so a profile's value
+for it never applies. An unknown name raises `Hegel::Error`. See
+[ADR 0028](docs/adr/0028-expose-settings-profiles-as-a-keyword-and-module-functions.md).
 
 ## Agent skill
 

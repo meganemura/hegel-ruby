@@ -202,15 +202,15 @@ Expected: [0, 0]
 | 種類 | ジェネレーター |
 | --- | --- |
 | 数値と真偽値 | `integers`, `floats`, `booleans` |
-| 文字列とバイト列 | `text`, `characters`, `binary`, `from_regex` |
+| 文字列とバイト列 | `text`, `characters`, `binary`, `from_regex`, `from_lark` |
 | コレクション | `arrays`, `sets`, `hashes`, `tuples` |
-| 選択 | `just`, `sampled_from`, `one_of`, `optional` |
+| 選択 | `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional` |
 | 書式 | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
-| 日時 | `dates`, `times`, `datetimes` |
-| 自作 | `composite`, `deferred` |
+| 日時 | `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations` |
+| 自作 | `composite`, `deferred`, `recursive` |
 
 どれも `map` と `filter` で組み合わせられます。オプションはキーワード引数で、
-`integers(min_value: 0, max_value: 9)` や `arrays(text, max_size: 5)` のように、
+`integers(min_value: 0, max_value: 9)`、`arrays(text, max_size: 5)`、`arrays(integers, unique: true)` のように、
 他の Hegel 実装と同じ名前を使います。オプションの組み合わせが不正な場合は、
 ジェネレーターを作ったときではなく draw したときに例外になります。
 
@@ -254,7 +254,8 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 エンジンが各不変条件をサンプリングします。毎回のルールの後に確かめたい不変条件は
 `always_run: true` 付きで宣言してください。
 `Hegel::Stateful.run(machine, tc, step_count: 50)` で 1 テストケースあたりの最大
-ルール数を指定できます。既定は 50 です。
+ルール数を指定できます。既定は 50 です。`rule :name, weight: 2.5` と書くと、そのルールが
+他より選ばれやすくなります。既定の重みは 1.0 です。
 
 ## 実行の設定
 
@@ -262,6 +263,7 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 
 | キーワード | 効果 |
 | --- | --- |
+| `profile` | 実行の出発点にする設定プロファイル。[プロファイル](#プロファイル)を参照 |
 | `test_cases` | 生成するテストケースの数 |
 | `seed` | ランダム生成のシード |
 | `derandomize` | 生成を決定的にする |
@@ -269,6 +271,11 @@ Hegel.test { |tc| Hegel::Stateful.run(StackMachine.new, tc) }
 | `phases` | 生成や縮小など、実行するエンジンのフェーズ |
 | `suppress_health_check` | 無効にするヘルスチェック |
 | `report_multiple_failures` | 異なる失敗をそれぞれ報告する。既定は `false` |
+| `stop_on_first_failure` | `false` にすると `test_cases` を使い切ってから報告する |
+| `print_blob` | `false` にすると失敗レポートから再現用の行を外す |
+| `show_statistics` | `tc.event` と `tc.event_value` で記録した内容を実行の最後に表示する |
+| `nondeterminism_strictness` | 再実行で振る舞いが変わるテストへの反応。`:quiet`、`:warn`、`:error` |
+| `backend` | `:default`、または値を引くたびに外部のエントロピーを使う `:urandom`(Antithesis 向け) |
 | `database_key` | このプロパティで example database を有効にする |
 | `database` | example database のディレクトリ |
 | `reproduce_failure` | レポートの blob から 1 つの失敗を再生する |
@@ -290,7 +297,51 @@ Hegel.test(database_key: "my_sort matches the builtin sort") { |tc| ... }
 あります。
 
 テストの中では、`tc.note` で失敗レポートに出すメッセージを記録でき、
-`tc.target` で Hegel が探索を寄せる方向を指定できます。
+`tc.target` で Hegel が探索を寄せる方向を指定でき、`tc.repeat` で
+Hegel が選んだ回数だけブロックを繰り返し実行できます。
+
+`tc.event` と `tc.event_value` は、テストが狙ったケースに届いているかを確かめる
+ためのものです。`show_statistics: true` にすると、各イベントが起きた割合と、
+各値の分布の要約をエンジンが表示します。数値は実行ごとに変わります。
+
+```ruby
+Hegel.test(show_statistics: true) do |tc|
+  xs = tc.draw(arrays(integers))
+  tc.event("empty") if xs.empty?
+  tc.event_value("size", xs.size)
+end
+```
+
+```
+Statistics (over 100 test cases):
+  * empty: 6.0% of test cases
+  * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
+```
+
+## プロファイル
+
+プロファイルは名前の付いた設定の組です。エンジンは `development`、`ci`、
+`workload` を同梱しており、`hegel.toml` でさらに定義できます。`profile:` を
+渡すと 1 回の実行をそのプロファイルから始められ、独自のプロファイルは
+`Hegel::Settings.register_profile` で登録できます。
+
+```ruby
+Hegel::Settings.register_profile("nightly", profile: "ci", test_cases: 10_000)
+
+Hegel.test(profile: "nightly") { |tc| ... }
+```
+
+`Hegel.test` に渡したキーワードはプロファイルより優先されます。名前を指定した
+プロファイルは既定のプロファイルを継承するので、設定していない項目は既定の
+プロファイルから来ます。`Hegel::Settings.set_default_profile("nightly")` は
+そのプロセスのすべての実行の既定にし、`set_default_profile("")` で解除します。
+登録と既定はプロセス全体に効き、すでに始まった実行は変わりません。
+`register_profile` は `database_key` を除く `Hegel.test` のキーワードを受け取ります。
+プロファイルは `database_key` を持たないためです。また `Hegel.test` は常に
+`report_multiple_failures` を渡すので、プロファイル側の値は使われません。
+未知の名前は `Hegel::Error` になります。
+[ADR 0028](docs/adr/0028-expose-settings-profiles-as-a-keyword-and-module-functions.md)
+を参照してください。
 
 ## エージェント向けスキル
 

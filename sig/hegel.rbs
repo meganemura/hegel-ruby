@@ -12,35 +12,48 @@ module Hegel
   class AssumeFailed < Exception
   end
 
-  def self.test: (?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
+  class LeafBudgetExceeded < Exception
+    attr_reader recursion: TestCase::Recursion
+    def initialize: (TestCase::Recursion recursion) -> void
+  end
+
+  class LoopDone < Exception
+  end
+
+  def self.test: (?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
   class TestCase
     DEFAULT_DRAW_NAME: String
     DRAW_METHOD_NAMES: Array[Symbol]
     DRAW_CALLER_DEPTH: Integer
+    REPEAT_MAX_MIN_SIZE: Integer
+    REPEAT_INDENT: Integer
 
-    def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool) -> void
-    def entries: () -> Array[[:draw, String, untyped] | [:note, untyped]]?
+    def initialize: (untyped impl, untyped ctx, untyped handle, ?record: bool, ?grammars: GrammarCache?) -> void
+    def entries: () -> Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]]?
     def draw_integer: (Integer min_value, Integer max_value, ?label: String?) -> Integer
     def draw_boolean: (?Float p, ?label: String?) -> bool
     def draw: (Generator generator, ?label: String?) -> untyped
     def assume: (boolish condition) -> void
     def reject: () -> bot
     def note: (?untyped? message) ?{ () -> untyped } -> void
+    def repeat: () { () -> void } -> untyped
     def generate_integer: (Integer min_value, Integer max_value) -> Integer
     def generate_integer_big: (Integer min_value, Integer max_value) -> Integer
     def generate_boolean: (?Float p) -> bool
     def generate_float: (Integer width, Float min_value, Float max_value, allow_nan: bool, allow_infinity: bool, exclude_min: bool, exclude_max: bool, smallest_nonzero_magnitude: Float) -> Float
     def target: (Numeric value, ?label: String) -> nil
+    def event: (String label) -> nil
+    def event_value: (String label, Numeric value) -> nil
     def start_span: (Integer label) -> untyped
     def stop_span: (?discard: bool) -> untyped
     def new_collection: (Integer min_size, Integer max_size) -> untyped
     def collection_more: (untyped collection) -> bool
     def collection_reject: (untyped collection, ?why: String?) -> untyped
     def collection_free: (untyped collection) -> untyped
-    def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) { (untyped) -> R } -> R
-    def with_regex_generator: [R] (String pattern, fullmatch: bool) { (untyped) -> R } -> R
+    def with_text_generator: [R] (min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) { (untyped) -> R } -> R
+    def with_regex_generator: [R] (String pattern, fullmatch: bool, ?alphabet: untyped) { (untyped) -> R } -> R
     def with_email_generator: [R] () { (untyped) -> R } -> R
     def with_url_generator: [R] () { (untyped) -> R } -> R
     def with_domain_generator: [R] (max_length: Integer) { (untyped) -> R } -> R
@@ -60,20 +73,59 @@ module Hegel
     def new_pool: () -> untyped
     def pool_add: (untyped pool) -> Integer
     def pool_generate: (untyped pool, bool consume) -> Integer
+    def pool_restore: (untyped pool, Integer variable_id) -> nil
     def pool_free: (untyped pool) -> nil
     def free_pools: () -> void
-    def new_state_machine: (Array[String] rule_names, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
+    def new_state_machine: (Array[String] rule_names, Array[Float] rule_weights, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
     def state_machine_next_group: (untyped state_machine) -> Integer
     def state_machine_next_rule: (untyped state_machine) -> Integer
     def state_machine_rule_rejected: (untyped state_machine) -> nil
     def state_machine_should_check_invariant: (untyped state_machine, Integer index) -> bool
     def state_machine_free: (untyped state_machine) -> nil
+    def with_grammar: [R] (untyped key, ^() -> GrammarCache::Compiled build) { (GrammarCache::Compiled) -> R } -> R
+    def grammar_builder_new: (String text) -> untyped
+    def grammar_builder_file: (untyped builder, Integer index) -> String?
+    def grammar_builder_provide: (untyped builder, Integer index, String? text) -> nil
+    def grammar_builder_free: (untyped builder) -> nil
+    def grammar_new: (untyped builder, String? start, Integer max_size, Integer max_depth, untyped alphabet, Array[String] names) -> untyped
+    def grammar_placeholder: (untyped grammar, String name) -> String
+    def grammar_free: (untyped grammar) -> nil
+    def generate_grammar: (untyped grammar, Integer max_size) -> String
+    def new_recursion: (Integer max_depth, Integer max_leaves) -> Recursion
+    def recursion_branch: (Recursion recursion, Integer depth) -> bool
+    def recursion_leaf: (Recursion recursion) -> nil
+    def abandoned_by?: (Recursion recursion) -> bool
+    def recursion_retry: (Recursion recursion) -> nil
+    def recursion_finish: (Recursion recursion) -> bool
+    def recursion_free: (Recursion recursion) -> nil
+
+    class Recursion < Struct[untyped]
+      attr_accessor handle: untyped
+      attr_accessor freed: bool
+      def initialize: (untyped handle, bool freed) -> void
+    end
+  end
+
+  class GrammarCache
+    class Compiled
+      attr_reader grammar: untyped
+      attr_reader markers: Array[String]
+
+      def initialize: (grammar: untyped, markers: Array[String]) -> void
+    end
+
+    def initialize: () -> void
+    def fetch: (untyped key) { () -> Compiled } -> Compiled
+    def free_all: (untyped impl, untyped ctx) -> void
   end
 
   class Generator
+    FILTER_ATTEMPT_LABEL: Integer
+
     def self.label: () -> Integer
     def self.label_of: (untyped part) -> Integer
     def do_draw: (untyped tc) -> untyped
+    def do_draw_filtered: (untyped tc, Proc predicate) -> untyped
     def label: () -> Integer
     def map: () { (untyped) -> untyped } -> Generator
     def filter: () { (untyped) -> boolish } -> Generator
@@ -88,6 +140,7 @@ module Hegel
 
       def initialize: (Generator source, Proc block) -> void
       def do_draw: (untyped tc) -> untyped
+      def do_draw_filtered: (untyped tc, Proc predicate) -> untyped
     end
   end
 
@@ -97,6 +150,8 @@ module Hegel
     def self.default_max_size: (Integer min_size) -> Integer
     def self.first_nanosecond: (Array[Integer] parts) -> Array[Integer]
     def self.last_nanosecond: (Array[Integer] parts) -> Array[Integer]
+    def self.format_date: (Array[Integer] date) -> String
+    def self.format_time: (Array[Integer] time) -> String
 
     class BooleanGenerator < Generator
       def initialize: (p: Float) -> void
@@ -114,17 +169,42 @@ module Hegel
     class FloatGenerator < Generator
       WIDTH: Integer
 
-      def initialize: (min_value: Float?, max_value: Float?, allow_nan: bool?, allow_infinity: bool?, exclude_min: bool, exclude_max: bool) -> void
+      def initialize: (min_value: Float?, max_value: Float?, allow_nan: bool?, allow_infinity: bool?, exclude_min: bool, exclude_max: bool, allow_subnormal: bool?) -> void
       def do_draw: (untyped tc) -> Float
+
+      private
+
+      def smallest_nonzero_magnitude: () -> Float
+      def only_subnormals_between_bounds?: () -> bool
+      def subnormal_default: () -> bool
+    end
+
+    CODECS: Array[String]
+    SURROGATE_CATEGORIES: Array[String]
+
+    class CharactersGenerator < Generator
+      def initialize: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> void
+      def do_draw: (untyped tc) -> String
+      def options: () -> Hash[Symbol, untyped]
+      def options_given?: () -> bool
+      def with_alphabet: [R] (untyped tc, String name, Integer min_size, Integer max_size) { (untyped) -> R } -> R
+
+      private
+
+      def engine_options: (String name) -> Hash[Symbol, untyped]
     end
 
     class TextGenerator < Generator
-      def initialize: (min_size: Integer, max_size: Integer?, codec: String?, min_codepoint: Integer?, max_codepoint: Integer?) -> void
+      def initialize: (min_size: Integer, max_size: Integer?, ?alphabet: String?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> void
       def do_draw: (untyped tc) -> String
+
+      private
+
+      def alphabet_generator: () -> CharactersGenerator
     end
 
     class ArrayGenerator < Generator
-      def initialize: (Generator elements, min_size: Integer, max_size: Integer?) -> void
+      def initialize: (Generator elements, min_size: Integer, max_size: Integer?, ?unique: bool) -> void
       def do_draw: (untyped tc) -> Array[untyped]
 
       private
@@ -136,6 +216,40 @@ module Hegel
     class JustGenerator < Generator
       def initialize: (untyped value) -> void
       def do_draw: (untyped tc) -> untyped
+    end
+
+    module SequenceDrawing
+      private
+
+      def check_sizes: (String name, Integer min_size, Integer? max_size) -> void
+      def with_span: (untyped tc) { () -> untyped } -> untyped
+      def draw_index_sample: (untyped tc, Integer size, Integer min_size, Integer? max_size) -> Array[Integer]
+    end
+
+    class PermutationsGenerator < Generator
+      include SequenceDrawing
+
+      def initialize: (untyped elements) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+    end
+
+    class SubsequencesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize: (untyped elements, min_size: Integer, max_size: Integer?) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+    end
+
+    class SamplesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize: (untyped elements, min_size: Integer, max_size: Integer?, replacement: bool) -> void
+      def do_draw: (untyped tc) -> Array[untyped]
+
+      private
+
+      def validate_for: (Integer size) -> void
+      def draw_with_replacement: (untyped tc, Array[untyped] elements) -> Array[untyped]
     end
 
     class SampledFromGenerator < Generator
@@ -179,19 +293,44 @@ module Hegel
       def draw_entry: (untyped tc) -> [untyped, untyped]
     end
 
-    class CharactersGenerator < Generator
-      def initialize: (codec: String?, min_codepoint: Integer?, max_codepoint: Integer?) -> void
-      def do_draw: (untyped tc) -> String
-    end
-
     class BinaryGenerator < Generator
       def initialize: (min_size: Integer, max_size: Integer?) -> void
       def do_draw: (untyped tc) -> String
     end
 
     class FromRegexGenerator < Generator
-      def initialize: (untyped pattern, fullmatch: bool) -> void
+      def initialize: (untyped pattern, fullmatch: bool, ?alphabet: CharactersGenerator?) -> void
       def do_draw: (untyped tc) -> String
+
+      private
+
+      def draw_regex: (untyped tc, untyped alphabet) -> String
+    end
+
+    class FromLarkGenerator < Generator
+      DEFAULT_MAX_SIZE: Integer
+      ATTEMPTS: Integer
+      ATTEMPT_LABEL: Integer
+      MAX_SIZE_LIMIT: Integer
+      MAX_DEPTH_LIMIT: Integer
+
+      def initialize: (untyped grammar, start: untyped, explicit: untyped, alphabet: untyped, max_size: Integer?, max_depth: Integer?, import_path: untyped) -> void
+      def do_draw: (untyped tc) -> String
+
+      private
+
+      def frozen: [T] (T value) -> T
+      def lark_label: (Array[untyped]? names) -> Integer
+      def text_label: (untyped value) -> Integer
+      def explicit_terminals: () -> Array[[String, Generator]]
+      def explicit_terminal: (untyped name, untyped generator) -> [String, Generator]
+      def compile: (untyped tc, Array[String] names) -> GrammarCache::Compiled
+      def compile_with: (untyped tc, Array[String] names, untyped alphabet) -> GrammarCache::Compiled
+      def provide_files: (untyped tc, untyped builder) -> void
+      def read_import: (String file) -> String?
+      def draw_with_values: (untyped tc, GrammarCache::Compiled compiled, Array[[String, Generator]] terminals) -> String
+      def splice: (untyped tc, GrammarCache::Compiled compiled, Regexp pattern, Array[[String, Generator]] terminals, Integer budget) -> [String, Integer, Integer, Integer]
+      def draw_value: (untyped tc, String name, Generator generator) -> String
     end
 
     class EmailsGenerator < Generator
@@ -250,6 +389,25 @@ module Hegel
       def do_draw: (untyped tc) -> Time
     end
 
+    class DateStringsGenerator < Generator
+      def do_draw: (untyped tc) -> String
+    end
+
+    class TimeStringsGenerator < Generator
+      def do_draw: (untyped tc) -> String
+    end
+
+    class DatetimeStringsGenerator < Generator
+      def do_draw: (untyped tc) -> String
+    end
+
+    class DurationsGenerator < Generator
+      MAX_NANOSECONDS: Integer
+
+      def initialize: (min_value: Integer, max_value: Integer) -> void
+      def do_draw: (untyped tc) -> Integer
+    end
+
     class CompositeGenerator < Generator
       def initialize: () { (CompositeGenerator::BlockTestCase) -> untyped } -> void
       def do_draw: (untyped tc) -> untyped
@@ -268,16 +426,40 @@ module Hegel
       def do_draw: (untyped tc) -> untyped
     end
 
+    class RecursiveGenerator < Generator
+      UINT64_MAX: Integer
+
+      def initialize: (untyped leaf, max_depth: untyped, max_leaves: untyped) ?{ (SubtreeGenerator) -> untyped } -> void
+      def do_draw: (untyped tc) -> untyped
+
+      private
+
+      def validate_bound: (String name, untyped value) -> void
+      def draw_recursion: (untyped tc) -> untyped
+    end
+
+    class SubtreeGenerator < Generator
+      def initialize: (Generator leaf, ^(SubtreeGenerator) -> untyped branch, TestCase::Recursion recursion, Integer depth, Integer label) -> void
+      def do_draw: (untyped tc) -> untyped
+      def draw_subtree: (untyped tc) -> untyped
+    end
+
     extend Syntax::Methods
   end
 
   class StateMachine
     include Syntax::Methods
 
-    def self.rule: (Symbol | String name) { (TestCase) -> untyped } -> void
+    def self.rule: (Symbol | String name, ?weight: Numeric) { (TestCase) -> untyped } -> void
     def self.invariant: (Symbol | String name, ?always_run: bool) { (TestCase) -> untyped } -> void
-    def self.rule_definitions: () -> Hash[String, Proc]
+    def self.rule_definitions: () -> Hash[String, Rule]
     def self.invariant_definitions: () -> Hash[String, Invariant]
+
+    class Rule
+      attr_reader block: Proc
+      attr_reader weight: Numeric
+      def initialize: (block: Proc, weight: Numeric) -> void
+    end
 
     class Invariant
       attr_reader block: Proc
@@ -291,7 +473,7 @@ module Hegel
     DEFAULT_STEP_COUNT: Integer
 
     def self.run: (StateMachine machine, TestCase tc, ?step_count: Integer) -> void
-    def self.drive: (StateMachine machine, Hash[String, Proc] rules, Array[StateMachine::Invariant] invariants, untyped state_machine, TestCase tc) -> void
+    def self.drive: (StateMachine machine, Hash[String, StateMachine::Rule] rules, Array[StateMachine::Invariant] invariants, untyped state_machine, TestCase tc) -> void
     def self.apply_rule: (StateMachine machine, Proc block, untyped state_machine, TestCase tc) -> bool
     def self.run_invariants: (StateMachine machine, Array[StateMachine::Invariant] invariants, TestCase tc) -> void
     def self.run_sampled_invariants: (StateMachine machine, Array[StateMachine::Invariant] invariants, untyped state_machine, TestCase tc) -> void
@@ -312,6 +494,11 @@ module Hegel
       class ValuesConsumed < Generator
         def initialize: (untyped pool, Hash[Integer, untyped] values) -> void
         def do_draw: (untyped tc) -> untyped
+        def do_draw_filtered: (untyped tc, Proc predicate) -> untyped
+
+        private
+
+        def filtered_attempt: (untyped tc, Proc predicate, Array[Integer] attempted) -> Integer?
       end
     end
   end
@@ -320,19 +507,23 @@ module Hegel
     module Methods
       def booleans: (?p: Float) -> Generators::BooleanGenerator
       def integers: (?min_value: Integer?, ?max_value: Integer?) -> Generators::IntegerGenerator
-      def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool?, ?allow_infinity: bool?, ?exclude_min: bool, ?exclude_max: bool) -> Generators::FloatGenerator
-      def text: (?min_size: Integer, ?max_size: Integer?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::TextGenerator
-      def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::ArrayGenerator
+      def floats: (?min_value: Float?, ?max_value: Float?, ?allow_nan: bool?, ?allow_infinity: bool?, ?exclude_min: bool, ?exclude_max: bool, ?allow_subnormal: bool?) -> Generators::FloatGenerator
+      def text: (?min_size: Integer, ?max_size: Integer?, ?alphabet: String?, ?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::TextGenerator
+      def arrays: (Generator elements, ?min_size: Integer, ?max_size: Integer?, ?unique: bool) -> Generators::ArrayGenerator
       def just: (untyped value) -> Generators::JustGenerator
       def sampled_from: (untyped collection) -> Generators::SampledFromGenerator
+      def permutations: (untyped elements) -> Generators::PermutationsGenerator
+      def subsequences: (untyped elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::SubsequencesGenerator
+      def samples: (untyped elements, ?min_size: Integer, ?max_size: Integer?, ?replacement: bool) -> Generators::SamplesGenerator
       def one_of: (*Generator generators) -> Generators::OneOfGenerator
       def optional: (Generator generator) -> Generators::OptionalGenerator
       def tuples: (*Generator generators) -> Generators::TupleGenerator
       def sets: (Generator elements, ?min_size: Integer, ?max_size: Integer?) -> Generators::SetGenerator
       def hashes: (Generator keys, Generator values, ?min_size: Integer, ?max_size: Integer?) -> Generators::HashGenerator
-      def characters: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?) -> Generators::CharactersGenerator
+      def characters: (?codec: String?, ?min_codepoint: Integer?, ?max_codepoint: Integer?, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String?, ?exclude_characters: String?) -> Generators::CharactersGenerator
       def binary: (?min_size: Integer, ?max_size: Integer?) -> Generators::BinaryGenerator
-      def from_regex: (untyped pattern, ?fullmatch: bool) -> Generators::FromRegexGenerator
+      def from_regex: (untyped pattern, ?fullmatch: bool, ?alphabet: Generators::CharactersGenerator?) -> Generators::FromRegexGenerator
+      def from_lark: (untyped grammar, ?start: String?, ?explicit: Hash[String | Symbol, Generator], ?alphabet: Generators::CharactersGenerator?, ?max_size: Integer?, ?max_depth: Integer?, ?import_path: untyped) -> Generators::FromLarkGenerator
       def emails: () -> Generators::EmailsGenerator
       def urls: () -> Generators::UrlsGenerator
       def domains: (?max_length: Integer) -> Generators::DomainsGenerator
@@ -341,8 +532,13 @@ module Hegel
       def dates: (?min_value: untyped, ?max_value: untyped) -> Generators::DatesGenerator
       def times: (?min_value: String?, ?max_value: String?) -> Generators::TimesGenerator
       def datetimes: (?min_value: Time?, ?max_value: Time?) -> Generators::DatetimesGenerator
+      def date_strings: () -> Generators::DateStringsGenerator
+      def time_strings: () -> Generators::TimeStringsGenerator
+      def datetime_strings: () -> Generators::DatetimeStringsGenerator
+      def durations: (?min_value: Integer, ?max_value: Integer) -> Generators::DurationsGenerator
       def composite: () { (Generators::CompositeGenerator::BlockTestCase) -> untyped } -> Generators::CompositeGenerator
       def deferred: () -> Generators::DeferredGenerator
+      def recursive: (Generator leaf, ?max_depth: Integer, ?max_leaves: Integer) { (Generators::SubtreeGenerator) -> Generator } -> Generators::RecursiveGenerator
     end
   end
 
@@ -360,30 +556,50 @@ module Hegel
 
   module Report
     class Failure
-      def initialize: (test_cases: Integer, discarded: Integer, entries: Array[[:draw, String, untyped] | [:note, untyped]], blob: String?, caveat: String?) -> void
+      def initialize: (test_cases: Integer, discarded: Integer, entries: Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]], blob: String?, caveat: String?) -> void
       def test_cases: () -> Integer
       def discarded: () -> Integer
-      def entries: () -> Array[[:draw, String, untyped] | [:note, untyped]]
+      def entries: () -> Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]]
       def blob: () -> String?
       def caveat: () -> String?
     end
 
-    def self.assign_names: (Array[[:draw, String, untyped] | [:note, untyped]] entries) -> Array[[:draw, String, untyped] | [:note, untyped]]
+    def self.assign_names: (Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]] entries) -> Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]]
     def self.render_failure: (Failure failure) -> String
     def self.render: (Array[Failure] failures) -> String
   end
 
   module Settings
     VERBOSITY_CODES: Hash[Symbol, Integer]
+    NONDETERMINISM_STRICTNESS_CODES: Hash[Symbol, Integer]
+    BACKEND_CODES: Hash[Symbol, Integer]
     PHASE_CODES: Hash[Symbol, Integer]
     HEALTH_CHECK_CODES: Hash[Symbol, Integer]
 
-    def self.apply: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, database: String?, database_key: String?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, report_multiple_failures: bool) -> void
+    def self.apply: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?, report_multiple_failures: bool, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, stop_on_first_failure: bool?, print_blob: bool?, show_statistics: bool?, nondeterminism_strictness: Symbol?, backend: Symbol?) -> void
+    def self.apply_shared: (untyped impl, untyped ctx, untyped settings, test_cases: Integer?, seed: Integer?, derandomize: bool?, verbosity: Symbol?, phases: Array[Symbol]?, suppress_health_check: Array[Symbol]?, stop_on_first_failure: bool?, print_blob: bool?, show_statistics: bool?, nondeterminism_strictness: Symbol?, backend: Symbol?) -> void
+    def self.new_handle: (untyped impl, untyped ctx, String? profile) -> untyped
+    def self.register_profile: (String name, ?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool?, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?impl: untyped) -> nil
+    def self.set_default_profile: (String name, ?impl: untyped) -> nil
     def self.apply_verbosity: (untyped impl, untyped ctx, untyped settings, Symbol verbosity) -> void
     def self.apply_database: (untyped impl, untyped ctx, untyped settings, database: String?, database_key: String?) -> void
     def self.apply_phases: (untyped impl, untyped ctx, untyped settings, Array[Symbol] phases) -> void
     def self.apply_suppress_health_check: (untyped impl, untyped ctx, untyped settings, Array[Symbol] checks) -> void
-    def self.mask_for: (Array[Symbol] values, Hash[Symbol, Integer] codes) -> Integer
+    def self.mask_for: (Array[Symbol] values, Hash[Symbol, Integer] codes, String keyword) -> Integer
+    def self.lookup: (Hash[Symbol, Integer] codes, Symbol value, String keyword) -> Integer
+  end
+
+  class TestLocation
+    BLOCK_PREFIX: Regexp
+    METHOD_LABEL: Regexp
+
+    attr_reader file: String
+    attr_reader begin_line: Integer
+    attr_reader class_name: String
+    attr_reader function: String
+    def self.new: (file: String, begin_line: Integer, class_name: String, function: String) -> TestLocation
+    def self.from_locations: (Array[untyped] locations) -> TestLocation
+    def self.names: (String label, String file, Integer lineno) -> [String, String]
   end
 
   module Runner
@@ -396,8 +612,8 @@ module Hegel
 
     class Capture
       attr_reader exception: Exception
-      attr_reader entries: Array[[:draw, String, untyped] | [:note, untyped]]?
-      def initialize: (Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
+      attr_reader entries: Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]]?
+      def initialize: (Exception exception, Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]]? entries) -> void
     end
 
     class GenerationStats
@@ -406,16 +622,16 @@ module Hegel
       def for: (String? origin) -> [Integer, Integer]
     end
 
-    def self.run: (impl: untyped, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
-    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, reproducing: bool, quiet: bool, output: untyped) { (TestCase) -> void } -> nil
-    def self.drive: (untyped impl, untyped ctx, untyped run, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
-    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc) { (TestCase) -> R } -> R
-    def self.run_case: (untyped impl, untyped ctx, untyped tc, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
-    def self.keep_capture: (Hash[String, Capture] captures, String origin, Exception exception, Array[[:draw, String, untyped] | [:note, untyped]]? entries) -> void
-    def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, output: untyped) -> nil
-    def self.report_failures: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, quiet: bool, output: untyped) -> bot
-    def self.failure_report: (untyped impl, untyped ctx, untyped failure, GenerationStats stats, Hash[String, Capture] captures) -> [Exception, Report::Failure]
-    def self.classify: (TestCase test_case) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped] | [:note, untyped]]?]
+    def self.run: (impl: untyped, test_location: TestLocation, ?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?) { (TestCase) -> void } -> nil
+    def self.run_and_finish: (untyped impl, untyped ctx, untyped run, GrammarCache grammars, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) { (TestCase) -> void } -> nil
+    def self.drive: (untyped impl, untyped ctx, untyped run, GrammarCache grammars, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
+    def self.with_test_case: [R] (untyped impl, untyped ctx, untyped tc, GrammarCache grammars) { (TestCase) -> R } -> R
+    def self.run_case: (untyped impl, untyped ctx, untyped tc, GrammarCache grammars, GenerationStats stats, Hash[String, Capture] captures) { (TestCase) -> void } -> void
+    def self.keep_capture: (Hash[String, Capture] captures, String origin, Exception exception, Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]]? entries) -> void
+    def self.finish: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, reproducing: bool, quiet: bool, print_blob: bool, output: untyped) -> nil
+    def self.report_failures: (untyped impl, untyped ctx, untyped result, GenerationStats stats, Hash[String, Capture] captures, quiet: bool, print_blob: bool, output: untyped) -> bot
+    def self.failure_report: (untyped impl, untyped ctx, untyped failure, GenerationStats stats, Hash[String, Capture] captures, print_blob: bool) -> [Exception, Report::Failure]
+    def self.classify: (TestCase test_case) { (TestCase) -> void } -> [Integer, String?, Exception?, Array[[:draw, String, untyped, Integer] | [:note, untyped, Integer]]?]
     def self.origin_for: (Exception exception) -> String
     def self.infrastructure?: (String path) -> bool
     def self.not_reproduced_message: () -> String
@@ -454,6 +670,8 @@ module Hegel
     HEGEL_E_NOT_COMPLETE: Integer
     HEGEL_E_INTERNAL: Integer
     HEGEL_E_CONCURRENT_USE: Integer
+    HEGEL_E_RETRY: Integer
+    HEGEL_E_NOT_FOUND: Integer
     CODE_NAMES: Hash[Integer, String]
     HEGEL_STATUS_VALID: Integer
     HEGEL_STATUS_INVALID: Integer
@@ -466,6 +684,11 @@ module Hegel
     HEGEL_VERBOSITY_QUIET: Integer
     HEGEL_VERBOSITY_VERBOSE: Integer
     HEGEL_VERBOSITY_DEBUG: Integer
+    HEGEL_NONDETERMINISM_QUIET: Integer
+    HEGEL_NONDETERMINISM_WARN: Integer
+    HEGEL_NONDETERMINISM_ERROR: Integer
+    HEGEL_BACKEND_DEFAULT: Integer
+    HEGEL_BACKEND_URANDOM: Integer
     HEGEL_PHASE_EXPLICIT: Integer
     HEGEL_PHASE_REUSE: Integer
     HEGEL_PHASE_GENERATE: Integer
@@ -496,6 +719,9 @@ module Hegel
       def context_last_error: (untyped ctx) -> String
       def version: (untyped ctx) -> String
       def settings_new: (untyped ctx) -> untyped
+      def settings_new_for_profile: (untyped ctx, String name) -> untyped
+      def settings_register_profile: (untyped ctx, String name, untyped s) -> nil
+      def set_default_profile: (untyped ctx, String name) -> nil
       def settings_free: (untyped ctx, untyped s) -> nil
       def settings_set_test_cases: (untyped ctx, untyped s, Integer n) -> nil
       def settings_set_verbosity: (untyped ctx, untyped s, Integer v) -> nil
@@ -504,8 +730,15 @@ module Hegel
       def settings_set_database: (untyped ctx, untyped s, String? database) -> nil
       def settings_set_report_multiple_failures: (untyped ctx, untyped s, bool yes) -> nil
       def settings_set_database_key: (untyped ctx, untyped s, String? key) -> nil
+      def settings_set_test_location: (untyped ctx, untyped s, String file, Integer begin_line, String class_name, String function) -> nil
       def settings_set_phases: (untyped ctx, untyped s, Integer phases) -> nil
       def settings_set_suppress_health_check: (untyped ctx, untyped s, Integer checks) -> nil
+      def settings_set_stop_on_first_failure: (untyped ctx, untyped s, bool yes) -> nil
+      def settings_set_print_blob: (untyped ctx, untyped s, bool yes) -> nil
+      def settings_get_print_blob: (untyped ctx, untyped s) -> bool
+      def settings_set_show_statistics: (untyped ctx, untyped s, bool yes) -> nil
+      def settings_set_nondeterminism_strictness: (untyped ctx, untyped s, Integer strictness) -> nil
+      def settings_set_backend: (untyped ctx, untyped s, Integer backend) -> nil
       def run_start: (untyped ctx, untyped settings) -> untyped
       def run_start_blob: (untyped ctx, untyped settings, String blob) -> untyped
       def test_case_should_capture: (untyped ctx, untyped tc) -> bool
@@ -514,6 +747,8 @@ module Hegel
       def test_case_free: (untyped ctx, untyped tc) -> nil
       def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin) -> nil
       def target: (untyped ctx, untyped tc, Float value, String label) -> nil
+      def event: (untyped ctx, untyped tc, String label) -> nil
+      def event_value: (untyped ctx, untyped tc, String label, Numeric value) -> nil
       def generate_boolean: (untyped ctx, untyped tc, Float p, bool forced, bool has_forced) -> bool
       def generate_integer: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
       def generate_integer_big: (untyped ctx, untyped tc, Integer min_value, Integer max_value) -> Integer
@@ -536,15 +771,22 @@ module Hegel
       def new_pool: (untyped ctx, untyped tc) -> untyped
       def pool_add: (untyped ctx, untyped tc, untyped pool) -> Integer
       def pool_generate: (untyped ctx, untyped tc, untyped pool, bool consume) -> Integer
+      def pool_restore: (untyped ctx, untyped tc, untyped pool, Integer variable_id) -> nil
       def pool_free: (untyped ctx, untyped pool) -> nil
-      def new_state_machine: (untyped ctx, untyped tc, Array[String] rule_names, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
+      def new_state_machine: (untyped ctx, untyped tc, Array[String] rule_names, Array[Float] rule_weights, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
       def state_machine_next_group: (untyped ctx, untyped tc, untyped state_machine) -> Integer
       def state_machine_next_rule: (untyped ctx, untyped tc, untyped state_machine) -> Integer
       def state_machine_rule_rejected: (untyped ctx, untyped tc, untyped state_machine) -> nil
       def state_machine_should_check_invariant: (untyped ctx, untyped tc, untyped state_machine, Integer index) -> bool
       def state_machine_free: (untyped ctx, untyped state_machine) -> nil
+      def new_recursion: (untyped ctx, untyped tc, Integer max_depth, Integer max_leaves) -> untyped
+      def recursion_branch: (untyped ctx, untyped tc, untyped recursion, Integer depth) -> bool
+      def recursion_leaf: (untyped ctx, untyped tc, untyped recursion) -> bool
+      def recursion_retry: (untyped ctx, untyped tc, untyped recursion) -> nil
+      def recursion_finish: (untyped ctx, untyped tc, untyped recursion) -> bool
+      def recursion_free: (untyped ctx, untyped recursion) -> nil
       def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
-      def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer) -> untyped
+      def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) -> untyped
       def string_generator_free: (untyped ctx, untyped generator) -> nil
       def generate_string: (untyped ctx, untyped tc, untyped generator) -> String
       def owned_string_free: (untyped ctx, untyped result) -> nil
@@ -560,6 +802,14 @@ module Hegel
       def generate_date: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
       def generate_time: (untyped ctx, untyped tc, Array[Integer] min_value, Array[Integer] max_value) -> Array[Integer]
       def generate_datetime: (untyped ctx, untyped tc, Array[Integer] min_date, Array[Integer] min_time, Array[Integer] max_date, Array[Integer] max_time) -> [Array[Integer], Array[Integer]]
+      def grammar_builder_new: (untyped ctx, String text) -> untyped
+      def grammar_builder_file: (untyped ctx, untyped builder, Integer index) -> String?
+      def grammar_builder_provide: (untyped ctx, untyped builder, Integer index, String? text) -> nil
+      def grammar_builder_free: (untyped ctx, untyped builder) -> nil
+      def grammar_new: (untyped ctx, untyped builder, String? start, Integer max_size, Integer max_depth, untyped alphabet, Array[String] names) -> untyped
+      def grammar_placeholder: (untyped ctx, untyped grammar, String name) -> String
+      def grammar_free: (untyped ctx, untyped grammar) -> nil
+      def generate_grammar: (untyped ctx, untyped tc, untyped grammar, Integer max_size) -> String
     end
   end
 end

@@ -41,11 +41,22 @@ module Hegel
       large_initial_test_case: LibHegel::HEGEL_HC_LARGE_INITIAL_TEST_CASE
     }.freeze
 
+    NONDETERMINISM_STRICTNESS_CODES = {
+      quiet: LibHegel::HEGEL_NONDETERMINISM_QUIET,
+      warn: LibHegel::HEGEL_NONDETERMINISM_WARN,
+      error: LibHegel::HEGEL_NONDETERMINISM_ERROR
+    }.freeze
+
+    BACKEND_CODES = {
+      default: LibHegel::HEGEL_BACKEND_DEFAULT,
+      urandom: LibHegel::HEGEL_BACKEND_URANDOM
+    }.freeze
+
     module_function
 
     # Applies every one of Hegel.test's settings keywords to +settings+ via
-    # +impl+. +test_cases+, +seed+, +derandomize+, +verbosity+, +phases+, and
-    # +suppress_health_check+ all skip their setter when left nil.
+    # +impl+. Every keyword skips its setter when nil, except
+    # database/database_key and report_multiple_failures (below).
     # +database+/+database_key+ follow #apply_database's own table, called
     # unconditionally since even the nil/nil case has a setter to call (see
     # its comment). +report_multiple_failures+ is called unconditionally too,
@@ -53,26 +64,96 @@ module Hegel
     # it nil, so this method never sees nil for it -- see Hegel::Runner.run's
     # own comment for why that default departs from every other keyword's
     # nil-means-engine-default rule.
-    def apply(impl, ctx, settings, test_cases:, seed:, derandomize:, verbosity:, database:, database_key:, phases:,
-      suppress_health_check:, report_multiple_failures:)
+    def apply(impl, ctx, settings, database:, database_key:, report_multiple_failures:, **keywords)
+      apply_shared(impl, ctx, settings, **keywords)
+      apply_database(impl, ctx, settings, database: database, database_key: database_key)
+      impl.settings_set_report_multiple_failures(ctx, settings, report_multiple_failures)
+    end
+
+    # The keywords a run and a registered profile have in common. The example
+    # database key and report_multiple_failures are left to the callers:
+    # a run always passes the latter, and a profile snapshot carries no key.
+    def apply_shared(impl, ctx, settings, test_cases:, seed:, derandomize:, verbosity:, phases:,
+      suppress_health_check:, stop_on_first_failure:, print_blob:, show_statistics:,
+      nondeterminism_strictness:, backend:)
       impl.settings_set_test_cases(ctx, settings, test_cases) unless test_cases.nil?
       impl.settings_set_seed(ctx, settings, seed, true) unless seed.nil?
       impl.settings_set_derandomize(ctx, settings, derandomize) unless derandomize.nil?
       apply_verbosity(impl, ctx, settings, verbosity) unless verbosity.nil?
-      apply_database(impl, ctx, settings, database: database, database_key: database_key)
       apply_phases(impl, ctx, settings, phases) unless phases.nil?
       apply_suppress_health_check(impl, ctx, settings, suppress_health_check) unless suppress_health_check.nil?
-      impl.settings_set_report_multiple_failures(ctx, settings, report_multiple_failures)
+      unless stop_on_first_failure.nil?
+        impl.settings_set_stop_on_first_failure(ctx, settings, stop_on_first_failure)
+      end
+      impl.settings_set_print_blob(ctx, settings, print_blob) unless print_blob.nil?
+      impl.settings_set_show_statistics(ctx, settings, show_statistics) unless show_statistics.nil?
+      unless nondeterminism_strictness.nil?
+        code = lookup(NONDETERMINISM_STRICTNESS_CODES, nondeterminism_strictness, "nondeterminism_strictness")
+        impl.settings_set_nondeterminism_strictness(ctx, settings, code)
+      end
+      impl.settings_set_backend(ctx, settings, lookup(BACKEND_CODES, backend, "backend")) unless backend.nil?
+    end
+
+    # A settings handle for a run or a profile: from the default profile when
+    # +profile+ is nil, from the named one otherwise.
+    def new_handle(impl, ctx, profile)
+      profile.nil? ? impl.settings_new(ctx) : impl.settings_new_for_profile(ctx, profile)
+    end
+
+    # Registers the settings built from +profile+ (nil: the default profile)
+    # and the keywords as the profile +name+, for the whole process. A later
+    # Hegel.test(profile: name) or set_default_profile(name) starts from them.
+    # Registration is not retroactive and replaces an earlier one of the same
+    # name. The keywords are Hegel.test's, each nil for "leave the starting
+    # value", minus database_key, which the engine leaves out of a snapshot,
+    # and with +database+ passed straight to the engine ("" disables it) and
+    # report_multiple_failures applied only when given: Hegel.test always
+    # passes its own, so a profile's value for that one never reaches a run
+    # (docs/adr/0028).
+    #
+    # The profile table is process-wide state in the engine, not on +impl+'s
+    # context, so a registration made here outlives the context this opens.
+    def register_profile(name, profile: nil, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil,
+      database: nil, phases: nil, suppress_health_check: nil, report_multiple_failures: nil,
+      stop_on_first_failure: nil, print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil,
+      backend: nil, impl: Hegel.default_impl)
+      LibHegel.with_context(impl) do |ctx|
+        settings = new_handle(impl, ctx, profile)
+        begin
+          apply_shared(impl, ctx, settings, test_cases: test_cases, seed: seed, derandomize: derandomize,
+            verbosity: verbosity, phases: phases, suppress_health_check: suppress_health_check,
+            stop_on_first_failure: stop_on_first_failure, print_blob: print_blob, show_statistics: show_statistics,
+            nondeterminism_strictness: nondeterminism_strictness, backend: backend)
+          impl.settings_set_database(ctx, settings, database) unless database.nil?
+          unless report_multiple_failures.nil?
+            impl.settings_set_report_multiple_failures(ctx, settings, report_multiple_failures)
+          end
+          impl.settings_register_profile(ctx, name, settings)
+        ensure
+          impl.settings_free(ctx, settings)
+        end
+      end
+      nil
+    end
+
+    # Makes +name+ the profile a nil +profile+ resolves to, for the whole
+    # process, ahead of HEGEL_DEFAULT_PROFILE and hegel.toml. "" clears it.
+    # The name need not be registered yet.
+    def set_default_profile(name, impl: Hegel.default_impl)
+      LibHegel.with_context(impl) { |ctx| impl.set_default_profile(ctx, name) }
+      nil
     end
 
     # Split from #apply so the VERBOSITY_CODES lookup (one of several
     # keywords that can fail) is not buried inside the top-level sequence.
     def apply_verbosity(impl, ctx, settings, verbosity)
-      code = VERBOSITY_CODES.fetch(verbosity) do
-        raise Hegel::Error,
-          "hegel: unknown verbosity #{verbosity.inspect}; expected one of #{VERBOSITY_CODES.keys.inspect}"
+      impl.settings_set_verbosity(ctx, settings, lookup(VERBOSITY_CODES, verbosity, "verbosity"))
+    end
+
+    def lookup(codes, value, keyword)
+      codes.fetch(value) do
+        raise Hegel::Error, "hegel: unknown #{keyword} #{value.inspect}; expected one of #{codes.keys.inspect}"
       end
-      impl.settings_set_verbosity(ctx, settings, code)
     end
 
     # docs/adr/0009-turn-the-example-database-on-with-a-key.md decides this
@@ -148,12 +229,7 @@ module Hegel
           "hegel: #{keyword} expects one or more of #{codes.keys.inspect}, got an empty Array"
       end
 
-      values.reduce(0) do |mask, value|
-        code = codes.fetch(value) do
-          raise Hegel::Error, "hegel: unknown #{keyword} #{value.inspect}; expected one of #{codes.keys.inspect}"
-        end
-        mask | code
-      end
+      values.reduce(0) { |mask, value| mask | lookup(codes, value, keyword) }
     end
   end
 end

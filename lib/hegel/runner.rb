@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "errors"
+require_relative "grammar_cache"
 require_relative "lib_hegel"
 require_relative "report"
 require_relative "settings"
@@ -97,10 +98,8 @@ module Hegel
 
     module_function
 
-    # Runs +block+ as a Hegel property against +impl+, applying +test_cases+,
-    # +seed+, +derandomize+, +verbosity+, +database+, +database_key+,
-    # +phases+, +suppress_health_check+, and +report_multiple_failures+ (see
-    # Hegel::Settings) to a fresh settings handle first. Returns nil on a
+    # Runs +block+ as a Hegel property against +impl+, applying the
+    # settings keywords (see Hegel::Settings) to a fresh settings handle first. Returns nil on a
     # passing run, re-raises the exception the smallest failing case's body
     # raised on a failing run, and raises Hegel::Error for a run-level
     # failure (ERROR status, a blob that no longer reproduces, or more than
@@ -119,6 +118,13 @@ module Hegel
     # with its class and backtrace intact), so a hegel.toml profile or a
     # HEGEL_* variable does not get to turn it off by accident.
     #
+    # +profile+ names the engine profile the settings start from; nil starts
+    # from the default profile. The keywords apply on top either way, so one
+    # passed explicitly beats the profile's value.
+    #
+    # +test_location+ is a Hegel::TestLocation. It is identity rather than a
+    # setting, so it goes to the engine here and not through Settings.apply.
+    #
     # +reproduce_failure+, when given, starts the run from that blob instead
     # (see LibHegel::Real#run_start_blob): the engine replays it rather than
     # exploring, and the same loop below drives the replay.
@@ -130,16 +136,27 @@ module Hegel
     # `ensure` by the code that opened it, innermost first: hegel_context_free
     # requires every other handle taken from the context to be freed first,
     # and Ruby's GC gives finalizers no ordering guarantee to rely on instead.
-    def run(impl:, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
-      phases: nil, suppress_health_check: nil, report_multiple_failures: false,
+    #
+    # The grammars the run compiled are freed after the run and before the
+    # context (docs/adr/0033).
+    def run(impl:, test_location:, profile: nil, test_cases: nil, seed: nil, derandomize: nil, verbosity: nil, database: nil, database_key: nil,
+      phases: nil, suppress_health_check: nil, report_multiple_failures: false, stop_on_first_failure: nil,
+      print_blob: nil, show_statistics: nil, nondeterminism_strictness: nil, backend: nil,
       output: $stderr, reproduce_failure: nil, &block)
       quiet = verbosity == :quiet
       LibHegel.with_context(impl) do |ctx|
-        settings = impl.settings_new(ctx)
+        settings = Settings.new_handle(impl, ctx, profile)
         run = begin
           Settings.apply(impl, ctx, settings, test_cases: test_cases, seed: seed, derandomize: derandomize,
             verbosity: verbosity, database: database, database_key: database_key, phases: phases,
-            suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures)
+            suppress_health_check: suppress_health_check, report_multiple_failures: report_multiple_failures,
+            stop_on_first_failure: stop_on_first_failure, print_blob: print_blob, show_statistics: show_statistics,
+            nondeterminism_strictness: nondeterminism_strictness, backend: backend)
+          impl.settings_set_test_location(ctx, settings, test_location.file, test_location.begin_line,
+            test_location.class_name, test_location.function)
+          # Read back rather than taken from the keyword, so that a profile
+          # or HEGEL_PRINT_BLOB decides when the keyword is nil.
+          print_blob = impl.settings_get_print_blob(ctx, settings)
           if reproduce_failure
             impl.run_start_blob(ctx, settings, reproduce_failure)
           else
@@ -150,19 +167,26 @@ module Hegel
           # hegel_run_start copies them.
           impl.settings_free(ctx, settings)
         end
-        run_and_finish(impl, ctx, run, reproducing: !reproduce_failure.nil?, quiet: quiet, output: output, &block)
+        grammars = GrammarCache.new
+        begin
+          run_and_finish(impl, ctx, run, grammars, reproducing: !reproduce_failure.nil?, quiet: quiet,
+            print_blob: print_blob, output: output, &block)
+        ensure
+          grammars.free_all(impl, ctx)
+        end
       end
     end
 
     # Drives +run+ and hands its result to #finish.
-    def run_and_finish(impl, ctx, run, reproducing:, quiet:, output:, &block)
+    def run_and_finish(impl, ctx, run, grammars, reproducing:, quiet:, print_blob:, output:, &block)
       stats = GenerationStats.new
       captures = {}
-      drive(impl, ctx, run, stats, captures, &block)
+      drive(impl, ctx, run, grammars, stats, captures, &block)
 
       result = impl.run_result(ctx, run)
       begin
-        finish(impl, ctx, result, stats, captures, reproducing: reproducing, quiet: quiet, output: output)
+        finish(impl, ctx, result, stats, captures, reproducing: reproducing, quiet: quiet, print_blob: print_blob,
+          output: output)
       ensure
         impl.run_result_free(ctx, result)
       end
@@ -182,12 +206,12 @@ module Hegel
     # run configured for 20 test cases whose body rejected nearly every case
     # took 811 to 1847 iterations. +stats+ does its own, different counting
     # -- see GenerationStats above.
-    def drive(impl, ctx, run, stats, captures, &block)
+    def drive(impl, ctx, run, grammars, stats, captures, &block)
       loop do
         tc = impl.next_test_case(ctx, run)
         break if tc.nil?
 
-        run_case(impl, ctx, tc, stats, captures, &block)
+        run_case(impl, ctx, tc, grammars, stats, captures, &block)
       end
     end
 
@@ -207,8 +231,8 @@ module Hegel
     # The case records its draws only when the engine stamped it for
     # capture. The stamp is read in here, inside the `ensure`, so the handle
     # is freed even when reading it raises.
-    def with_test_case(impl, ctx, tc)
-      test_case = TestCase.new(impl, ctx, tc, record: impl.test_case_should_capture(ctx, tc))
+    def with_test_case(impl, ctx, tc, grammars)
+      test_case = TestCase.new(impl, ctx, tc, record: impl.test_case_should_capture(ctx, tc), grammars: grammars)
       yield test_case
     ensure
       begin
@@ -228,8 +252,8 @@ module Hegel
     # and still reaches #with_test_case's own `ensure`, so the handle is
     # freed either way; its owner is this loop, not hegel_run_free (see
     # #run_and_finish's comment above).
-    def run_case(impl, ctx, tc, stats, captures, &block)
-      with_test_case(impl, ctx, tc) do |test_case|
+    def run_case(impl, ctx, tc, grammars, stats, captures, &block)
+      with_test_case(impl, ctx, tc, grammars) do |test_case|
         status, origin, exception, entries = classify(test_case, &block)
         stats.record(status, origin)
         keep_capture(captures, origin, exception, entries) if status == LibHegel::HEGEL_STATUS_INTERESTING
@@ -258,7 +282,7 @@ module Hegel
     # would mean this binding does not recognise a hegel_run_status_t value
     # the loaded engine returned, mirroring how LibHegel.check! names an
     # unrecognised result code instead of silently doing nothing with it.
-    def finish(impl, ctx, result, stats, captures, reproducing:, quiet:, output:)
+    def finish(impl, ctx, result, stats, captures, reproducing:, quiet:, print_blob:, output:)
       status = impl.run_result_status(ctx, result)
       case status
       when LibHegel::HEGEL_RUN_STATUS_PASSED
@@ -266,7 +290,7 @@ module Hegel
       when LibHegel::HEGEL_RUN_STATUS_ERROR
         raise Hegel::Error, impl.run_result_error(ctx, result) || UNKNOWN_RUN_ERROR_MESSAGE
       when LibHegel::HEGEL_RUN_STATUS_FAILED
-        report_failures(impl, ctx, result, stats, captures, quiet: quiet, output: output)
+        report_failures(impl, ctx, result, stats, captures, quiet: quiet, print_blob: print_blob, output: output)
       else
         raise Hegel::Error, "hegel: run finished with an unrecognized status (#{status})"
       end
@@ -286,13 +310,13 @@ module Hegel
     # guard. The report is written before either raise, not after: a host
     # framework that catches the re-raised exception would otherwise read
     # its own output before this one, out of order.
-    def report_failures(impl, ctx, result, stats, captures, quiet:, output:)
+    def report_failures(impl, ctx, result, stats, captures, quiet:, print_blob:, output:)
       exceptions = []
       failures = []
       impl.run_result_failure_count(ctx, result).times do |index|
         failure = impl.run_result_failure(ctx, result, index)
         begin
-          exception, report = failure_report(impl, ctx, failure, stats, captures)
+          exception, report = failure_report(impl, ctx, failure, stats, captures, print_blob: print_blob)
           exceptions << exception
           failures << report
         ensure
@@ -310,13 +334,13 @@ module Hegel
     # case the run produced, so every failure has a capture under its origin.
     # A capture with no entries came from an unstamped case, whose draws
     # went unrecorded, so its report lists no values.
-    def failure_report(impl, ctx, failure, stats, captures)
+    def failure_report(impl, ctx, failure, stats, captures, print_blob:)
       origin = impl.failure_origin(ctx, failure)
       capture = captures.fetch(origin)
       test_cases, discarded = stats.for(origin)
       report = Report::Failure.new(
         test_cases: test_cases, discarded: discarded, entries: capture.entries || [],
-        blob: impl.failure_reproduction_blob(ctx, failure), caveat: impl.failure_caveat(ctx, failure)
+        blob: (impl.failure_reproduction_blob(ctx, failure) if print_blob), caveat: impl.failure_caveat(ctx, failure)
       )
       [capture.exception, report]
     end
@@ -344,10 +368,20 @@ module Hegel
       [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil]
     rescue *Hegel::FATAL_EXCEPTIONS
       raise
-    rescue Hegel::AssumeFailed
+    # A LeafBudgetExceeded gets here only when a body swallowed the
+    # exception that replaced it mid-unwind and then drew again. It is
+    # library control flow, not a property failing, and its attempt never
+    # reached hegel_recursion_retry, so the case is discarded.
+    rescue Hegel::AssumeFailed, Hegel::LeafBudgetExceeded
       [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil]
     rescue Hegel::StopTest
       [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil]
+    rescue Hegel::LoopDone
+      # Hegel::TestCase#repeat ran until the engine stopped it, with no
+      # failure; hegel-rust's run lifecycle maps its LoopDone to VALID too.
+      # .mutineer.yml ignores the mutants of its last two elements by id, for
+      # the reason given at the first VALID above.
+      [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil]
     rescue Exception => e
       [LibHegel::HEGEL_STATUS_INTERESTING, origin_for(e), e, test_case.entries]
     end

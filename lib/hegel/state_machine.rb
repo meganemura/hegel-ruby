@@ -23,6 +23,9 @@ module Hegel
     # class's.
     include Syntax::Methods
 
+    # One declared rule: its block, and its selection weight.
+    Rule = Data.define(:block, :weight)
+
     # One declared invariant: its block, and whether it runs after every
     # round rather than when the engine samples it.
     Invariant = Data.define(:block, :always_run)
@@ -33,8 +36,17 @@ module Hegel
       # instance being tested, and is handed the running Hegel::TestCase as
       # its one argument -- ignored if the block declares no parameter, the
       # ordinary Ruby block rule.
-      def rule(name, &block)
-        declare(:@rules, "rule", name, block)
+      #
+      # +weight+ hints how often the engine picks this rule against the
+      # others: a positive, finite number, 1.0 by default. It is a guide, not
+      # a distribution: the engine enables a random subset of the rules in
+      # each test case, so a rule's frequency also depends on which others
+      # are enabled. The engine rejects a weight that is not finite and
+      # positive when the machine runs.
+      def rule(name, weight: 1.0, &block)
+        raise Hegel::Error, "hegel: rule weight must be a real number, got #{weight.inspect}" unless weight.is_a?(Numeric) && weight.real?
+
+        declare(:@rules, "rule", name, Rule.new(block: block, weight: weight))
       end
 
       # Declares an invariant named +name+, checked before the first rule
@@ -47,9 +59,10 @@ module Hegel
         declare(:@invariants, "invariant", name, Invariant.new(block: block, always_run: always_run))
       end
 
-      # name => block, in declaration order, this class's own declarations
+      # name => Rule, in declaration order, this class's own declarations
       # merged over its ancestors'. Hegel::Stateful.run reads this directly
-      # to build the ordered rule-name list libhegel indexes by position.
+      # to build the ordered rule-name and weight lists libhegel indexes by
+      # position.
       def rule_definitions
         merged_definitions(:@rules, :rule_definitions)
       end

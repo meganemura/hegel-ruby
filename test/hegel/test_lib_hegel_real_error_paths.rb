@@ -34,6 +34,16 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         settings_set_suppress_health_check: -> {
           real.settings_set_suppress_health_check(ctx, nil, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
         },
+        settings_set_stop_on_first_failure: -> { real.settings_set_stop_on_first_failure(ctx, nil, true) },
+        settings_set_print_blob: -> { real.settings_set_print_blob(ctx, nil, true) },
+        settings_get_print_blob: -> { real.settings_get_print_blob(ctx, nil) },
+        settings_set_show_statistics: -> { real.settings_set_show_statistics(ctx, nil, true) },
+        settings_set_nondeterminism_strictness: -> {
+          real.settings_set_nondeterminism_strictness(ctx, nil, Hegel::LibHegel::HEGEL_NONDETERMINISM_QUIET)
+        },
+        settings_set_backend: -> { real.settings_set_backend(ctx, nil, Hegel::LibHegel::HEGEL_BACKEND_DEFAULT) },
+        settings_set_test_location: -> { real.settings_set_test_location(ctx, nil, "f.rb", 1, "C", "m") },
+        settings_register_profile: -> { real.settings_register_profile(ctx, "p", nil) },
         run_start: -> { real.run_start(ctx, nil) }
       }
 
@@ -41,6 +51,28 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         error = assert_raises(Hegel::Error) { call.call }
         assert_includes error.message, "HEGEL_E_INVALID_HANDLE", "#{name} did not report an invalid handle"
       end
+    end
+  end
+
+  # The profile calls validate names rather than handles: an unknown or
+  # reserved name is HEGEL_E_INVALID_ARG.
+  def test_profile_calls_raise_on_a_bad_name
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      calls = {
+        settings_new_for_profile: -> { real.settings_new_for_profile(ctx, "no-such-profile-hegel-ruby") },
+        settings_register_profile: -> { real.settings_register_profile(ctx, "base", settings) },
+        set_default_profile: -> { real.set_default_profile(ctx, "default") }
+      }
+
+      calls.each do |name, call|
+        error = assert_raises(Hegel::Error) { call.call }
+        assert_includes error.message, "HEGEL_E_INVALID_ARG", "#{name} did not report an invalid argument"
+      end
+    ensure
+      real.settings_free(ctx, settings)
     end
   end
 
@@ -71,16 +103,24 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         stop_span: -> { real.stop_span(ctx, nil, false) },
         new_collection: -> { real.new_collection(ctx, nil, 0, 1) },
         new_pool: -> { real.new_pool(ctx, nil) },
-        new_state_machine: -> { real.new_state_machine(ctx, nil, ["a"], [], [], 50) },
+        new_state_machine: -> { real.new_state_machine(ctx, nil, ["a"], [1.0], [], [], 50) },
         generate_string: -> { real.generate_string(ctx, nil, nil) },
         collection_more: -> { real.collection_more(ctx, nil, nil) },
         collection_reject: -> { real.collection_reject(ctx, nil, nil) },
         pool_add: -> { real.pool_add(ctx, nil, nil) },
+        pool_restore: -> { real.pool_restore(ctx, nil, nil, 0) },
         state_machine_next_group: -> { real.state_machine_next_group(ctx, nil, nil) },
         test_case_should_capture: -> { real.test_case_should_capture(ctx, nil) },
         state_machine_next_rule: -> { real.state_machine_next_rule(ctx, nil, nil) },
         state_machine_should_check_invariant: -> { real.state_machine_should_check_invariant(ctx, nil, nil, 0) },
-        state_machine_rule_rejected: -> { real.state_machine_rule_rejected(ctx, nil, nil) }
+        state_machine_rule_rejected: -> { real.state_machine_rule_rejected(ctx, nil, nil) },
+        event: -> { real.event(ctx, nil, "e") },
+        event_value: -> { real.event_value(ctx, nil, "v", 1.0) },
+        new_recursion: -> { real.new_recursion(ctx, nil, 1, 1) },
+        recursion_branch: -> { real.recursion_branch(ctx, nil, nil, 0) },
+        recursion_leaf: -> { real.recursion_leaf(ctx, nil, nil) },
+        recursion_retry: -> { real.recursion_retry(ctx, nil, nil) },
+        recursion_finish: -> { real.recursion_finish(ctx, nil, nil) }
       }
 
       calls.each do |name, call|
@@ -140,6 +180,23 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         real.string_generator_text(ctx, min_size: 1, max_size: 1, codec: "not-a-real-codec")
       end
       assert_includes text_error.message, "HEGEL_E_INVALID_ARG"
+
+      category_error = assert_raises(Hegel::Error) do
+        real.string_generator_text(ctx, min_size: 1, max_size: 1, categories: %w[not-a-category])
+      end
+      assert_includes category_error.message, "HEGEL_E_INVALID_ARG"
+
+      exclude_error = assert_raises(Hegel::Error) do
+        real.string_generator_text(ctx, min_size: 1, max_size: 1, exclude_categories: %w[not-a-category])
+      end
+      assert_includes exclude_error.message, "HEGEL_E_INVALID_ARG"
+
+      empty_error = assert_raises(Hegel::Error) do
+        real.string_generator_text(
+          ctx, min_size: 1, max_size: 1, min_codepoint: 0x30, max_codepoint: 0x30, exclude_characters: "0"
+        )
+      end
+      assert_includes empty_error.message, "HEGEL_E_INVALID_ARG"
 
       regex_error = assert_raises(Hegel::Error) { real.string_generator_regex(ctx, "(", false) }
       assert_includes regex_error.message, "HEGEL_E_INVALID_ARG"

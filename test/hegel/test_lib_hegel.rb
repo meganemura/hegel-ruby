@@ -4,14 +4,17 @@ require "test_helper"
 require "hegel/lib_hegel"
 require "hegel/lib_hegel/real"
 require "support/fake_lib_hegel"
+require "securerandom"
 require "stringio"
 
 class TestLibHegel < Minitest::Test
-  def test_stop_test_and_assume_failed_do_not_inherit_standard_error
+  def test_control_exceptions_do_not_inherit_standard_error
     refute_includes Hegel::StopTest.ancestors, StandardError
     refute_includes Hegel::AssumeFailed.ancestors, StandardError
+    refute_includes Hegel::LoopDone.ancestors, StandardError
     assert_includes Hegel::StopTest.ancestors, Exception
     assert_includes Hegel::AssumeFailed.ancestors, Exception
+    assert_includes Hegel::LoopDone.ancestors, Exception
   end
 
   def test_real_opens_libhegel_and_reports_the_pinned_version
@@ -110,7 +113,8 @@ class TestLibHegel < Minitest::Test
       Hegel::LibHegel::HEGEL_E_ASSUME => Hegel::AssumeFailed,
       Hegel::LibHegel::HEGEL_E_BACKEND => Hegel::Error,
       Hegel::LibHegel::HEGEL_E_INVALID_ARG => Hegel::Error,
-      Hegel::LibHegel::HEGEL_E_CONCURRENT_USE => Hegel::Error
+      Hegel::LibHegel::HEGEL_E_CONCURRENT_USE => Hegel::Error,
+      Hegel::LibHegel::HEGEL_E_RETRY => Hegel::Error
     }.each do |code, klass|
       error = assert_raises(klass) { Hegel::LibHegel.check!(fake, ctx, code) }
       code_name = Hegel::LibHegel::CODE_NAMES.fetch(code)
@@ -632,6 +636,15 @@ class TestLibHegel < Minitest::Test
       assert_nil real.settings_set_seed(ctx, settings, 42, true)
       assert_nil real.settings_set_derandomize(ctx, settings, true)
       assert_nil real.settings_set_database(ctx, settings, "")
+      assert_nil real.settings_set_stop_on_first_failure(ctx, settings, true)
+      assert_nil real.settings_set_show_statistics(ctx, settings, false)
+      assert_nil real.settings_set_nondeterminism_strictness(ctx, settings,
+        Hegel::LibHegel::HEGEL_NONDETERMINISM_QUIET)
+      assert_nil real.settings_set_backend(ctx, settings, Hegel::LibHegel::HEGEL_BACKEND_DEFAULT)
+      assert_nil real.settings_set_print_blob(ctx, settings, false)
+      assert_equal false, real.settings_get_print_blob(ctx, settings)
+      real.settings_set_print_blob(ctx, settings, true)
+      assert_equal true, real.settings_get_print_blob(ctx, settings)
 
       run = real.run_start(ctx, settings)
       real.settings_free(ctx, settings)
@@ -639,7 +652,10 @@ class TestLibHegel < Minitest::Test
       tc = real.next_test_case(ctx, run)
       refute_nil tc
 
-      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [], [], 50)
+      assert_nil real.event(ctx, tc, "e")
+      assert_nil real.event_value(ctx, tc, "v", 1.0)
+
+      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [1.0], [], [], 50)
       real.state_machine_next_group(ctx, tc, state_machine)
       real.state_machine_next_rule(ctx, tc, state_machine)
       assert_nil real.state_machine_rule_rejected(ctx, tc, state_machine)
@@ -963,6 +979,107 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # Draws one string from a text generator built with +options+ against the
+  # real engine. The database is disabled ("") so the run leaves nothing on
+  # disk.
+  def draw_real_text(**options)
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      generator = real.string_generator_text(ctx, **options)
+      begin
+        value = real.generate_string(ctx, tc, generator)
+      ensure
+        real.string_generator_free(ctx, generator)
+      end
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+      value
+    end
+  end
+
+  # Both category arguments are read as an array of hegel_string_t with a
+  # separate count. A draw is free to repeat one character, so each name is
+  # pinned by a range that only it can supply: a binding that packed one name
+  # fewer leaves that range with no character, and the engine rejects it.
+  def test_real_string_generator_text_reads_every_name_in_categories
+    assert_equal "9999", draw_real_text(
+      min_size: 4, max_size: 4, min_codepoint: 0x39, max_codepoint: 0x39, categories: %w[Nd Lu]
+    )
+    assert_equal "AAAA", draw_real_text(
+      min_size: 4, max_size: 4, min_codepoint: 0x41, max_codepoint: 0x41, categories: %w[Nd Lu]
+    )
+  end
+
+  def test_real_string_generator_text_reads_every_name_in_exclude_categories
+    [0x39, 0x41].each do |codepoint|
+      error = assert_raises(Hegel::Error) do
+        draw_real_text(
+          min_size: 4, max_size: 4, min_codepoint: codepoint, max_codepoint: codepoint, exclude_categories: %w[Nd Lu]
+        )
+      end
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+    end
+  end
+
+  def test_real_string_generator_text_excludes_the_named_categories
+    value = draw_real_text(
+      min_size: 5, max_size: 5, min_codepoint: 0x30, max_codepoint: 0x3A, exclude_categories: %w[Nd]
+    )
+
+    assert_equal ":::::", value
+  end
+
+  # nil is NULL, which means no restriction; an empty Array is a non-NULL
+  # pointer with a zero count, which means an empty alphabet. With the
+  # alphabet emptied, only include_characters can supply a character.
+  def test_real_string_generator_text_reads_an_empty_category_list_as_an_empty_alphabet
+    value = draw_real_text(min_size: 40, max_size: 40, categories: [], include_characters: "xyz")
+
+    assert_match(/\A[xyz]+\z/, value)
+    assert_raises(Hegel::Error) { draw_real_text(min_size: 1, max_size: 1, categories: []) }
+  end
+
+  def test_real_string_generator_text_reads_nil_categories_as_no_restriction
+    value = draw_real_text(min_size: 4, max_size: 4, min_codepoint: 0x30, max_codepoint: 0x30)
+
+    assert_equal "0000", value
+  end
+
+  def test_real_string_generator_text_include_characters_reach_the_engine_by_byte_length
+    value = draw_real_text(min_size: 40, max_size: 40, categories: [], include_characters: "é€")
+
+    assert_match(/\A[é€]+\z/, value)
+  end
+
+  def test_real_string_generator_text_exclude_characters_are_removed
+    value = draw_real_text(
+      min_size: 40, max_size: 40, min_codepoint: 0x30, max_codepoint: 0x32, exclude_characters: "01"
+    )
+
+    assert_equal "2" * 40, value
+  end
+
   def test_fake_collection_more_yields_true_the_configured_count_then_false
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
@@ -975,6 +1092,33 @@ class TestLibHegel < Minitest::Test
     assert_equal true, first
     assert_equal true, second
     assert_equal false, third
+  end
+
+  def test_fake_string_generator_text_records_its_options_and_the_handle_it_returned
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    handle = fake.string_generator_text(ctx, min_size: 1, max_size: 2, categories: %w[Lu], include_characters: "x")
+
+    options, recorded = fake.string_generator_text_calls.fetch(0)
+    assert_same handle, recorded
+    assert_equal(
+      {min_size: 1, max_size: 2, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF, categories: %w[Lu],
+       exclude_categories: nil, include_characters: "x", exclude_characters: ""},
+      options
+    )
+  end
+
+  def test_fake_string_generator_regex_records_its_arguments_and_the_handle_it_returned
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    alphabet = Object.new
+
+    handle = fake.string_generator_regex(ctx, "a+", true, alphabet)
+
+    arguments, recorded = fake.string_generator_regex_calls.fetch(0)
+    assert_same handle, recorded
+    assert_equal({pattern: "a+", fullmatch: true, alphabet: alphabet}, arguments)
   end
 
   def test_fake_run_result_status_and_error_return_the_configured_values
@@ -1498,6 +1642,7 @@ class TestLibHegel < Minitest::Test
       assert_nil real.settings_set_suppress_health_check(ctx, settings, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
       assert_nil real.settings_set_report_multiple_failures(ctx, settings, true)
       assert_nil real.settings_set_database_key(ctx, settings, "hegel-ruby-test-key")
+      assert_nil real.settings_set_test_location(ctx, settings, "test/x_test.rb", 7, "XTest", "test_x")
 
       run = real.run_start(ctx, settings)
       real.settings_free(ctx, settings)
@@ -1639,6 +1784,53 @@ class TestLibHegel < Minitest::Test
     end
   end
 
+  # A consuming hegel_pool_generate removes the id until hegel_pool_restore
+  # puts it back, and the engine refuses to restore an id that is not
+  # consumed. The database is disabled ("") so the run leaves nothing on disk.
+  def test_real_pool_restore_makes_a_consumed_id_drawable_again_and_refuses_one_that_is_not_consumed
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 1)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+
+      tc = real.next_test_case(ctx, run)
+      refute_nil tc
+
+      pool = real.new_pool(ctx, tc)
+      id = real.pool_add(ctx, tc, pool)
+
+      assert_equal id, real.pool_generate(ctx, tc, pool, true)
+      assert_raises(Hegel::AssumeFailed) { real.pool_generate(ctx, tc, pool, true) }
+
+      assert_nil real.pool_restore(ctx, tc, pool, id)
+      assert_equal id, real.pool_generate(ctx, tc, pool, true)
+
+      error = assert_raises(Hegel::Error) { real.pool_restore(ctx, tc, pool, id + 1000) }
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+
+      real.pool_free(ctx, pool)
+
+      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+      real.test_case_free(ctx, tc)
+
+      loop do
+        next_tc = real.next_test_case(ctx, run)
+        break if next_tc.nil?
+
+        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
+        real.test_case_free(ctx, next_tc)
+      end
+
+      real.run_free(ctx, run)
+    end
+  end
+
   # hegel_pool_generate on a pool with no variables: the header documents
   # HEGEL_E_ASSUME, and LibHegel.check! already translates that to
   # Hegel::AssumeFailed with no extra code in #pool_generate -- this pins
@@ -1701,7 +1893,7 @@ class TestLibHegel < Minitest::Test
       tc = real.next_test_case(ctx, run)
       refute_nil tc
 
-      state_machine = real.new_state_machine(ctx, tc, ["increment", "decrement"], ["invariant"], [true], 3)
+      state_machine = real.new_state_machine(ctx, tc, ["increment", "decrement"], [1.0, 1.0], ["invariant"], [true], 3)
 
       rejected_once = false
       completed_rounds = 0
@@ -1762,7 +1954,7 @@ class TestLibHegel < Minitest::Test
       refute_nil tc
 
       error = assert_raises(Hegel::Error) do
-        real.new_state_machine(ctx, tc, ["\xFF".b, "good_rule"], [], [], 50)
+        real.new_state_machine(ctx, tc, ["\xFF".b, "good_rule"], [1.0, 1.0], [], [], 50)
       end
       assert_includes error.message, "HEGEL_E_INVALID_ARG"
 
@@ -1802,7 +1994,7 @@ class TestLibHegel < Minitest::Test
       tc = real.next_test_case(ctx, run)
       refute_nil tc
 
-      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [], [], 50)
+      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [1.0], [], [], 50)
       refute_nil state_machine
       real.state_machine_free(ctx, state_machine)
 
@@ -1825,6 +2017,110 @@ class TestLibHegel < Minitest::Test
     real = Hegel::LibHegel::Real.new
     assert_nil real.pool_free(nil, nil)
     assert_nil real.state_machine_free(nil, nil)
+    assert_nil real.recursion_free(nil, nil)
+  end
+
+  # At max_depth 1 a decision at depth 1 is forced to a leaf, so reading the
+  # out-parameter inverted fails here, and over 20 cases the root branches at
+  # least once.
+  def test_real_recursion_branch_leaf_and_finish_answer_booleans
+    real = Hegel::LibHegel::Real.new
+    branched = false
+
+    with_real_test_cases(real, test_cases: 20) do |ctx, tc|
+      recursion = real.new_recursion(ctx, tc, 1, 4)
+      refute_predicate recursion, :null?
+      begin
+        if real.recursion_branch(ctx, tc, recursion, 0)
+          branched = true
+          2.times do
+            assert_equal false, real.recursion_branch(ctx, tc, recursion, 1)
+            assert_equal true, real.recursion_leaf(ctx, tc, recursion)
+          end
+        else
+          assert_equal true, real.recursion_leaf(ctx, tc, recursion)
+        end
+        assert_includes [true, false], real.recursion_finish(ctx, tc, recursion)
+      ensure
+        assert_nil real.recursion_free(ctx, recursion)
+      end
+      Hegel::LibHegel::HEGEL_STATUS_VALID
+    end
+
+    assert branched, "no root decision branched"
+  end
+
+  # With max_leaves 0 every leaf outgrows the budget, so each attempt ends in
+  # HEGEL_E_RETRY until hegel_recursion_retry runs out of attempts and
+  # answers HEGEL_E_ASSUME.
+  def test_real_recursion_leaf_over_budget_retries_until_the_attempts_run_out
+    real = Hegel::LibHegel::Real.new
+
+    with_real_test_cases(real, test_cases: 1) do |ctx, tc|
+      recursion = real.new_recursion(ctx, tc, 0, 0)
+      retries = 0
+      begin
+        assert_raises(Hegel::AssumeFailed) do
+          loop do
+            assert_equal false, real.recursion_branch(ctx, tc, recursion, 0)
+            assert_equal false, real.recursion_leaf(ctx, tc, recursion)
+            assert_nil real.recursion_retry(ctx, tc, recursion)
+            retries += 1
+          end
+        end
+      ensure
+        real.recursion_free(ctx, recursion)
+      end
+      assert_operator retries, :>, 0
+      Hegel::LibHegel::HEGEL_STATUS_INVALID
+    end
+  end
+
+  # Runs a quiet, database-off run of +test_cases+ against +real+, yielding
+  # each case's context and handle; the block answers the status to mark.
+  def with_real_test_cases(real, test_cases:)
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, test_cases)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+      begin
+        loop do
+          tc = real.next_test_case(ctx, run)
+          break if tc.nil?
+
+          begin
+            real.mark_complete(ctx, tc, yield(ctx, tc), nil)
+          ensure
+            real.test_case_free(ctx, tc)
+          end
+        end
+      ensure
+        real.run_free(ctx, run)
+      end
+    end
+  end
+
+  def test_fake_profile_calls_record_their_arguments_and_translate_error_codes
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    refute_nil fake.settings_new_for_profile(ctx, "ci")
+    handle = Object.new
+    assert_nil fake.settings_register_profile(ctx, "mine", handle)
+    assert_nil fake.set_default_profile(ctx, "mine")
+    assert_equal ["ci"], fake.settings_new_for_profile_calls
+    assert_equal [["mine", handle]], fake.settings_register_profile_calls
+    assert_equal ["mine"], fake.set_default_profile_calls
+
+    fake.settings_new_for_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_new_for_profile(ctx, "ci") }
+    fake.settings_register_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_register_profile(ctx, "mine", handle) }
+    fake.set_default_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.set_default_profile(ctx, "mine") }
   end
 
   def test_fake_new_settings_setters_and_target_succeed_by_default
@@ -1835,6 +2131,8 @@ class TestLibHegel < Minitest::Test
     assert_nil fake.settings_set_suppress_health_check(ctx, Object.new, Hegel::LibHegel::HEGEL_HC_TOO_SLOW)
     assert_nil fake.settings_set_report_multiple_failures(ctx, Object.new, true)
     assert_nil fake.settings_set_database_key(ctx, Object.new, "key")
+    assert_nil fake.settings_set_test_location(ctx, Object.new, "f.rb", 1, "C", "m")
+    assert_equal [["f.rb", 1, "C", "m"]], fake.settings_test_location_calls
     assert_nil fake.target(ctx, Object.new, 1.0, "label")
   end
 
@@ -1854,6 +2152,9 @@ class TestLibHegel < Minitest::Test
     fake.settings_set_database_key_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
     assert_raises(Hegel::Error) { fake.settings_set_database_key(ctx, Object.new, "key") }
 
+    fake.settings_set_test_location_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.settings_set_test_location(ctx, Object.new, "f.rb", 1, "C", "m") }
+
     fake.target_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
     assert_raises(Hegel::Error) { fake.target(ctx, Object.new, 1.0, "label") }
   end
@@ -1869,6 +2170,18 @@ class TestLibHegel < Minitest::Test
     assert_equal 7, fake.pool_add(ctx, Object.new, pool)
     assert_equal 7, fake.pool_generate(ctx, Object.new, pool, false)
     assert_nil fake.pool_free(ctx, pool)
+  end
+
+  def test_fake_pool_restore_records_each_id_in_call_order_and_translates_a_configured_error_code
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    assert_nil fake.pool_restore(ctx, Object.new, Object.new, 4)
+    assert_nil fake.pool_restore(ctx, Object.new, Object.new, 2)
+    assert_equal [4, 2], fake.restored_pool_ids
+
+    fake.pool_restore_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.pool_restore(ctx, Object.new, Object.new, 1) }
   end
 
   def test_fake_new_pool_pool_add_and_pool_generate_translate_configured_error_codes
@@ -1888,7 +2201,7 @@ class TestLibHegel < Minitest::Test
   def test_fake_state_machine_calls_return_configured_values_and_state_machine_free_is_a_no_op
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
-    state_machine = fake.new_state_machine(ctx, Object.new, ["a"], [], [], 50)
+    state_machine = fake.new_state_machine(ctx, Object.new, ["a"], [1.0], [], [], 50)
     refute_nil state_machine
 
     assert_equal Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE, fake.state_machine_next_group(ctx, Object.new, state_machine)
@@ -1905,12 +2218,42 @@ class TestLibHegel < Minitest::Test
     assert_nil fake.state_machine_free(ctx, state_machine)
   end
 
+  def test_fake_recursion_calls_answer_their_queues_then_defaults
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.recursion_branch_values = [true]
+    fake.recursion_leaf_codes = [Hegel::LibHegel::HEGEL_E_RETRY]
+    fake.recursion_finish_codes = [Hegel::LibHegel::HEGEL_E_RETRY]
+    fake.recursion_retry_codes = [Hegel::LibHegel::HEGEL_E_ASSUME]
+
+    recursion = fake.new_recursion(ctx, Object.new, 3, 7)
+    assert_equal [[3, 7]], fake.new_recursion_calls
+    assert_equal [true, false], 2.times.map { fake.recursion_branch(ctx, Object.new, recursion, 0) }
+    assert_equal [false, true], 2.times.map { fake.recursion_leaf(ctx, Object.new, recursion) }
+    assert_equal [false, true], 2.times.map { fake.recursion_finish(ctx, Object.new, recursion) }
+    assert_raises(Hegel::AssumeFailed) { fake.recursion_retry(ctx, Object.new, recursion) }
+    assert_nil fake.recursion_retry(ctx, Object.new, recursion)
+    assert_nil fake.recursion_free(ctx, recursion)
+    assert_equal [recursion], fake.freed_recursions
+
+    other = fake.new_recursion(ctx, Object.new, 1, 1)
+    8.times { assert_nil fake.recursion_retry(ctx, Object.new, other) }
+    assert_raises(Hegel::AssumeFailed) { fake.recursion_retry(ctx, Object.new, other) }
+
+    fake.new_recursion_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.new_recursion(ctx, Object.new, 1, 1) }
+    fake.recursion_branch_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.recursion_branch(ctx, Object.new, recursion, 0) }
+    fake.recursion_leaf_codes = [Hegel::LibHegel::HEGEL_E_STOP_TEST]
+    assert_raises(Hegel::StopTest) { fake.recursion_leaf(ctx, Object.new, recursion) }
+  end
+
   def test_fake_state_machine_calls_translate_configured_error_codes
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
 
     fake.new_state_machine_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
-    assert_raises(Hegel::StopTest) { fake.new_state_machine(ctx, Object.new, ["a"], [], [], 50) }
+    assert_raises(Hegel::StopTest) { fake.new_state_machine(ctx, Object.new, ["a"], [1.0], [], [], 50) }
 
     fake.state_machine_next_group_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
     assert_raises(Hegel::StopTest) { fake.state_machine_next_group(ctx, Object.new, Object.new) }
@@ -1951,6 +2294,25 @@ class TestLibHegel < Minitest::Test
   # The engine reads HEGEL_* variables when it builds a settings handle, and
   # rejects a malformed one. The variable is restored afterwards, because
   # every later run in this process reads it too.
+  def test_real_profile_calls_return_a_handle_and_nil_on_a_live_context
+    real = Hegel::LibHegel::Real.new
+    name = "hegel-ruby-bind-#{SecureRandom.hex(4)}"
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new_for_profile(ctx, "development")
+      refute_nil settings
+      refute_predicate settings, :null?
+      assert_nil real.settings_register_profile(ctx, name, settings)
+      real.settings_free(ctx, settings)
+
+      registered = real.settings_new_for_profile(ctx, name)
+      refute_predicate registered, :null?
+      real.settings_free(ctx, registered)
+
+      assert_nil real.set_default_profile(ctx, "")
+    end
+  end
+
   def test_real_settings_new_raises_on_a_malformed_hegel_variable
     real = Hegel::LibHegel::Real.new
     saved = ENV.fetch("HEGEL_TEST_CASES", nil)

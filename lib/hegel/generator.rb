@@ -18,6 +18,41 @@ module Hegel
       raise NotImplementedError, "#{self.class} must implement #do_draw"
     end
 
+    # The span label of one attempt at a filtered draw, shared by every
+    # generator that runs attempts.
+    FILTER_ATTEMPT_LABEL = LibHegel.label_from_name("hegel-ruby.Hegel::Generator.filter_attempt")
+
+    # Draws one value that +predicate+ accepts, the draw behind #filter, which
+    # calls this on its source generator. The default makes up to
+    # Filtered::MAX_ATTEMPTS attempts, each a #do_draw in a span of its own
+    # that closes as discarded when the predicate rejects the value, then
+    # discards the test case (Hegel::AssumeFailed).
+    #
+    # A generator whose draws have effects a rejected value must not keep
+    # overrides this and runs the attempts itself, as
+    # Hegel::Stateful::Pool::ValuesConsumed does. One that only forwards
+    # #do_draw to another generator forwards this too, so that a filter around
+    # it still reaches the other generator's attempts.
+    def do_draw_filtered(tc, predicate)
+      Filtered::MAX_ATTEMPTS.times do
+        # Each variable is set again before it is read, or stays nil, which
+        # acts like false (!nil == !false).
+        # The initializer also shows intent: discard the span when an
+        # exception skips the reassignment.
+        accepted = false # mutineer:disable-line statement_removal
+        value = nil # mutineer:disable-line statement_removal, boolean_literal
+        tc.start_span(FILTER_ATTEMPT_LABEL)
+        begin
+          value = do_draw(tc)
+          accepted = predicate.call(value)
+        ensure
+          tc.stop_span(discard: !accepted)
+        end
+        return value if accepted
+      end
+      raise Hegel::AssumeFailed
+    end
+
     # The span label naming this generator's draws to the engine, which
     # treats two spans with one label as draws of one generator when it
     # shrinks. A generator built from others overrides this and combines
@@ -30,7 +65,7 @@ module Hegel
     # The class name, prefixed with this binding's name as hegel.h asks, to
     # keep clear of the engine's own hegel.<kind> labels.
     def self.label
-      LibHegel.label_from_name("hegel-ruby.#{name}")
+      @label ||= LibHegel.label_from_name("hegel-ruby.#{name}")
     end
 
     # Combines this generator's class label with the labels of +parts+, the
@@ -92,13 +127,17 @@ module Hegel
       end
     end
 
-    # Generator#filter's result. Retries the source generator, each
-    # attempt in its own span, up to MAX_ATTEMPTS times before discarding
-    # the test case (Hegel::AssumeFailed) -- the same budget hegel-rust's
-    # Filtered spends before calling assume(false)
-    # (src/generators/generators.rs), ported here rather than reinvented so
-    # a predicate that (almost) never holds fails the same way in both
-    # bindings.
+    # Generator#filter's result. Hands its predicate to the source
+    # generator's #do_draw_filtered, which makes up to MAX_ATTEMPTS attempts
+    # before discarding the test case (Hegel::AssumeFailed) -- the same
+    # budget hegel-rust's Filtered spends before calling assume(false)
+    # (frontends/rust/src/generators/generators.rs), ported here rather than
+    # reinvented so a predicate that (almost) never holds fails the same way
+    # in both bindings.
+    #
+    # A filter over a filter combines the two predicates into one draw, so
+    # the pair spends MAX_ATTEMPTS attempts between them, not that many per
+    # level.
     #
     # A predicate that never holds does not loop forever: libhegel's own
     # health check aborts a run that discards too many test cases in a
@@ -116,23 +155,11 @@ module Hegel
       attr_reader :label
 
       def do_draw(tc)
-        MAX_ATTEMPTS.times do
-          # Each variable is set again before it is read, or stays nil, which
-          # acts like false (!nil == !false).
-          # The initializer also shows intent: discard the span when an
-          # exception skips the reassignment.
-          accepted = false # mutineer:disable-line statement_removal
-          value = nil # mutineer:disable-line statement_removal, boolean_literal
-          tc.start_span(label)
-          begin
-            value = @source.do_draw(tc)
-            accepted = @block.call(value)
-          ensure
-            tc.stop_span(discard: !accepted)
-          end
-          return value if accepted
-        end
-        raise Hegel::AssumeFailed
+        @source.do_draw_filtered(tc, @block)
+      end
+
+      def do_draw_filtered(tc, predicate)
+        @source.do_draw_filtered(tc, ->(value) { @block.call(value) && predicate.call(value) })
       end
     end
   end

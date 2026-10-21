@@ -18,7 +18,7 @@ recorded, and prints a blob that `Hegel.test(reproduce_failure:)` replays.
 The report comes from the cases the engine stamps for capture during the
 run; see
 [ADR 0019](adr/0019-report-failures-from-the-cases-the-engine-stamps.md).
-The generator layer covers twenty-five generators composing through `map`
+The generator layer covers thirty-four generators composing through `map`
 and `filter`, reachable bare through `Hegel::Syntax::Methods`. A test case
 can discard itself with `tc.assume` or `tc.reject`. A run can be shaped by
 `phases:`, `suppress_health_check:`, `report_multiple_failures:`, and the
@@ -121,6 +121,12 @@ test-case handle, in nested `ensure`s so a failure releasing one cannot skip
 the other. See
 [ADR 0011](adr/0011-let-the-test-case-own-every-pool-drawn-from-it.md).
 
+A compiled grammar outlives the test case that compiled it, since compiling
+costs far more than drawing. `Hegel::Runner.run` keeps the run's grammars
+in a `Hegel::GrammarCache` and frees them after the run and before the
+context. See
+[ADR 0033](adr/0033-cache-compiled-grammars-for-the-length-of-a-run.md).
+
 ## A rule's own control flow
 
 Inside a stateful rule, `tc.assume(false)` means something narrower than it
@@ -134,6 +140,15 @@ exception can be raised inside an open span, which is why
 `Hegel::FATAL_EXCEPTIONS` lives beside the other control exceptions rather
 than beside the run loop: two `rescue Exception` sites need it now, and both
 have to let those four straight through before anything else.
+
+## An abandoned recursive attempt
+
+`recursive` unwinds through open spans on purpose. When an attempt outgrows its leaf budget, `Hegel::TestCase` raises
+`Hegel::LeafBudgetExceeded` and holds it until `hegel_recursion_retry`.
+Meanwhile `stop_span` makes no native call, so the retry can discard the
+spans the attempt opened, and every other call that takes the test-case
+handle raises the held exception again instead of reaching the engine. See
+[ADR 0032](adr/0032-suppress-span-closes-while-an-abandoned-recursion-attempt-unwinds.md).
 
 ## Generator validation happens at draw time
 

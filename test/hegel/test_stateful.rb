@@ -60,8 +60,8 @@ class TestStateful < Minitest::Test
     definitions = RedeclareChildMachine.rule_definitions
 
     assert_equal %w[push pop], definitions.keys
-    assert_equal :child_push, definitions.fetch("push").call
-    assert_equal :base_pop, definitions.fetch("pop").call
+    assert_equal :child_push, definitions.fetch("push").block.call
+    assert_equal :base_pop, definitions.fetch("pop").block.call
   end
 
   class NoRulesMachine < Hegel::StateMachine
@@ -78,6 +78,96 @@ class TestStateful < Minitest::Test
     assert_includes error.message, "no rules"
   end
 
+  # ---- rule weights ----
+
+  class WeightedMachine < Hegel::StateMachine
+    rule(:plain) {}
+    rule(:heavy, weight: 2.5) {}
+    rule(:integral, weight: 3) {}
+  end
+
+  class WeightedChildMachine < WeightedMachine
+    rule(:heavy, weight: 7.0) {}
+    rule(:extra, weight: 0.5) {}
+  end
+
+  def test_a_rule_weighs_one_unless_declared_otherwise
+    weights = WeightedMachine.rule_definitions.transform_values(&:weight)
+
+    assert_equal({"plain" => 1.0, "heavy" => 2.5, "integral" => 3}, weights)
+  end
+
+  def test_a_subclass_keeps_inherited_weights_and_replaces_a_redeclared_one
+    weights = WeightedChildMachine.rule_definitions.transform_values(&:weight)
+
+    assert_equal({"plain" => 1.0, "heavy" => 7.0, "integral" => 3, "extra" => 0.5}, weights)
+  end
+
+  def test_a_weight_that_is_not_a_real_number_raises_at_declaration
+    [nil, "2", Complex(1, 1)].each do |weight|
+      error = assert_raises(Hegel::Error) do
+        Class.new(Hegel::StateMachine) { rule(:push, weight: weight) {} }
+      end
+
+      assert_includes error.message, "rule weight must be a real number"
+      assert_includes error.message, weight.inspect
+    end
+  end
+
+  def test_the_engine_is_given_one_weight_per_rule_in_declaration_order
+    fake = stateful_recording_fake([0])
+
+    Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(WeightedMachine.new, tc) }
+
+    assert_equal [[1.0, 2.5, 3]], fake.state_machine_rule_weights
+  end
+
+  def test_a_machine_with_fractional_and_integral_weights_runs
+    Hegel.test(test_cases: 5, verbosity: :quiet) { |tc| Hegel::Stateful.run(WeightedMachine.new, tc) }
+  end
+
+  class LopsidedMachine < Hegel::StateMachine
+    class << self
+      attr_accessor :cases
+    end
+
+    def initialize
+      self.class.cases << [0, 0]
+    end
+
+    rule(:heavy, weight: 50) { self.class.cases.last[0] += 1 }
+    rule(:light) { self.class.cases.last[1] += 1 }
+  end
+
+  # Swarm testing leaves one of the two rules out of about half the cases, so
+  # no aggregate ratio means anything. A case where both ran shows the
+  # weighting itself.
+  def test_a_heavier_rule_is_chosen_more_often
+    LopsidedMachine.cases = []
+
+    Hegel.test(test_cases: 100, derandomize: true) do |tc|
+      Hegel::Stateful.run(LopsidedMachine.new, tc)
+    end
+
+    assert LopsidedMachine.cases.any? { |heavy, light| light > 0 && heavy >= 30 * light },
+      "no case ran both rules with the weight-50 rule dominating: #{LopsidedMachine.cases.inspect}"
+  end
+
+  def test_a_weight_that_is_not_finite_and_positive_reaches_the_caller_as_the_engines_error
+    [0.0, -2.0, Float::NAN, Float::INFINITY].each do |weight|
+      machine = Class.new(Hegel::StateMachine) do
+        rule(:fine) {}
+        rule(:bad, weight: weight) {}
+      end
+
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(test_cases: 1, verbosity: :quiet) { |tc| Hegel::Stateful.run(machine.new, tc) }
+      end
+
+      assert_includes error.message, "rule weights must be finite and positive, but rule 1 (bad) has weight"
+    end
+  end
+
   class GeneratorMachine < Hegel::StateMachine
     attr_reader :built
 
@@ -91,7 +181,7 @@ class TestStateful < Minitest::Test
   # Hegel::Stateful.run itself invokes one, without opening the engine.
   def test_generator_methods_are_callable_bare_inside_a_rule_block
     machine = GeneratorMachine.new
-    machine.instance_exec(nil, &GeneratorMachine.rule_definitions.fetch("build"))
+    machine.instance_exec(nil, &GeneratorMachine.rule_definitions.fetch("build").block)
 
     assert_kind_of Hegel::Generators::IntegerGenerator, machine.built
   end
@@ -630,6 +720,255 @@ class TestStateful < Minitest::Test
     assert_operator reject_counter[0], :>, 0,
       "the empty-pool draw never ran, so this run does not test what it claims"
     assert_includes output.string, "(0 discarded)"
+  end
+
+  # ---- filtered draws from a consuming pool ----
+
+  def pool_of(tc, values)
+    Hegel::Stateful::Pool.new(tc).tap { |pool| values.each { |value| pool.add(value) } }
+  end
+
+  def drain(pool, tc)
+    drawn = []
+    drawn << tc.draw(pool.values_consumed) until pool.empty?
+    drawn.sort
+  end
+
+  def test_a_filter_on_values_consumed_keeps_the_values_it_rejected_in_the_pool
+    Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+      pool = pool_of(tc, 0..9)
+      even = tc.draw(pool.values_consumed.filter(&:even?))
+
+      raise "drew #{even}, which the filter rejects" unless even.even?
+      raise "expected 9 values left, got #{pool.size}" unless pool.size == 9
+
+      rest = drain(pool, tc)
+      raise "expected the other nine values, got #{rest}" unless rest == (0..9).to_a - [even]
+    end
+  end
+
+  def test_nested_filters_on_values_consumed_keep_the_values_they_rejected
+    Hegel.test(test_cases: 20, verbosity: :quiet, suppress_health_check: [:filter_too_much]) do |tc|
+      pool = pool_of(tc, 0..9)
+      large_even = tc.draw(pool.values_consumed.filter(&:even?).filter { |value| value >= 4 })
+
+      raise "drew #{large_even}, which a filter rejects" unless large_even.even? && large_even >= 4
+
+      rest = drain(pool, tc)
+      raise "expected the other nine values, got #{rest}" unless rest == (0..9).to_a - [large_even]
+    end
+  end
+
+  # Mapped does not forward #do_draw_filtered, so the filter runs its own
+  # attempts over the mapped draw and a rejected value stays consumed.
+  def test_a_filter_over_a_map_of_values_consumed_loses_the_values_it_rejected
+    Hegel.test(test_cases: 20, verbosity: :quiet, suppress_health_check: [:filter_too_much]) do |tc|
+      pool = pool_of(tc, 0..9)
+      doubled = tc.draw(pool.values_consumed.map { |value| value * 2 }.filter { |value| (value % 4).zero? })
+
+      rest = drain(pool, tc)
+      raise "#{doubled / 2} was drawn, so it must not come back" if rest.include?(doubled / 2)
+      raise "expected at most nine values left, got #{rest.size}" if rest.size > 9
+    end
+  end
+
+  def test_a_filter_that_rejects_every_value_leaves_the_pool_whole_and_discards_the_case
+    Hegel.test(test_cases: 5, verbosity: :quiet, suppress_health_check: [:filter_too_much]) do |tc|
+      pool = pool_of(tc, 0..1)
+      begin
+        tc.draw(pool.values_consumed.filter { false })
+        raise "a filter that rejects everything returned a value"
+      rescue Hegel::AssumeFailed
+        nil
+      end
+
+      rest = drain(pool, tc)
+      raise "expected both values back, got #{rest}" unless rest == [0, 1]
+    end
+  end
+
+  class FilteringConsumerMachine < Hegel::StateMachine
+    def initialize(tc)
+      @numbers = Hegel::Stateful::Pool.new(tc)
+      2.times { |value| @numbers.add(value) }
+      @taken = 0
+    end
+
+    rule(:take_nothing) do |tc|
+      tc.draw(@numbers.values_consumed.filter { false })
+      raise "the filter accepts nothing"
+    end
+
+    rule(:take_zero) do |tc|
+      value = tc.draw(@numbers.values_consumed)
+      @taken += 1
+      tc.assume(value.zero?)
+    end
+
+    invariant(:rejected_rules_leave_the_pool_as_they_found_it) do |_tc|
+      raise "pool holds #{@numbers.size}, expected #{2 - @taken}" unless @numbers.size == 2 - @taken
+    end
+  end
+
+  def test_a_rejected_rule_keeps_what_it_consumed_and_puts_back_what_it_filtered
+    Hegel.test(test_cases: 20, verbosity: :quiet, suppress_health_check: [:filter_too_much]) do |tc|
+      Hegel::Stateful.run(FilteringConsumerMachine.new(tc), tc, step_count: 6)
+    end
+  end
+
+  # Ids 10, 11, ... are what #pool_add hands out, and +generated_ids+ is what
+  # #pool_generate answers in turn, so a test sees which ids an attempt drew.
+  class PoolScriptFake < Hegel::LibHegel::Fake
+    attr_reader :generate_calls, :spans
+
+    def initialize(generated_ids)
+      super()
+      @generated_ids = generated_ids.dup
+      @next_id = 10
+      @generate_calls = 0
+      @spans = []
+      self.test_case_count = 1
+    end
+
+    def pool_add(_ctx, _tc, _pool)
+      @next_id += 1
+      @next_id - 1
+    end
+
+    def pool_generate(_ctx, _tc, _pool, _consume)
+      @generate_calls += 1
+      @generated_ids.shift
+    end
+
+    def start_span(ctx, tc, label)
+      @spans << [:start, label]
+      super
+    end
+
+    def stop_span(ctx, tc, discard)
+      @spans << [:stop, discard]
+      super
+    end
+  end
+
+  ATTEMPT = [:start, Hegel::Generator::FILTER_ATTEMPT_LABEL].freeze
+
+  # Runs one filtered draw from a pool of +count+ values 0, 1, ... against
+  # +fake+, and returns what the draw produced or raised, with the pool.
+  def filtered_consumed_draw(fake, count, &predicate)
+    outcome = pool = nil
+    Hegel.test(impl: fake) do |tc|
+      pool = pool_of(tc, 0...count)
+      outcome = tc.draw(pool.values_consumed.filter(&predicate))
+    rescue Hegel::AssumeFailed, RuntimeError, Interrupt => e
+      outcome = e
+    end
+    [outcome, pool]
+  end
+
+  def test_rejected_ids_are_restored_in_the_order_they_were_drawn
+    fake = PoolScriptFake.new([12, 10, 11])
+
+    outcome, pool = filtered_consumed_draw(fake, 3) { false }
+
+    assert_instance_of Hegel::AssumeFailed, outcome
+    assert_equal [12, 10, 11], fake.restored_pool_ids
+    assert_equal 3, pool.size
+  end
+
+  def test_a_filtered_draw_makes_three_attempts_at_most
+    fake = PoolScriptFake.new([10, 11, 12, 13])
+
+    filtered_consumed_draw(fake, 5) { false }
+
+    assert_equal 3, fake.generate_calls
+    assert_equal [10, 11, 12], fake.restored_pool_ids
+  end
+
+  def test_a_filtered_draw_stops_once_every_value_left_was_rejected
+    fake = PoolScriptFake.new([10, 11, 12])
+
+    filtered_consumed_draw(fake, 2) { false }
+
+    assert_equal 2, fake.generate_calls
+    assert_equal [10, 11], fake.restored_pool_ids
+  end
+
+  def test_a_filtered_draw_over_an_empty_pool_draws_nothing_and_discards
+    fake = PoolScriptFake.new([])
+
+    outcome, = filtered_consumed_draw(fake, 0) { true }
+
+    assert_instance_of Hegel::AssumeFailed, outcome
+    assert_equal 0, fake.generate_calls
+  end
+
+  def test_an_accepted_value_is_removed_and_only_the_values_rejected_before_it_are_restored
+    fake = PoolScriptFake.new([10, 11])
+
+    outcome, pool = filtered_consumed_draw(fake, 3) { |value| value == 1 }
+
+    assert_equal 1, outcome
+    assert_equal [10], fake.restored_pool_ids
+    assert_equal 2, pool.size
+  end
+
+  def test_each_attempt_is_a_span_discarded_when_the_value_is_rejected
+    fake = PoolScriptFake.new([10, 11])
+
+    filtered_consumed_draw(fake, 3) { |value| value == 1 }
+
+    assert_equal [ATTEMPT, [:stop, true], ATTEMPT, [:stop, false]], fake.spans
+  end
+
+  def test_a_predicate_that_raises_still_has_its_ids_restored_and_its_span_discarded
+    fake = PoolScriptFake.new([10, 11])
+    calls = 0
+
+    outcome, = filtered_consumed_draw(fake, 3) do |_value|
+      calls += 1
+      raise "boom" if calls == 2
+
+      false
+    end
+
+    assert_equal "boom", outcome.message
+    assert_equal [10, 11], fake.restored_pool_ids
+    assert_equal [ATTEMPT, [:stop, true], ATTEMPT, [:stop, true]], fake.spans
+  end
+
+  def test_a_fatal_exception_from_the_predicate_restores_nothing
+    fake = PoolScriptFake.new([10, 11])
+    calls = 0
+
+    outcome, = filtered_consumed_draw(fake, 3) do |_value|
+      calls += 1
+      raise Interrupt if calls == 2
+
+      false
+    end
+
+    assert_instance_of Interrupt, outcome
+    assert_empty fake.restored_pool_ids
+  end
+
+  def test_nested_filters_over_values_consumed_share_three_attempts_and_apply_the_inner_predicate_first
+    fake = PoolScriptFake.new([10, 11, 12, 13])
+    seen = []
+
+    Hegel.test(impl: fake) do |tc|
+      pool = pool_of(tc, 0...5)
+      generator = pool.values_consumed
+        .filter { |value| (seen << [:inner, value]) && value.odd? }
+        .filter { |value| (seen << [:outer, value]) && false }
+      tc.draw(generator)
+    rescue Hegel::AssumeFailed
+      nil
+    end
+
+    assert_equal [[:inner, 0], [:inner, 1], [:outer, 1], [:inner, 2]], seen
+    assert_equal 3, fake.generate_calls
+    assert_equal [10, 11, 12], fake.restored_pool_ids
   end
 
   # One pool, two rules: alloc adds a fresh handle, free draws one back out.

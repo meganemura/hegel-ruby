@@ -2,8 +2,10 @@
 
 require "date"
 require "ipaddr"
+require "pathname"
 require_relative "errors"
 require_relative "generator"
+require_relative "grammar_cache"
 require_relative "lib_hegel"
 
 module Hegel
@@ -84,21 +86,26 @@ module Hegel
     #
     # The two checks below come with those defaults: hegel-rust and
     # hegel-go each raise on the same two combinations, and the messages
-    # here carry the substring theirs do. smallest_nonzero_magnitude and
-    # allow_subnormal, which hegel-rust also exposes, stay unexposed; a
-    # keyword can be added later without breaking a caller.
+    # here carry the substring theirs do.
+    #
+    # allow_subnormal is three-valued too. nil allows subnormals whenever
+    # the bounds admit one, as hegel-rust's does, and the keyword maps to
+    # hegel_generate_float's smallest_nonzero_magnitude: the smallest
+    # subnormal when allowed, the smallest normal otherwise.
     class FloatGenerator < Generator
       # hegel_generate_float's width; Ruby has one Float type, the 64-bit
       # IEEE 754 double, so this is never anything else.
       WIDTH = 64
 
-      def initialize(min_value:, max_value:, allow_nan:, allow_infinity:, exclude_min:, exclude_max:)
+      def initialize(min_value:, max_value:, allow_nan:, allow_infinity:, exclude_min:, exclude_max:,
+        allow_subnormal:)
         @min_value = min_value
         @max_value = max_value
         @allow_nan = allow_nan
         @allow_infinity = allow_infinity
         @exclude_min = exclude_min
         @exclude_max = exclude_max
+        @allow_subnormal = allow_subnormal
       end
 
       def do_draw(tc)
@@ -122,23 +129,125 @@ module Hegel
           WIDTH, min_value, max_value,
           allow_nan: allow_nan, allow_infinity: allow_infinity,
           exclude_min: @exclude_min, exclude_max: @exclude_max,
-          smallest_nonzero_magnitude: LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+          smallest_nonzero_magnitude: smallest_nonzero_magnitude
         )
+      end
+
+      private
+
+      def smallest_nonzero_magnitude
+        allow_subnormal = @allow_subnormal.nil? ? subnormal_default : @allow_subnormal
+        if allow_subnormal
+          if !@min_value.nil? && @min_value >= Float::MIN
+            raise Hegel::Error, "floats: InvalidArgument: allow_subnormal=true, but min_value excludes " \
+              "all values below the smallest positive normal #{Float::MIN}"
+          end
+          if !@max_value.nil? && @max_value <= -Float::MIN
+            raise Hegel::Error, "floats: InvalidArgument: allow_subnormal=true, but max_value excludes " \
+              "all values above the smallest negative normal -#{Float::MIN}"
+          end
+
+          LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+        else
+          if only_subnormals_between_bounds?
+            raise Hegel::Error, "floats: InvalidArgument: allow_subnormal=false leaves no #{WIDTH}-bit " \
+              "floating-point values in [#{@min_value}, #{@max_value}]"
+          end
+
+          Float::MIN
+        end
+      end
+
+      def only_subnormals_between_bounds?
+        return false if @min_value.nil? || @max_value.nil? || 0.0.between?(@min_value, @max_value)
+
+        @max_value < Float::MIN && @min_value > -Float::MIN
+      end
+
+      def subnormal_default
+        (@min_value.nil? || @min_value < Float::MIN) && (@max_value.nil? || @max_value > -Float::MIN)
+      end
+    end
+
+    # The codecs hegel_string_generator_text accepts. Checked here as well so
+    # the message matches hegel-rust's, which rejects an unknown codec before
+    # the engine sees it.
+    CODECS = %w[ascii latin-1 iso-8859-1 utf-8].freeze
+
+    # The categories that contain surrogate codepoints. hegel-rust rejects
+    # them in +categories+ because its strings cannot hold a surrogate.
+    SURROGATE_CATEGORIES = %w[Cs C].freeze
+
+    # Hegel::Syntax::Methods#characters. A String of exactly one character.
+    # It also carries the alphabet options that TextGenerator and
+    # FromRegexGenerator share, so all three build their text handle from the
+    # same arguments.
+    class CharactersGenerator < Generator
+      def initialize(codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil,
+        include_characters: nil, exclude_characters: nil)
+        @options = {
+          codec: codec, min_codepoint: min_codepoint, max_codepoint: max_codepoint, categories: categories,
+          exclude_categories: exclude_categories, include_characters: include_characters,
+          exclude_characters: exclude_characters
+        }.freeze
+      end
+
+      # The alphabet options as given, nil for each one left out.
+      attr_reader :options
+
+      def do_draw(tc)
+        with_alphabet(tc, "characters", 1, 1) { |generator| tc.generate_string(generator) }
+      end
+
+      # Whether any alphabet option was passed, which TextGenerator needs to
+      # refuse an +alphabet+ given beside one.
+      def options_given?
+        @options.each_value.any? { |value| !value.nil? }
+      end
+
+      # Yields a text handle over this alphabet for strings of
+      # [min_size, max_size] characters, freed when the block returns.
+      # +name+ is the factory method whose draw this is, for the messages.
+      def with_alphabet(tc, name, min_size, max_size, &block)
+        tc.with_text_generator(min_size: min_size, max_size: max_size, **engine_options(name), &block)
+      end
+
+      private
+
+      def engine_options(name)
+        codec = @options[:codec]
+        raise Hegel::Error, "#{name}: invalid codec: #{codec}" if codec && !CODECS.include?(codec)
+
+        categories = @options[:categories]
+        exclude_categories = @options[:exclude_categories]
+        if categories
+          surrogate = categories.find { |category| SURROGATE_CATEGORIES.include?(category) }
+          if surrogate
+            raise Hegel::Error,
+              "#{name}: Category \"#{surrogate}\" includes surrogate codepoints (Cs), " \
+              "which a valid UTF-8 String cannot hold."
+          end
+          # hegel-rust drops exclude_categories when categories is given.
+          exclude_categories = nil
+        end
+        @options.merge(categories: categories, exclude_categories: exclude_categories).compact
       end
     end
 
     # Hegel::Syntax::Methods#text. A Unicode string of [min_size, max_size]
-    # characters, at most 100 by default.
+    # characters, at most 100 by default. +alphabet+ is a String of the
+    # permitted characters, and cannot be combined with any of the character
+    # options.
     class TextGenerator < Generator
-      def initialize(min_size:, max_size:, codec:, min_codepoint:, max_codepoint:)
+      def initialize(min_size:, max_size:, alphabet: nil, **character_options)
         @min_size = min_size
         @max_size = max_size
-        @codec = codec
-        @min_codepoint = min_codepoint
-        @max_codepoint = max_codepoint
+        @alphabet = alphabet
+        @characters = CharactersGenerator.new(**character_options)
       end
 
       def do_draw(tc)
+        alphabet = alphabet_generator
         max_size = @max_size || Generators.default_max_size(@min_size)
         raise Hegel::Error, "text: max_size < min_size" if max_size < @min_size
 
@@ -153,20 +262,33 @@ module Hegel
         # free at a fixed, known scope exit; Ruby has no equivalent
         # lifetime to hang a cache on, so this pays the alphabet-building
         # cost every draw instead.
-        tc.with_text_generator(
-          min_size: @min_size, max_size: max_size, codec: @codec,
-          min_codepoint: @min_codepoint || 0, max_codepoint: @max_codepoint || 0xFFFFFFFF
-        ) { |generator| tc.generate_string(generator) }
+        alphabet.with_alphabet(tc, "text", @min_size, max_size) { |generator| tc.generate_string(generator) }
+      end
+
+      private
+
+      def alphabet_generator
+        return @characters if @alphabet.nil?
+
+        raise Hegel::Error, "text: alphabet must be a String, not a #{@alphabet.class}" unless @alphabet.is_a?(String)
+
+        raise Hegel::Error, "text: Cannot combine .alphabet() with character methods." if @characters.options_given?
+
+        CharactersGenerator.new(categories: [], include_characters: @alphabet)
       end
     end
 
     # Hegel::Syntax::Methods#arrays. An Array of values from +elements+,
-    # with [min_size, max_size] entries, unbounded above by default.
+    # with [min_size, max_size] entries, unbounded above by default. With
+    # +unique+, an element equal to one already drawn is rejected through
+    # #collection_reject, as SetGenerator does, so min_size still counts
+    # distinct elements.
     class ArrayGenerator < Generator
-      def initialize(elements, min_size:, max_size:)
+      def initialize(elements, min_size:, max_size:, unique: false)
         @elements = elements
         @min_size = min_size
         @max_size = max_size
+        @unique = unique
         @label = combined_label(@elements)
       end
 
@@ -198,7 +320,14 @@ module Hegel
         collection = tc.new_collection(@min_size, max_size)
         begin
           result = []
-          result << draw_element(tc) while tc.collection_more(collection)
+          while tc.collection_more(collection)
+            value = draw_element(tc)
+            if @unique && result.include?(value)
+              tc.collection_reject(collection, why: "duplicate element")
+            else
+              result << value
+            end
+          end
           result
         ensure
           tc.collection_free(collection)
@@ -438,23 +567,145 @@ module Hegel
       end
     end
 
-    # Hegel::Syntax::Methods#characters. A String of exactly one character,
-    # sharing TextGenerator's own alphabet options (codec, min_codepoint,
-    # max_codepoint) by delegating to a TextGenerator built with min_size
-    # and max_size both fixed at 1 -- the same alphabet-building logic,
-    # just bounded to a single character instead of a run of them. Opens
-    # no span of its own for the same reason TextGenerator does not: the
-    # delegated #do_draw is the whole draw, not a composition of several.
-    class CharactersGenerator < Generator
-      def initialize(codec:, min_codepoint:, max_codepoint:)
-        @text = TextGenerator.new(
-          min_size: 1, max_size: 1, codec: codec,
-          min_codepoint: min_codepoint, max_codepoint: max_codepoint
-        )
+    # What permutations, subsequences, and samples share: a draw of distinct
+    # indices into the caller's sequence, and the span around the whole draw.
+    module SequenceDrawing
+      private
+
+      # Raises for a size bound no draw can honour. The max_size check
+      # reads as hegel-rust's does; the negative min_size check has no
+      # hegel-rust counterpart, since a usize cannot be negative.
+      def check_sizes(name, min_size, max_size)
+        raise Hegel::Error, "#{name}: min_size must not be negative" if min_size.negative?
+        raise Hegel::Error, "#{name}: Cannot have max_size < min_size" if max_size && max_size < min_size
+      end
+
+      def with_span(tc)
+        tc.start_span(label)
+        begin
+          yield
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      # Between +min_size+ and +max_size+ (nil, or anything above +size+,
+      # means +size+) distinct indices below +size+, in draw order. Each draw is the index into what is still unchosen, not
+      # into the whole sequence, so the shrinker's smallest value is the
+      # earliest index not yet taken: the minimal sample is 0...min_size in
+      # increasing order.
+      def draw_index_sample(tc, size, min_size, max_size)
+        remaining = (0...size).to_a
+        chosen = []
+        collection = tc.new_collection(min_size, [max_size || size, size].min)
+        begin
+          chosen << remaining.delete_at(tc.generate_integer(0, remaining.size - 1)) while !remaining.empty? && tc.collection_more(collection)
+          chosen
+        ensure
+          tc.collection_free(collection)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#permutations. Every element of +elements+, in an
+    # order the engine picks and shrinks towards the original one.
+    class PermutationsGenerator < Generator
+      include SequenceDrawing
+
+      def initialize(elements)
+        @elements = elements
       end
 
       def do_draw(tc)
-        @text.do_draw(tc)
+        elements = @elements.to_a
+        with_span(tc) do
+          draw_index_sample(tc, elements.size, elements.size, elements.size).map { |index| elements[index] }
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#subsequences. A subset of +elements+ with
+    # [min_size, max_size] entries, in their original order. Duplicate
+    # elements count as distinct.
+    class SubsequencesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize(elements, min_size:, max_size:)
+        @elements = elements
+        @min_size = min_size
+        @max_size = max_size
+      end
+
+      def do_draw(tc)
+        elements = @elements.to_a
+        check_sizes("subsequences", @min_size, @max_size)
+        if @min_size > elements.size
+          raise Hegel::Error,
+            "subsequences: Cannot generate a subsequence: min_size #{@min_size} is larger than " \
+            "the #{elements.size} elements in the sequence"
+        end
+
+        with_span(tc) do
+          indices = draw_index_sample(tc, elements.size, @min_size, @max_size)
+          indices.sort.map { |index| elements[index] }
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#samples. Between min_size and max_size elements
+    # of +elements+, drawn with or without replacement. Without replacement
+    # each element is used at most once, and duplicates in +elements+ count
+    # as distinct. With replacement the size is unbounded unless max_size
+    # bounds it.
+    class SamplesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize(elements, min_size:, max_size:, replacement:)
+        @elements = elements
+        @min_size = min_size
+        @max_size = max_size
+        @replacement = replacement
+      end
+
+      def do_draw(tc)
+        elements = @elements.to_a
+        check_sizes("samples", @min_size, @max_size)
+        validate_for(elements.size)
+
+        with_span(tc) do
+          if @replacement
+            draw_with_replacement(tc, elements)
+          else
+            indices = draw_index_sample(tc, elements.size, @min_size, @max_size)
+            indices.map { |index| elements[index] }
+          end
+        end
+      end
+
+      private
+
+      def validate_for(size)
+        if @replacement
+          if size.zero? && @min_size.positive?
+            raise Hegel::Error, "samples: Cannot generate a non-empty sample from an empty sequence"
+          end
+        elsif @min_size > size
+          raise Hegel::Error,
+            "samples: Cannot generate a sample without replacement: min_size #{@min_size} is larger than " \
+            "the #{size} elements in the sequence"
+        end
+      end
+
+      def draw_with_replacement(tc, elements)
+        max_size = elements.empty? ? 0 : @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+        collection = tc.new_collection(@min_size, max_size)
+        begin
+          result = []
+          result << elements[tc.generate_integer(0, elements.size - 1)] while tc.collection_more(collection)
+          result
+        ensure
+          tc.collection_free(collection)
+        end
       end
     end
 
@@ -498,25 +749,245 @@ module Hegel
     # confirmed a pattern needs no flags and uses only syntax the two
     # grammars share can still pass `my_regexp.source` explicitly.
     #
-    # alphabet is not exposed here: the header's third argument accepts a
-    # text generator to constrain the wildcard/padding characters this
-    # regex can produce. nil, the header's documented "no particular
-    # alphabet" default, is passed in its place: exposing it means deciding
-    # how a Ruby caller writes an alphabet that constrains a Python regex,
-    # and that question is worth answering on its own rather than in
-    # passing here.
+    # +alphabet+ is a CharactersGenerator that constrains every character of
+    # the drawn string, padding included. Its text handle is sized 0..0, so an
+    # alphabet with no characters still builds: the engine then only rejects
+    # a pattern that needs one.
     class FromRegexGenerator < Generator
-      def initialize(pattern, fullmatch:)
+      def initialize(pattern, fullmatch:, alphabet: nil)
         @pattern = pattern
         @fullmatch = fullmatch
+        @alphabet = alphabet
       end
 
       def do_draw(tc)
         unless @pattern.is_a?(String)
           raise Hegel::Error, "from_regex: pattern must be a String in Python re syntax, not a #{@pattern.class}"
         end
+        unless @alphabet.nil? || @alphabet.is_a?(CharactersGenerator)
+          raise Hegel::Error, "from_regex: alphabet must be a characters generator, not a #{@alphabet.class}"
+        end
 
-        tc.with_regex_generator(@pattern, fullmatch: @fullmatch) { |generator| tc.generate_string(generator) }
+        return draw_regex(tc, nil) if @alphabet.nil?
+
+        # Built fresh each draw, like TextGenerator's handle, and freed after
+        # the regex handle that was built from it.
+        @alphabet.with_alphabet(tc, "from_regex", 0, 0) { |alphabet| draw_regex(tc, alphabet) }
+      end
+
+      private
+
+      def draw_regex(tc, alphabet)
+        tc.with_regex_generator(@pattern, fullmatch: @fullmatch, alphabet: alphabet) do |generator|
+          tc.generate_string(generator)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#from_lark. A String that a grammar in Lark's
+    # syntax accepts, ported from hegel-rust's LarkGenerator.
+    #
+    # The compiled grammar lives in the run's Hegel::GrammarCache, under a key
+    # holding everything the compilation reads, so a generator built inside
+    # the test body compiles once per run as well (docs/adr/0033). The key is
+    # built here because a draw writes nothing to the generator (ADR 0020).
+    class FromLarkGenerator < Generator
+      DEFAULT_MAX_SIZE = 8192
+      ATTEMPTS = 3
+      ATTEMPT_LABEL = LibHegel.label_from_name("hegel-ruby.Hegel::Generators::FromLarkGenerator.attempt")
+
+      # The widest values hegel_grammar_new takes, so a larger one reaches
+      # the engine as a value it reports on rather than failing to marshal.
+      MAX_SIZE_LIMIT = (2**64) - 1
+      MAX_DEPTH_LIMIT = (2**32) - 1
+
+      def initialize(grammar, start:, explicit:, alphabet:, max_size:, max_depth:, import_path:)
+        @grammar = frozen(grammar)
+        @start = frozen(start)
+        @explicit = explicit
+        @alphabet = alphabet
+        @max_size = max_size
+        @max_depth = max_depth
+        @import_path = frozen(import_path.is_a?(Pathname) ? import_path.to_s : import_path)
+        names = explicit.keys.map { |name| frozen(name.is_a?(Symbol) ? name.to_s : name) } if explicit.is_a?(Hash)
+        @label = lark_label(names)
+        @key = [
+          @grammar, @start, max_size, max_depth, alphabet.is_a?(CharactersGenerator) ? alphabet.options : alphabet,
+          names, @import_path
+        ].freeze
+      end
+
+      attr_reader :label
+
+      def do_draw(tc)
+        terminals = explicit_terminals
+        names = terminals.map(&:first)
+        tc.with_grammar(@key, -> { compile(tc, names) }) do |compiled|
+          next tc.generate_grammar(compiled.grammar, 0) if terminals.empty?
+
+          tc.start_span(label)
+          begin
+            draw_with_values(tc, compiled, terminals)
+          ensure
+            tc.stop_span(discard: false)
+          end
+        end
+      end
+
+      private
+
+      def frozen(value)
+        value.is_a?(String) ? -value : value
+      end
+
+      # hegel-rust's ingredients: the grammar, the start rule, and each
+      # explicit terminal's name and generator.
+      def lark_label(names)
+        labels = [self.class.label, text_label(@grammar), text_label(@start || "start")]
+        names&.zip(@explicit.values)&.each { |name, generator| labels << text_label(name) << Generator.label_of(generator) }
+        LibHegel.label_combine(labels)
+      end
+
+      def text_label(value)
+        value.is_a?(String) ? LibHegel.label_from_name(value) : 0
+      end
+
+      # The explicit terminals as [name, generator] pairs, once every option
+      # has been checked.
+      def explicit_terminals
+        raise Hegel::Error, "from_lark: grammar must be a String, not a #{@grammar.class}" unless @grammar.is_a?(String)
+        unless @start.nil? || @start.is_a?(String)
+          raise Hegel::Error, "from_lark: start must be a String, not a #{@start.class}"
+        end
+        raise Hegel::Error, "from_lark: max_size must be at least 1" if @max_size && @max_size < 1
+        raise Hegel::Error, "from_lark: max_depth must be at least 1" if @max_depth && @max_depth < 1
+        raise Hegel::Error, "from_lark: explicit must be a Hash, not a #{@explicit.class}" unless @explicit.is_a?(Hash)
+
+        terminals = @explicit.map { |name, generator| explicit_terminal(name, generator) }
+        names = terminals.map(&:first)
+        duplicate = names.find { |name| names.count(name) > 1 }
+        raise Hegel::Error, "from_lark: explicit terminal '#{duplicate}' is given more than one generator" if duplicate
+        unless @alphabet.nil? || @alphabet.is_a?(CharactersGenerator)
+          raise Hegel::Error, "from_lark: alphabet must be a characters generator, not a #{@alphabet.class}"
+        end
+        unless @import_path.nil? || @import_path.is_a?(String)
+          raise Hegel::Error, "from_lark: import_path must be a String or a Pathname, not a #{@import_path.class}"
+        end
+
+        terminals
+      end
+
+      def explicit_terminal(name, generator)
+        unless name.is_a?(String) || name.is_a?(Symbol)
+          raise Hegel::Error, "from_lark: an explicit terminal name must be a String or a Symbol, not a #{name.class}"
+        end
+        unless generator.is_a?(Generator)
+          raise Hegel::Error, "from_lark: explicit terminal '#{name}' must be given a generator, not a #{generator.class}"
+        end
+
+        [name.to_s, generator]
+      end
+
+      def compile(tc, names)
+        return compile_with(tc, names, nil) if @alphabet.nil?
+
+        # Sized 0..0, as hegel-rust builds a grammar's alphabet, and freed
+        # once the grammar is built from it.
+        @alphabet.with_alphabet(tc, "from_lark", 0, 0) { |alphabet| compile_with(tc, names, alphabet) }
+      end
+
+      def compile_with(tc, names, alphabet)
+        builder = tc.grammar_builder_new(@grammar)
+        begin
+          provide_files(tc, builder)
+          grammar = tc.grammar_new(
+            builder, @start, [@max_size || DEFAULT_MAX_SIZE, MAX_SIZE_LIMIT].min, [@max_depth || 0, MAX_DEPTH_LIMIT].min,
+            alphabet, names
+          )
+        ensure
+          tc.grammar_builder_free(builder)
+        end
+        begin
+          GrammarCache::Compiled.new(grammar: grammar, markers: names.map { |name| tc.grammar_placeholder(grammar, name) })
+        rescue
+          tc.grammar_free(grammar)
+          raise
+        end
+      end
+
+      def provide_files(tc, builder)
+        index = 0
+        while (path = tc.grammar_builder_file(builder, index))
+          tc.grammar_builder_provide(builder, index, @import_path && read_import(File.join(@import_path, path)))
+          index += 1
+        end
+      end
+
+      # The text of +file+, or nil when there is no such file, which lets a
+      # bundled grammar stand in for it. hegel-rust reads it the same way.
+      def read_import(file)
+        text = File.binread(file).force_encoding(Encoding::UTF_8)
+        return text if text.valid_encoding?
+
+        raise Hegel::Error, "from_lark: Could not read grammar `#{file}`: stream did not contain valid UTF-8"
+      rescue Errno::ENOENT, Errno::ENOTDIR
+        nil
+      rescue SystemCallError => e
+        raise Hegel::Error, "from_lark: Could not read grammar `#{file}`: #{e.message}"
+      end
+
+      # Draws the grammar's string under a shrinking budget until the string
+      # with its values spliced in fits max_size, or rejects the case, as
+      # hegel-rust does.
+      def draw_with_values(tc, compiled, terminals)
+        max_size = @max_size || DEFAULT_MAX_SIZE
+        pattern = Regexp.union(compiled.markers)
+        budget = max_size
+        ATTEMPTS.times do
+          oversize = false
+          tc.start_span(ATTEMPT_LABEL)
+          begin
+            out, own, markers, size = splice(tc, compiled, pattern, terminals, budget)
+            oversize = size > max_size
+          ensure
+            tc.stop_span(discard: oversize)
+          end
+          return out unless oversize
+
+          budget = [max_size * (own + markers) / size, budget - 1].min.clamp(1..)
+        end
+        tc.reject
+      end
+
+      # The grammar's string with a drawn value in place of each marker, how
+      # many of its characters the grammar drew, how many markers it held,
+      # and how many characters it has. One leftmost pass that does not
+      # rescan a spliced value, as in hegel-rust.
+      def splice(tc, compiled, pattern, terminals, budget)
+        drawn = tc.generate_grammar(compiled.grammar, budget)
+        markers = 0
+        marker_chars = 0
+        value_chars = 0
+        out = drawn.gsub(pattern) do |marker|
+          name, generator = terminals[compiled.markers.index(marker)]
+          value = draw_value(tc, name, generator)
+          markers += 1
+          marker_chars += marker.length
+          value_chars += value.length
+          value
+        end
+        own = drawn.length - marker_chars
+        [out, own, markers, own + value_chars]
+      end
+
+      def draw_value(tc, name, generator)
+        tc.start_span(generator.label)
+        value = generator.do_draw(tc)
+        return value if value.is_a?(String)
+
+        raise Hegel::Error, "from_lark: explicit terminal '#{name}' drew a #{value.class}, not a String"
+      ensure
+        tc.stop_span(discard: false)
       end
     end
 
@@ -777,6 +1248,83 @@ module Hegel
       end
     end
 
+    # Formats a drawn [year, month, day] as hegel-rust's format_date does,
+    # "YYYY-MM-DD" with the year zero-padded to four digits.
+    def self.format_date(date)
+      format("%04d-%02d-%02d", *date)
+    end
+
+    # Formats a drawn [hour, minute, second, nanosecond] as hegel-rust's
+    # format_time does: nine fractional digits, present only when the
+    # nanosecond is not zero.
+    def self.format_time(time)
+      hour, minute, second, nanosecond = time
+      base = format("%02d:%02d:%02d", hour, minute, second)
+      nanosecond.zero? ? base : format("%s.%09d", base, nanosecond)
+    end
+
+    # Hegel::Syntax::Methods#date_strings. A "YYYY-MM-DD" String over the
+    # years 1 through 9999, the range hegel-rust passes. Takes no options,
+    # as in hegel-rust.
+    #
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
+    class DateStringsGenerator < Generator
+      def do_draw(tc)
+        Generators.format_date(tc.generate_date([1, 1, 1], [9999, 12, 31]))
+      end
+    end
+
+    # Hegel::Syntax::Methods#time_strings. An "HH:MM:SS" String over the
+    # whole day, with ".fffffffff" appended when the drawn nanosecond is not
+    # zero. Unlike #times, it keeps the engine's nanoseconds, as hegel-rust
+    # does (see docs/adr/0022).
+    #
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
+    class TimeStringsGenerator < Generator
+      def do_draw(tc)
+        Generators.format_time(tc.generate_time([0, 0, 0, 0], [23, 59, 59, 999_999_999]))
+      end
+    end
+
+    # Hegel::Syntax::Methods#datetime_strings. A "YYYY-MM-DDTHH:MM:SS" String
+    # over years 1 through 9999, formatted as #date_strings and #time_strings
+    # are.
+    #
+    # Opens no span, for the reason UuidsGenerator gives: one native call.
+    class DatetimeStringsGenerator < Generator
+      def do_draw(tc)
+        date, time = tc.generate_datetime([1, 1, 1], [0, 0, 0, 0], [9999, 12, 31], [23, 59, 59, 999_999_999])
+        "#{Generators.format_date(date)}T#{Generators.format_time(time)}"
+      end
+    end
+
+    # Hegel::Syntax::Methods#durations. A span of time as whole nanoseconds
+    # in [min_value, max_value], at most u64::MAX (about 584 years) as in
+    # hegel-rust, whose generator is the model for the two messages below
+    # (docs/adr/0030).
+    class DurationsGenerator < Generator
+      MAX_NANOSECONDS = (2**64) - 1
+
+      def initialize(min_value:, max_value:)
+        @min_value = min_value
+        @max_value = max_value
+      end
+
+      def do_draw(tc)
+        raise Hegel::Error, "durations: min_value must not be negative" if @min_value.negative?
+        if @min_value > MAX_NANOSECONDS
+          raise Hegel::Error, "durations: min_value exceeds the largest generatable Duration " \
+            "(u64::MAX nanoseconds, about 584 years)"
+        end
+
+        # Saturates rather than raises, as hegel-rust's max_value does.
+        max_value = [@max_value, MAX_NANOSECONDS].min
+        raise Hegel::Error, "durations: Cannot have max_value < min_value" if max_value < @min_value
+
+        IntegerGenerator.new(min_value: @min_value, max_value: max_value).do_draw(tc)
+      end
+    end
+
     # Hegel::Syntax::Methods#composite. Builds a generator from imperative
     # code, the way Hypothesis's @composite decorator and hegel-rust's
     # compose!/hegel-go's Composite let a caller assemble one value out of
@@ -900,6 +1448,119 @@ module Hegel
         raise Hegel::Error, "deferred: draw called before set" unless @inner
 
         @inner.do_draw(tc)
+      end
+    end
+
+    # Hegel::Syntax::Methods#recursive. A value built from +leaf+ values by
+    # +branch+, which receives a SubtreeGenerator for the sub-values and
+    # returns a generator combining them. The engine decides every
+    # leaf-or-branch choice and owns the depth and leaf budgets, as
+    # hegel-rust's generators/recursive.rs leaves them to it.
+    class RecursiveGenerator < Generator
+      UINT64_MAX = (2**64) - 1
+
+      def initialize(leaf, max_depth:, max_leaves:, &branch)
+        @leaf = leaf
+        @max_depth = max_depth
+        @max_leaves = max_leaves
+        @branch = branch
+        @label = combined_label(@leaf)
+      end
+
+      attr_reader :label
+
+      def do_draw(tc)
+        raise Hegel::Error, "recursive: block is required" unless @branch
+        raise Hegel::Error, "recursive: leaf must be a generator, got #{@leaf.inspect}" unless @leaf.is_a?(Generator)
+
+        validate_bound("max_depth", @max_depth)
+        validate_bound("max_leaves", @max_leaves)
+
+        tc.start_span(label)
+        begin
+          draw_recursion(tc)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      private
+
+      def validate_bound(name, value)
+        return if value.is_a?(Integer) && value.between?(0, UINT64_MAX)
+
+        raise Hegel::Error, "recursive: #{name} must be an Integer between 0 and 2**64 - 1, got #{value.inspect}"
+      end
+
+      # An attempt abandoned over the leaf budget is retried even when a
+      # body rescued the exception and returned a value instead: that value
+      # was built from draws the engine is about to discard.
+      def draw_recursion(tc)
+        recursion = tc.new_recursion(@max_depth, @max_leaves)
+        begin
+          root = SubtreeGenerator.new(@leaf, @branch, recursion, 0, label)
+          loop do
+            begin
+              value = root.draw_subtree(tc)
+            rescue LeafBudgetExceeded => e
+              raise unless e.recursion.equal?(recursion)
+            end
+            if tc.abandoned_by?(recursion)
+              tc.recursion_retry(recursion)
+            elsif tc.recursion_finish(recursion)
+              return value
+            end
+          end
+        ensure
+          tc.recursion_free(recursion)
+        end
+      end
+    end
+
+    # What a #recursive block receives: a generator of one sub-value, itself
+    # a leaf or a further branch. Every depth shares the recursive
+    # generator's label, which is what lets the shrinker replace a tree with
+    # one of its own subtrees.
+    class SubtreeGenerator < Generator
+      def initialize(leaf, branch, recursion, depth, label)
+        @leaf = leaf
+        @branch = branch
+        @recursion = recursion
+        @depth = depth
+        @label = label
+      end
+
+      attr_reader :label
+
+      def do_draw(tc)
+        if @recursion.freed
+          raise Hegel::Error, "recursive: a subtree generator was drawn outside the draw that made it"
+        end
+
+        tc.start_span(label)
+        begin
+          draw_subtree(tc)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      # Called directly for the root, which needs no span of its own: the
+      # recursive generator's span around it carries the same label. The
+      # leaf and the branch generator get no span here either, unlike
+      # hegel-rust's draw_silent; docs/adr/0032 has the measurement.
+      def draw_subtree(tc)
+        if tc.recursion_branch(@recursion, @depth)
+          generator = @branch.call(SubtreeGenerator.new(@leaf, @branch, @recursion, @depth + 1, label))
+          unless generator.is_a?(Generator)
+            raise Hegel::Error, "recursive: the block must return a generator, got #{generator.inspect}"
+          end
+
+          generator.do_draw(tc)
+        else
+          tc.recursion_leaf(@recursion)
+          @leaf.do_draw(tc)
+        end
       end
     end
   end

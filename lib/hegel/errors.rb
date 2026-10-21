@@ -31,6 +31,30 @@ module Hegel
   # Descends from Exception for the same reason as StopTest above.
   class AssumeFailed < Exception; end
 
+  # Raised for HEGEL_E_RETRY from hegel_recursion_leaf: the attempt at a
+  # recursive value outgrew its leaf budget and must unwind to the
+  # Generators::RecursiveGenerator that owns +recursion+, which retries it.
+  # Internal to this library. See docs/adr/0032.
+  class LeafBudgetExceeded < Exception # :nodoc:
+    attr_reader :recursion
+
+    def initialize(recursion)
+      super("hegel: a recursive draw outgrew its leaf budget; the attempt is retried")
+      @recursion = recursion
+    end
+  end
+
+  # Raised by Hegel::TestCase#repeat when the engine ends its loop: the
+  # repetition ran as long as the engine wanted it to and nothing failed,
+  # so Hegel::Runner.classify reports the case VALID. hegel-rust raises its
+  # own LoopDone at the same point, and its run lifecycle maps it to VALID
+  # the same way.
+  #
+  # Descends from Exception for the same reason as StopTest above: a
+  # `rescue => e` written after the loop must not turn the end of the loop
+  # into ordinary control flow. See docs/adr/0034.
+  class LoopDone < Exception; end
+
   # standard:enable Lint/InheritException
 
   # Say the process is ending, not that a property failed. Every

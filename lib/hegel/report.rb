@@ -13,9 +13,10 @@ module Hegel
     # One failure's rendered ingredients. +test_cases+ and +discarded+ are
     # the generation phase's own counts up to that failure's first
     # appearance (see Hegel::Runner::GenerationStats), not the shrink
-    # phase's. +entries+ is the [:draw, name, value] / [:note, message] list
-    # Hegel::TestCase recorded on the stamped case that produced this
-    # failure, in call order, still un-#inspect'd/un-#to_s'd (see
+    # phase's. +entries+ is the [:draw, name, value, indent] /
+    # [:note, message, indent] list Hegel::TestCase recorded on the stamped
+    # case that produced this failure, in call order, still
+    # un-#inspect'd/un-#to_s'd (see
     # Hegel::TestCase#record_draw and #note for why). +blob+ is the string
     # Hegel.test(reproduce_failure:) accepts to replay this same failure, or
     # nil when the engine produced none. +caveat+ is the engine's own account
@@ -41,10 +42,10 @@ module Hegel
       entries.map do |entry|
         next entry unless entry[0] == :draw
 
-        _tag, name, value = entry
+        _tag, name, value, indent = entry
         if counts[name] > 1
           seen[name] += 1
-          [:draw, "#{name}_#{seen[name]}", value]
+          [:draw, "#{name}_#{seen[name]}", value, indent]
         else
           entry
         end
@@ -60,17 +61,19 @@ module Hegel
     # the same. A :note shares the :draw lines' 2-space indent
     # deliberately: both belong to the same block, and a different indent
     # would read as a different kind of thing instead of the same
-    # call-order list.
+    # call-order list. Each entry's own indent goes on top of those 2
+    # columns, which is how an iteration of Hegel::TestCase#repeat sits
+    # under its "// Repetition #N" line.
     def render_failure(failure)
       cases = "#{failure.test_cases} test #{(failure.test_cases == 1) ? "case" : "cases"}"
       lines = ["Falsified after #{cases} (#{failure.discarded} discarded):", ""]
       assign_names(failure.entries).each do |entry|
         if entry[0] == :draw
-          _tag, name, value = entry
-          lines << "  #{name} = #{value.inspect}"
+          _tag, name, value, indent = entry
+          lines << "  #{" " * indent}#{name} = #{value.inspect}"
         else
-          _tag, message = entry
-          lines << "  #{message}"
+          _tag, message, indent = entry
+          lines << "  #{" " * indent}#{message}"
         end
       end
       lines.push("", "note: #{failure.caveat}") if failure.caveat

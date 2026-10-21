@@ -4,9 +4,9 @@
 
 - [Setup](#setup)
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
-- [Settings](#settings): `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `output:` `reproduce_failure:`
-- [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`
-- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `composite`, `deferred`
+- [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
+- [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `repeat`, `target`, `event`, `event_value`
+- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `from_lark`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations`, `composite`, `deferred`, `recursive`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
 - [Gotchas](#gotchas)
@@ -34,7 +34,7 @@ include Hegel::Syntax::Methods
 ```
 
 `Hegel::Syntax::Methods` makes every generator method (`booleans` through
-`deferred`; see [Generator Reference](#generator-reference)) callable bare,
+`recursive`; see [Generator Reference](#generator-reference)) callable bare,
 the way FactoryBot's own `Syntax::Methods` makes `create` callable bare.
 With Minitest, include it once on the base test class:
 
@@ -142,6 +142,7 @@ the reproduction line.
 
 | Keyword | Type | Default | Purpose |
 |---|---|---|---|
+| `profile` | `String` or `nil` | `nil` (the default profile) | Settings profile the run starts from: `"development"`, `"ci"`, `"workload"`, one in `hegel.toml`, or one from `Hegel::Settings.register_profile`; an unknown name raises `Hegel::Error`; a keyword passed alongside still wins |
 | `test_cases` | `Integer` or `nil` | `nil` (libhegel's own default: 100) | Number of test cases to run |
 | `seed` | `Integer` or `nil` | `nil` (libhegel picks its own) | Fixed RNG seed; pair with `derandomize: true` for a reproducible sequence |
 | `derandomize` | `true`/`false` or `nil` | `nil` (libhegel's own default) | Derive the seed deterministically from the test itself, instead of drawing a random one |
@@ -151,12 +152,19 @@ the reproduction line.
 | `phases` | `Array` of `Symbol` or `nil` | `nil` (libhegel's own default: every phase) | Which run phases to enable: `:explicit`, `:reuse`, `:generate`, `:target`, `:shrink` |
 | `suppress_health_check` | `Array` of `Symbol` or `nil` | `nil` (no suppression) | Which health checks to turn off: `:filter_too_much`, `:too_slow`, `:test_cases_too_large`, `:large_initial_test_case` |
 | `report_multiple_failures` | `true`/`false` | `false` | `true` summarizes every distinct failure into one `Hegel::Error` instead of re-raising a single failure's own exception |
+| `stop_on_first_failure` | `true`/`false` or `nil` | `nil` (libhegel's own default: `true`) | `false` keeps generating after a failure and spends the whole `test_cases` budget before reporting |
+| `print_blob` | `true`/`false` or `nil` | `nil` (libhegel's own default: `true`) | `false` leaves the `reproduce_failure:` line out of the failure report |
+| `show_statistics` | `true`/`false` or `nil` | `nil` (libhegel's own default: `false`) | `true` prints the statistics `event` and `event_value` recorded, on stderr, at the end of the run |
+| `nondeterminism_strictness` | `Symbol` or `nil` | `nil` (libhegel's own default: `:quiet`) | How a run reacts to a test that behaves differently on a replay: `:quiet`, `:warn` (print a notice), or `:error` (raise `Hegel::Error`) |
+| `backend` | `Symbol` or `nil` | `nil` (libhegel's own default: `:default`) | `:urandom` takes fresh entropy on every draw, for Antithesis; `:default` is the seeded generator |
 | `output` | `IO` | `$stderr` | Where a failure report is written |
 | `reproduce_failure` | `String` or `nil` | `nil` | Replays the blob as a run until a replay fails, instead of running a full property |
 
 `nil` means the same thing for `test_cases`, `seed`, `derandomize`,
-`verbosity`, `phases`, and `suppress_health_check`: do not call the matching
-libhegel setter, and let the engine's settings profile decide. That is
+`verbosity`, `phases`, `suppress_health_check`, `stop_on_first_failure`,
+`print_blob`, `show_statistics`, `nondeterminism_strictness`, and `backend`:
+do not call the matching libhegel setter, and let the engine's settings
+profile decide. That is
 libhegel's own default, unless a `hegel.toml` or a `HEGEL_*` environment
 variable (such as `HEGEL_TEST_CASES`) sets the value. On a CI server the
 engine picks its `ci` profile, which derandomizes the run, turns the example
@@ -192,6 +200,21 @@ entirely:
 Hegel.test(phases: []) { |tc| tc.draw(integers) }
 # raises Hegel::Error, "hegel: phases expects one or more of [:explicit,
 # :reuse, :generate, :target, :shrink], got an empty Array"
+```
+
+`Hegel::Settings.register_profile(name, profile: nil, **keywords)` registers
+the settings built from `profile` (default profile when `nil`) and the
+keywords as a profile for the whole process. It takes the keywords above
+except `database_key` (a profile does not carry it), and passes `database:`
+straight to the engine (`""` disables the database). `report_multiple_failures:`
+is applied only when given, and `Hegel.test` overrides it anyway.
+`Hegel::Settings.set_default_profile(name)` makes a profile the default for
+every run in the process, and `""` clears it. Neither changes a run that has
+already started.
+
+```ruby
+Hegel::Settings.register_profile("nightly", profile: "ci", test_cases: 10_000)
+Hegel.test(profile: "nightly") { |tc| ... }
 ```
 
 `report_multiple_failures:` defaults to `false`, and is always passed, so a
@@ -252,7 +275,10 @@ written to it.
 | `assume` | `assume(condition)` | Discard this test case (see `reject`) unless `condition` holds, read as Ruby truthiness |
 | `reject` | `reject` | Discard this test case unconditionally |
 | `note` | `note(message = nil, &block)` | Record `message` (or the block's return value) for the failure report, interleaved with draws in call order |
+| `repeat` | `repeat { ... }` | Run the block again and again, for as many iterations as the engine chooses; never returns unless the block calls `break` |
 | `target` | `target(value, label: "")` | Feed `value` to libhegel's own hill-climbing search between generation rounds |
+| `event` | `event(label)` | Record `label` for the statistics that `show_statistics: true` prints |
+| `event_value` | `event_value(label, value)` | Record a numeric `value` under `label` for the same statistics |
 
 ```ruby
 result = Hegel.test(test_cases: 10, verbosity: :quiet) do |tc|
@@ -356,6 +382,48 @@ To reproduce this failure, pass the blob below to Hegel.test:
     reproduce_failure: "AAEAAAAACgIAAAD1AQ=="
 ```
 
+`repeat` runs its block again and again, for as many iterations as the
+engine chooses, and shrinks a failure toward fewer iterations. State kept
+outside the block carries from one iteration to the next. The report shows
+each iteration as a `// Repetition #N` line, with what the iteration drew or
+noted indented under it:
+
+```ruby
+output = StringIO.new
+begin
+  Hegel.test(output: output, seed: 1, derandomize: true) do |tc|
+    stack = []
+    tc.repeat do
+      n = tc.draw(integers(min_value: 0, max_value: 10))
+      stack.push(n)
+      raise "stack sum too big: #{stack.sum}" if stack.sum > 10
+    end
+  end
+rescue => e
+  e.message # => "stack sum too big: 11"
+end
+output.string
+```
+
+```
+Falsified after 2 test cases (0 discarded):
+
+  // Repetition #1
+    n_1 = 1
+  // Repetition #2
+    n_2 = 10
+
+To reproduce this failure, pass the blob below to Hegel.test:
+    reproduce_failure: "AXicY2MAAi5GEMnICGEwwhhAAgADbwA4"
+```
+
+A `tc.assume` or `tc.reject` inside the block skips that iteration, not the
+whole test case. When the engine ends the loop, `repeat` raises
+`Hegel::LoopDone` instead of returning, and `Hegel.test` counts the test
+case as passing; code after `tc.repeat` runs only when the block calls
+`break`. `Hegel::LoopDone` descends from `Exception`, so `rescue => e` does
+not catch it.
+
 `target` feeds `value` to libhegel's own hill-climbing search between
 generation rounds, under `label` (default `""`); it does not appear in the
 failure report. The same `label` used twice on one test case raises
@@ -375,6 +443,24 @@ Hegel.test(test_cases: 5, verbosity: :quiet) { |tc| tc.target(1, label: "score")
 # raises Hegel::Error, "HEGEL_E_INVALID_ARG (-5): tc.target(2, label=\"score\")
 # would overwrite previous tc.target(_, label=\"score\"); each label can be
 # observed at most once per test case"
+```
+
+`event` and `event_value` record what a test reached, for the statistics
+that `show_statistics: true` prints on stderr at the end of the run. `event`
+counts the share of generated test cases that recorded a label. `event_value`
+summarizes the values recorded under a label, which can be recorded any
+number of times per test case. Neither steers generation, and neither
+appears in the failure report. A non-finite `value` raises `Hegel::Error`:
+
+```ruby
+Hegel.test(show_statistics: true) do |tc|
+  xs = tc.draw(arrays(integers))
+  tc.event("empty") if xs.empty?
+  tc.event_value("size", xs.size)
+end
+# Statistics (over 100 test cases):
+#   * empty: 6.0% of test cases
+#   * size: count 100, min 0, median 6, mean 7.99, p90 19, max 20
 ```
 
 ## Generator Reference
@@ -435,7 +521,7 @@ Hegel.test(verbosity: :quiet) { |tc| tc.draw(integers(min_value: 10**30, max_val
 # => nil
 ```
 
-### `floats(min_value: nil, max_value: nil, allow_nan: nil, allow_infinity: nil, exclude_min: false, exclude_max: false)`
+### `floats(min_value: nil, max_value: nil, allow_nan: nil, allow_infinity: nil, exclude_min: false, exclude_max: false, allow_subnormal: nil)`
 
 A double in `[min_value, max_value]`, unbounded by default.
 
@@ -444,6 +530,12 @@ otherwise. `allow_infinity` defaults to `true` when the caller leaves either
 side open, `false` when both bounds are set. hegel-rust and
 hegel-typescript's `floats()` default the same way. Pass `true` or `false` to
 override either (see [Gotchas](#gotchas)).
+
+`allow_subnormal` defaults to `true` whenever the bounds admit a subnormal
+(a double below `Float::MIN` in magnitude, other than zero), and to `false`
+when every value the bounds allow is at least `Float::MIN` in magnitude.
+Pass `false` for code that may run with flush-to-zero floating point, where
+a subnormal input silently becomes zero.
 
 ```ruby
 Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
@@ -465,7 +557,20 @@ Three combinations raise `Hegel::Error` at draw time:
 - `allow_infinity: true` with both bounds:
   `"floats: cannot have allow_infinity=true with both min_value and max_value"`
 
-### `text(min_size: 0, max_size: nil, codec: nil, min_codepoint: nil, max_codepoint: nil)`
+Three more concern `allow_subnormal`, each prefixed `"floats: InvalidArgument:
+"`:
+
+- `allow_subnormal: true` with a `min_value` of `Float::MIN` or more:
+  `"allow_subnormal=true, but min_value excludes all values below the
+  smallest positive normal 2.2250738585072014e-308"`
+- `allow_subnormal: true` with a `max_value` of `-Float::MIN` or less:
+  `"allow_subnormal=true, but max_value excludes all values above the
+  smallest negative normal -2.2250738585072014e-308"`
+- `allow_subnormal: false` with both bounds, no zero between them, and only
+  subnormals inside: `"allow_subnormal=false leaves no 64-bit floating-point
+  values in [5.0e-324, 1.0e-310]"`
+
+### `text(min_size: 0, max_size: nil, alphabet: nil, codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)`
 
 A Unicode string of `[min_size, max_size]` characters. `max_size` defaults
 to 100, as in hegel-rust, or to `min_size + 100` when `min_size` is above
@@ -488,28 +593,71 @@ Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
 end
 ```
 
-`max_size < min_size` raises `Hegel::Error` at draw time: `"text: max_size <
-min_size"`. `alphabet:`, `categories:`, `include_characters:`, and
-`exclude_characters:` (character-filtering options other Hegel bindings
-expose) are not available in this binding; `codec:`, `min_codepoint:`, and
-`max_codepoint:` are the alphabet controls it exposes today.
+The alphabet options select which characters a string can hold:
 
-Other generators cover most character-set jobs. These results were measured
-with libhegel 0.47.1:
+```ruby
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  s = tc.draw(text(alphabet: "ßaİ", max_size: 4))
+  raise "left the alphabet" unless s.match?(/\A[ßaİ]*\z/)
+end
+
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  s = tc.draw(text(categories: ["Lu"], min_size: 1, max_size: 5))
+  raise "not uppercase" unless s.match?(/\A\p{Lu}+\z/)
+end
+
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  s = tc.draw(text(exclude_characters: ",\t\n", max_size: 6))
+  raise "drew an excluded character" if s.match?(/[,\t\n]/)
+end
+```
+
+- `alphabet:` is a `String` of the permitted characters. It cannot be combined
+  with any of the options below.
+- `codec:` is `"ascii"`, `"latin-1"` (or `"iso-8859-1"`), or `"utf-8"`. It
+  sets the starting range, which `min_codepoint:` and `max_codepoint:`
+  narrow.
+- `categories:` keeps the union of the named Unicode general categories
+  (`"Lu"`, `"Nd"`, and so on); `[]` is an empty alphabet. `exclude_categories:`
+  removes categories. When both are given, `categories:` wins and
+  `exclude_categories:` is ignored, as in hegel-rust.
+- `include_characters:` adds characters to the alphabet whatever the other
+  options say; `exclude_characters:` removes them. A character in both raises
+  `Hegel::Error`.
+
+Strings never hold surrogates, and `categories:` rejects `"Cs"` and `"C"`.
+The engine's Unicode tables can be newer than Ruby's, so a check with
+`\p{...}` in a test can disagree with the engine on a recently assigned
+codepoint.
+
+These cases raise `Hegel::Error` at draw time:
+
+- `max_size < min_size`: `"text: max_size < min_size"`.
+- An `alphabet:` beside another character option: `"text: Cannot combine
+  .alphabet() with character methods."`.
+- An `alphabet:` that is not a `String`: `"text: alphabet must be a String,
+  not a Integer"`.
+- An unknown codec: `"text: invalid codec: utf-16"`.
+- A surrogate category in `categories:`: `"text: Category \"Cs\" includes
+  surrogate codepoints (Cs), which a valid UTF-8 String cannot hold."`.
+- An unknown category, an empty range (`min_codepoint:` above
+  `max_codepoint:`, or every character excluded), and an overlap between
+  `include_characters:` and `exclude_characters:`: the engine writes the
+  message, as `"HEGEL_E_INVALID_ARG (-5): \"foo\" is not a valid Unicode
+  category"`.
+
+A regular expression still suits a pattern that is more than an alphabet.
+These results were measured with libhegel 0.47.1:
 
 | Job | Generator | Measured output |
 |---|---|---|
 | Characters to include | `from_regex("[ぁ-んA-Z0-9]{1,5}", fullmatch: true)` | `"0"`, `"D"`, `"Yもで"`; 30 draws all matched the pattern |
 | Characters to exclude | `from_regex("[^,\\t\\n]{0,6}", fullmatch: true)` | `""`, `"RÈbÁ¡"`; 30 draws contained no comma, tab, or newline |
-| A contiguous block | `text(min_codepoint: 0x300, max_codepoint: 0x36F)` | Every character of 100 draws was in U+0300 through U+036F |
-| An arbitrary alphabet | `arrays(sampled_from(%w[ß a İ]), max_size: 4).map(&:join)` | 30 draws, each built only from `ß`, `a`, and `İ` |
 
-The `categories:` option remains an open request. A category such as any `Lu`
-or any `Mn` spans codepoint ranges that a codepoint bound cannot select. A
-regular expression character class requires those ranges to be written out.
-The `.filter` method is not a substitute. In a measured run of 50 test cases,
-filtering `text` to `\p{Han}` produced no valid inputs. The engine filtered 50
-inputs and reported this health check:
+`.filter` is not a substitute for an alphabet option. In a measured run of 50
+test cases, filtering `text` to `\p{Han}` produced no valid inputs. A script
+such as Han is not a general category, so `categories:` cannot select it
+either. The engine filtered 50 inputs and reported this health check:
 
 ```
 FailedHealthCheck: FilterTooMuch — it looks like this test is filtering out
@@ -526,10 +674,11 @@ Unconfigured `text` draws from a much wider Unicode range. In 200 draws of
 characters, and control characters. The highest codepoint was U+10A78F. A
 property that accepts any string needs no character-set options.
 
-### `arrays(elements, min_size: 0, max_size: nil)`
+### `arrays(elements, min_size: 0, max_size: nil, unique: false)`
 
 An `Array` of values from the `elements` generator, with `[min_size,
-max_size]` entries, unbounded above by default.
+max_size]` entries, unbounded above by default. With `unique: true`, no two
+entries are equal.
 
 ```ruby
 Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
@@ -540,9 +689,23 @@ end
 
 `max_size < min_size` raises `Hegel::Error` at draw time: `"arrays:
 max_size < min_size"`. A negative `min_size` also raises at draw time:
-`"arrays: min_size must not be negative"`. `unique:` (deduplicating
-elements) is not available on `arrays`; `sets` (below) draws distinct
-elements instead.
+`"arrays: min_size must not be negative"`.
+
+With `unique: true`, an element equal (`==`) to one already drawn is
+rejected and drawn again, so `min_size` still counts distinct entries.
+Three slots over three values hold each exactly once:
+
+```ruby
+xs = nil
+Hegel.test(test_cases: 1, verbosity: :quiet) do |tc|
+  xs = tc.draw(arrays(sampled_from([0, 1, 2]), min_size: 3, max_size: 3, unique: true))
+end
+xs.sort # => [0, 1, 2]
+```
+
+A `min_size` the elements cannot satisfy, such as `arrays(just(1), min_size:
+5, unique: true)`, ends the run with a `Hegel::Error` from the FilterTooMuch
+health check.
 
 ### `just(value)`
 
@@ -570,6 +733,62 @@ result # => nil
 
 An empty `collection` raises `Hegel::Error` at draw time:
 `"sampled_from: collection must not be empty"`.
+
+### `permutations(elements)`
+
+An `Array` holding every element of `elements` in an order Hegel picks,
+shrinking towards the original order. `elements` is anything `sampled_from`
+accepts.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(permutations([1, 2, 3]))
+end
+seen # => [[1, 2, 3], [2, 3, 1], [3, 2, 1]]
+```
+
+### `subsequences(elements, min_size: 0, max_size: nil)`
+
+An `Array` of `[min_size, max_size]` of the `elements`, in their original
+order. Duplicate elements count as distinct.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(subsequences([1, 2, 3, 4], min_size: 1))
+end
+seen # => [[1], [3], [1, 2, 3, 4]]
+```
+
+`max_size < min_size` raises `Hegel::Error` at draw time: `"subsequences:
+Cannot have max_size < min_size"`. So does a `min_size` above the number of
+elements: `"subsequences: Cannot generate a subsequence: min_size 4 is larger
+than the 3 elements in the sequence"`.
+
+### `samples(elements, min_size: 0, max_size: nil, replacement: true)`
+
+An `Array` of `[min_size, max_size]` of the `elements`, in the order drawn.
+With `replacement: true` each is drawn independently from all of `elements`,
+so a value can repeat, and the size is unbounded unless `max_size` bounds
+it. With `replacement: false` each element is used at most once, duplicates
+count as distinct, and the size is capped at the number of elements.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(samples([1, 2, 3], max_size: 4))
+end
+seen # => [[], [1, 3], []]
+```
+
+Three errors are raised at draw time, each beginning `"samples: "`:
+`max_size < min_size` gives `"Cannot have max_size < min_size"`; a
+non-empty sample from an empty `elements` gives `"Cannot generate a
+non-empty sample from an empty sequence"`; and with `replacement: false`, a
+`min_size` above the number of elements gives `"Cannot generate a sample
+without replacement: min_size 4 is larger than the 3 elements in the
+sequence"`.
 
 ### `one_of(*generators)`
 
@@ -678,9 +897,10 @@ seen.to_a # => [[5, false], [3, false]]
 max_size < min_size"`. A negative `min_size` also raises at draw time:
 `"hashes: min_size must not be negative"`.
 
-### `characters(codec: nil, min_codepoint: nil, max_codepoint: nil)`
+### `characters(codec: nil, min_codepoint: nil, max_codepoint: nil, categories: nil, exclude_categories: nil, include_characters: nil, exclude_characters: nil)`
 
 A `String` of exactly one character, sharing `text`'s own alphabet options.
+Pass it as `from_regex(alphabet:)` to limit the characters of a match.
 
 ```ruby
 result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
@@ -695,6 +915,9 @@ Hegel.test(test_cases: 5, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
 end
 seen # => ["A", "Z", "E", "T", "G"]
 ```
+
+The options and their draw-time errors are the ones listed under `text`,
+with `characters:` in place of `text:` in each message.
 
 ### `binary(min_size: 0, max_size: nil)`
 
@@ -718,11 +941,13 @@ seen # => ["\x00\x00", "\xCA\x95", "\xD5N"]
 `max_size < min_size` raises `Hegel::Error` at draw time: `"binary:
 max_size < min_size"`.
 
-### `from_regex(pattern, fullmatch: true)`
+### `from_regex(pattern, fullmatch: true, alphabet: nil)`
 
 A `String` matching `pattern` (Python `re` syntax, not Ruby's `Regexp`
 syntax). `fullmatch`, true by default as in hegel-rust, requires the whole
 string to match; `fullmatch: false` lets the string merely contain a match.
+`alphabet` is a `characters` generator that limits every character of the
+string, padding around a partial match included.
 
 ```ruby
 result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
@@ -745,12 +970,86 @@ translated): `from_regex(/[a-z]{3}/)` raises `Hegel::Error` at draw time,
 Regexp"`. Pass `my_regexp.source` explicitly for a pattern confirmed to
 need no flags and to use only syntax the two grammars share.
 
+```ruby
+Hegel.test(test_cases: 30, verbosity: :quiet) do |tc|
+  v = tc.draw(from_regex("[a-z]+", fullmatch: true, alphabet: characters(codec: "ascii")))
+  raise "no match" unless v.match?(/\A[a-z]+\z/)
+end
+```
+
+An `alphabet` that is not a `characters` generator raises `Hegel::Error` at
+draw time: `"from_regex: alphabet must be a characters generator, not a
+String"`. A pattern that cannot match any string over the alphabet raises
+with the engine's message, `"... matches no string over the alphabet ..."`.
+
 A pattern that no string matches, such as `"(?!)"`, also raises
 `Hegel::Error` at draw time. The engine writes the message, and it names
 the pattern: `from_regex("(?!)")` raises
 `"HEGEL_E_INVALID_ARG (-5): regex pattern \"(?!)\" matches no string the
 generator can produce"`. Since libhegel 0.45.7 the engine makes this
 check.
+
+### `from_lark(grammar, start: nil, explicit: {}, alphabet: nil, max_size: nil, max_depth: nil, import_path: nil)`
+
+A `String` that `grammar`, written in the syntax of the
+[Lark](https://lark-parser.readthedocs.io/en/stable/grammar.html) parsing
+library, accepts from its `start` rule (`"start"` when `start` is nil).
+`%import` of Lark's bundled `common`, `python`, `unicode`, and `lark`
+grammars works without `import_path`; `import_path` (a `String` or a
+`Pathname`) is the one directory other imports are read from, `%import
+a.b.X` reading `a/b.lark` there. Strings run up to 8192 characters by
+default; `max_size` caps the characters (at most 1048576) and `max_depth`
+how deeply rules nest (default 200, at most 500). `alphabet` is a
+`characters` generator limiting what a terminal's pattern draws.
+
+```ruby
+INT_LIST = "start: INT (\",\" INT)*\n%import common.INT\n"
+
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(from_lark(INT_LIST))
+  raise "not an int list" unless v.match?(/\A\d+(,\d+)*\z/)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(from_lark(INT_LIST, max_size: 12))
+end
+seen # => ["0", "7", "62010192143"]
+```
+
+`explicit` maps a terminal's name, a `String` or a `Symbol`, to a generator
+of `String`s drawn in its place. Every terminal the grammar `%declare`s
+needs one; any other terminal may be given one to override its pattern.
+The values count toward `max_size`: a string they push over it is drawn
+again with less room for the grammar's own text, and after three tries the
+test case is rejected, as a failed `assume` is.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(from_lark("start: WORD \"=\" NUM\n%declare NUM\nWORD: /[a-z]+/\n",
+    explicit: {NUM: integers(min_value: 0, max_value: 99).map(&:to_s)}, max_size: 10))
+end
+seen # => ["a=0", "t=99", "tokndf=53"]
+```
+
+The grammar is compiled on the first draw of a run and kept until the run
+ends, so a `from_lark` built inside the test body compiles once per run too.
+
+Each of these raises `Hegel::Error` at draw time, with a message starting
+`"from_lark: "`: a `grammar` or `start` that is not a `String`;
+`"max_size must be at least 1"` and `"max_depth must be at least 1"`; an
+`explicit` that is not a `Hash`, a name that is not a `String` or a
+`Symbol`, or a value that is not a generator; `"explicit terminal 'NUM' is
+given more than one generator"`, for `{:NUM => g, "NUM" => h}`; an `alphabet`
+that is not a `characters` generator; an `import_path` that is not a
+`String` or a `Pathname`; an explicit generator that draws something other
+than a `String`; and an import that exists but cannot be read, or is not
+UTF-8 (`"Could not read grammar"`, naming the file). A grammar the engine rejects
+raises with the engine's message: `from_lark("start: NUM\n%declare NUM\n")`
+raises `"HEGEL_E_INVALID_ARG (-5): Terminal 'NUM' is declared but has no
+definition: supply a generator for it with explicit"`.
 
 ### `emails`
 
@@ -931,6 +1230,72 @@ seen # => ["2020-01-01 00:00:00 UTC", "2020-07-23 00:00:00 UTC", "2020-04-28 00:
 `max_value < min_value` raises `Hegel::Error` at draw time: `"datetimes:
 max_value < min_value"`.
 
+### `date_strings`
+
+A `"YYYY-MM-DD"` String over year 1 through year 9999. It takes no options.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(date_strings)
+end
+seen # => ["2000-01-01", "2000-08-26", "2028-11-11"]
+```
+
+### `time_strings`
+
+An `"HH:MM:SS"` String over the whole day, with `".fffffffff"` (nine digits)
+appended when the nanosecond is not zero. It takes no options. Unlike
+`times`, it keeps the engine's nanoseconds.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(time_strings)
+end
+seen # => ["00:00:00", "00:00:00.000080023", "00:00:00.030484623"]
+```
+
+### `datetime_strings`
+
+A `"YYYY-MM-DDTHH:MM:SS"` String over year 1 through year 9999, formatted as
+`date_strings` and `time_strings` are, with no timezone. It takes no options.
+
+```ruby
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(datetime_strings)
+end
+seen # => ["2000-01-01T00:00:00", "2000-08-26T00:00:00.000002047", "2028-11-11T00:00:00.000383651"]
+```
+
+### `durations(min_value: 0, max_value: 2**64 - 1)`
+
+A duration as an `Integer` count of nanoseconds in `[min_value,
+max_value]`. The largest duration is `2**64 - 1` nanoseconds, about 584
+years. `Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)` returns
+the same unit.
+
+```ruby
+Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(durations(min_value: 1_000_000_000, max_value: 60_000_000_000))
+  raise "out of range" unless v.between?(1_000_000_000, 60_000_000_000)
+end
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(durations(min_value: 1_000_000_000, max_value: 60_000_000_000))
+end
+seen # => [1000000000, 7679018401, 21643530102]
+```
+
+A `max_value` above `2**64 - 1` is treated as `2**64 - 1`. A `min_value`
+above it raises `Hegel::Error` at draw time: `"durations: min_value exceeds
+the largest generatable Duration (u64::MAX nanoseconds, about 584 years)"`.
+`max_value < min_value` raises `"durations: Cannot have max_value <
+min_value"`, and a negative `min_value` raises `"durations: min_value must
+not be negative"`.
+
 ### `composite(&block)`
 
 A value built from imperative code: `block` receives a draw surface and
@@ -990,6 +1355,52 @@ Drawing from it before `#set` raises `Hegel::Error` at draw time:
 `"deferred: draw called before set"`. Calling `#set` a second time raises
 immediately (not at draw time): `"deferred: set called more than once"`.
 
+### `recursive(leaf, max_depth: 32, max_leaves: 100, &branch)`
+
+A recursively defined value, such as a tree: either a value from `leaf`, or
+what the block's generator builds from sub-values of the same kind. The
+block receives the generator of those sub-values and returns a generator
+that combines some number of them. It is called afresh for each branch.
+
+```ruby
+tree = recursive(integers(min_value: 0, max_value: 10), max_leaves: 10) do |subtrees|
+  arrays(subtrees, max_size: 3)
+end
+
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(tree)
+  raise "wrong type" unless v.is_a?(Integer) || v.is_a?(Array)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(tree)
+end
+seen # => [0, [[]], []]
+```
+
+The engine decides each leaf-or-branch choice. `max_depth` caps how deeply
+branches nest; at that depth every sub-value is a leaf, so `max_depth: 0`
+draws only leaves. An attempt that draws more than `max_leaves` leaves is
+discarded and drawn again, and the test case is discarded, as by `assume`,
+when several attempts in a row do not fit. A tree shrinks toward one of its
+own subtrees.
+
+Draw the sub-values only through the generator the block returns. Drawing
+the block's argument after the recursive draw has ended raises
+`Hegel::Error`: `"recursive: a subtree generator was drawn outside the draw
+that made it"`. These raise at draw time:
+
+- no block: `"recursive: block is required"`
+- a `leaf` that is not a generator: `"recursive: leaf must be a generator,
+  got 5"`
+- a bound that is not an Integer from 0 to 2\*\*64 - 1: `"recursive:
+  max_depth must be an Integer between 0 and 2**64 - 1, got -1"`, and the
+  same for `max_leaves`
+- a block that returns something other than a generator: `"recursive: the
+  block must return a generator, got 5"`
+
 ## Stateful Testing
 
 A stateful test compares a real object against a simplified model of it,
@@ -1001,7 +1412,7 @@ block: `Hegel.test { |tc| Hegel::Stateful.run(machine, tc) }` (see
 
 ### Declaring a machine
 
-`rule(name, &block)` and `invariant(name, &block)` are class-level
+`rule(name, weight: 1.0, &block)` and `invariant(name, &block)` are class-level
 declarations. `block` runs via `instance_exec` against the machine instance
 under test, and is handed the running `Hegel::TestCase` as its one argument
 (ignored if the block takes none). So it reads and writes the machine's own
@@ -1074,6 +1485,13 @@ Hegel::Stateful.run(NoRulesMachine.new, nil)
 A test case with more than one declared rule enables only a random subset of
 them, and picks each step from that subset. So a machine with two rules can
 run a case where one of them never appears at all.
+
+`rule(:name, weight: 2.5)` makes the engine pick a rule more often than the
+others in the cases that enable it. The weight must be a finite number above
+zero. A weight that is not a number raises `Hegel::Error` at declaration, and
+one that is zero, negative, NaN, or infinite raises it when the machine runs.
+It is a hint, not a distribution: which rules a case enables also decides how
+often each runs.
 
 Inside a rule, `tc.assume(false)` means something narrower than it does
 everywhere else in this library: it discards only that one rule application
@@ -1153,7 +1571,9 @@ pool = Hegel::Stateful::Pool.new(tc)
 - `#values_reusable` is a `Hegel::Generator` over the pool's values that
   leaves the chosen value in place, so it can be drawn again.
 - `#values_consumed` is a `Hegel::Generator` over the pool's values that
-  removes the chosen value, so it is never drawn again.
+  removes the chosen value, so it is never drawn again. A `.filter` on it
+  consumes only the value the predicate accepts: the values it rejected go
+  back into the pool.
 - `#size` and `#empty?` read the pool's own count directly.
 
 ```ruby
@@ -1207,7 +1627,8 @@ end
 ```
 
 `.filter` retries its source generator up to 3 times per draw, then
-discards the test case. A predicate that (almost) never holds does not loop
+discards the test case. A filter over a filter spends those 3 attempts
+between the two predicates, not 3 per filter. A predicate that (almost) never holds does not loop
 forever: libhegel's own health check aborts a run that discards too many
 test cases in a row, surfacing as `Hegel::Error`:
 

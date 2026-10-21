@@ -3,6 +3,7 @@
 require "test_helper"
 require "hegel/runner"
 require "support/fake_lib_hegel"
+require "securerandom"
 require "stringio"
 require "tmpdir"
 require "fileutils"
@@ -1187,6 +1188,139 @@ class TestRunner < Minitest::Test
     assert_nil result
   end
 
+  # A body that fails on every input. With stop_on_first_failure left on,
+  # the engine stops generating at the first failure; turned off, it spends
+  # its whole test_cases budget first, and failing cases count against that
+  # budget. Derandomized, so the counts repeat. Measured against libhegel
+  # 0.47.2 at test_cases: 50, over 10 runs each: 22 calls with the setting
+  # on, 71 with it off, every run.
+  def test_stop_on_first_failure_false_spends_the_whole_budget_before_reporting
+    calls = {true => 0, false => 0}
+    [true, false].each do |stop|
+      assert_raises(RuntimeError) do
+        Hegel.test(test_cases: 50, derandomize: true, stop_on_first_failure: stop, verbosity: :quiet,
+          output: StringIO.new) do |tc|
+          calls[stop] += 1
+          tc.draw_integer(0, 10)
+          raise "always"
+        end
+      end
+    end
+
+    assert_operator calls[true], :<, 50
+    assert_operator calls[false], :>=, 50
+  end
+
+  def test_print_blob_false_leaves_the_reproduction_line_out_of_the_report
+    reports = [true, false].to_h do |print_blob|
+      output = StringIO.new
+      assert_raises(RuntimeError) do
+        Hegel.test(test_cases: 10, print_blob: print_blob, output: output) { |_tc| raise "boom" }
+      end
+      [print_blob, output.string]
+    end
+
+    assert_includes reports[true], "reproduce_failure"
+    assert_includes reports[false], "Falsified after"
+    refute_includes reports[false], "reproduce_failure"
+  end
+
+  # A nil print_blob keyword leaves the decision to the engine's resolved
+  # settings, such as a profile or HEGEL_PRINT_BLOB, which the Fake stands
+  # in for here.
+  def test_a_resolved_print_blob_of_false_leaves_the_reproduction_line_out
+    fake = failing_fake
+    fake.settings_print_blob_value = false
+    output = StringIO.new
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: output) { |_tc| raise "boom" } }
+
+    assert_empty fake.settings_print_blob_calls
+    assert_includes output.string, "Falsified after 1 test case"
+    refute_includes output.string, "reproduce_failure"
+  end
+
+  # The engine writes the statistics report to the process's stderr, not
+  # to Hegel.test's output:, so capture_subprocess_io reads it at the file
+  # descriptor.
+  def test_show_statistics_reports_events_and_event_values
+    _out, err = capture_subprocess_io do
+      Hegel.test(test_cases: 50, show_statistics: true, derandomize: true, output: StringIO.new) do |tc|
+        n = tc.draw_integer(0, 10)
+        tc.event("small") if n < 5
+        tc.event_value("n", n)
+      end
+    end
+
+    assert_includes err, "Statistics (over 50 test cases):"
+    assert_match(/\* small: [\d.]+% of test cases/, err)
+    assert_match(/\* n: count 50, min 0, /, err)
+  end
+
+  def test_events_report_nothing_without_show_statistics
+    _out, err = capture_subprocess_io do
+      Hegel.test(test_cases: 10, show_statistics: false, output: StringIO.new) do |tc|
+        tc.event("seen")
+        tc.event_value("n", 1)
+      end
+    end
+
+    refute_includes err, "Statistics"
+  end
+
+  def test_event_value_with_a_non_finite_value_raises
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 5, verbosity: :quiet, output: StringIO.new) { |tc| tc.event_value("v", Float::NAN) }
+    end
+
+    assert_includes error.message, "finite"
+  end
+
+  # A body that fails on every other call is nondeterministic. Under the
+  # default strictness the engine handles that quietly and reports the
+  # failure; under :error it ends the run with a flaky-test error instead.
+  def test_nondeterminism_strictness_error_ends_a_nondeterministic_run_with_hegel_error
+    calls = 0
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(test_cases: 20, nondeterminism_strictness: :error, verbosity: :quiet, output: StringIO.new) do |tc|
+        calls += 1
+        tc.draw_integer(0, 10)
+        raise "odd call" if calls.odd?
+      end
+    end
+
+    assert_includes error.message, "Flaky test detected"
+  end
+
+  # A fixed seed repeats under :default and does not under :urandom, which
+  # takes fresh entropy on every draw. The range is wide enough that two
+  # urandom runs of 20 draws cannot collide in practice.
+  def test_backend_urandom_ignores_the_seed_that_default_repeats
+    draws = lambda do |backend|
+      seen = []
+      Hegel.test(test_cases: 20, seed: 7, backend: backend, verbosity: :quiet, output: StringIO.new) do |tc|
+        seen << tc.draw_integer(0, 1_000_000_000)
+      end
+      seen
+    end
+
+    assert_equal draws.call(:default), draws.call(:default)
+    refute_equal draws.call(:urandom), draws.call(:urandom)
+  end
+
+  def test_event_and_event_value_reach_the_engine
+    fake = Hegel::LibHegel::Fake.new
+    fake.test_case_count = 1
+
+    Hegel.test(impl: fake) do |tc|
+      tc.event("x")
+      tc.event_value("v", 3)
+    end
+
+    assert_equal ["x"], fake.event_calls
+    assert_equal [["v", 3]], fake.event_value_calls
+  end
+
   # Hegel::TestCase#new_pool records the native handle it opens, and
   # Hegel::Runner is supposed to free every one of them once the test case
   # that opened it is done -- docs/adr/0011's ownership decision, at the
@@ -1301,6 +1435,74 @@ class TestRunner < Minitest::Test
     end
 
     assert_equal [Hegel::LibHegel::HEGEL_STATUS_INTERESTING], fake.marked_statuses
+  end
+
+  def test_no_profile_builds_the_settings_from_the_default_profile
+    fake = failing_fake
+
+    assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise "boom" } }
+
+    assert_empty fake.settings_new_for_profile_calls
+  end
+
+  def test_a_profile_builds_the_settings_from_that_profile
+    fake = failing_fake
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, profile: "nightly", output: StringIO.new) { |_tc| raise "boom" }
+    end
+
+    assert_equal ["nightly"], fake.settings_new_for_profile_calls
+  end
+
+  # An explicit keyword must still beat the profile, so its setter runs
+  # after the profile resolved.
+  def test_keywords_still_apply_after_a_profile
+    fake = failing_fake
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, profile: "nightly", test_cases: 7, print_blob: false, output: StringIO.new) do |_tc|
+        raise "boom"
+      end
+    end
+
+    assert_equal [7], fake.settings_test_cases_calls
+    assert_equal [false], fake.settings_print_blob_calls
+    assert_equal [false], fake.settings_report_multiple_failures_calls
+  end
+
+  def test_reproduce_failure_honors_the_profile
+    fake = reproducing_fake
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, profile: "nightly", reproduce_failure: "blob", output: StringIO.new) do |_tc|
+        raise "boom"
+      end
+    end
+
+    assert_equal ["nightly"], fake.settings_new_for_profile_calls
+    assert_equal ["blob"], fake.run_start_blobs
+  end
+
+  def test_an_unknown_profile_raises_before_the_body_runs_and_frees_the_context
+    fake = failing_fake
+    fake.settings_new_for_profile_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    ran = false
+
+    assert_raises(Hegel::Error) do
+      Hegel.test(impl: fake, profile: "nightly", output: StringIO.new) { |_tc| ran = true }
+    end
+
+    refute ran
+    assert_equal 1, fake.freed_contexts.size
+  end
+
+  def test_an_unknown_profile_raises_the_engines_error_from_the_real_engine
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(profile: "no-such-profile-#{SecureRandom.hex(4)}", output: StringIO.new) { |_tc| nil }
+    end
+
+    assert_includes error.message, "HEGEL_E_INVALID_ARG"
   end
 
   private

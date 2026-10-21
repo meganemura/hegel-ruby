@@ -6,7 +6,7 @@ description: "How to add a new generator to hegel-ruby. Use when asked to implem
 # Adding a New Generator
 
 A reference for implementing a single new generator, distilled from the
-twenty-five this gem already ships (`lib/hegel/generators.rb`). Read whichever
+twenty-six this gem already ships (`lib/hegel/generators.rb`). Read whichever
 is closest to your case before starting:
 
 - `IntegerGenerator` -- the shortest form: one primitive, one boundary check.
@@ -80,6 +80,10 @@ belongs inside a generator.
 instance.** See the comment above `TextGenerator#do_draw`: the handle is
 scoped to one `TestCase`, and the same generator object can be drawn again
 later against a different one, so caching would free the wrong run's handle.
+A handle too costly to build on every draw goes in a cache the run owns
+instead, keyed by value and freed before the context, the way
+`FromLarkGenerator` keeps its compiled grammar in `Hegel::GrammarCache`
+through `TestCase#with_grammar`; see ADR 0033.
 
 **Only `Hegel::TestCase#draw` (and `#draw_integer`/`#draw_boolean`) record a
 value for the failure report.** `TestCase`'s own class comment states this
@@ -174,7 +178,7 @@ test because it reads as coverage:
 - [ ] `initialize` only assigns; `do_draw` validates then draws
 - [ ] Validation messages prefixed with the bare factory-method name
 - [ ] Compound draws spanned, closed in `ensure`
-- [ ] Native handles freed in `ensure`, not cached
+- [ ] Native handles freed in `ensure`, not cached on the generator
 - [ ] Wired in `Hegel::Syntax::Methods` and `sig/hegel.rbs`
 - [ ] New native call: bound in `real.rb`, `Fake`, `METHODS`, and the
       conformance test, together

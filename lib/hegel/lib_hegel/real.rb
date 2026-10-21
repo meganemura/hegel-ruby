@@ -82,6 +82,13 @@ module Hegel
 
         @hegel_settings_new_fn = bind("hegel_settings_new", [:pointer, :pointer], :int32)
         @hegel_settings_free_fn = bind("hegel_settings_free", [:pointer, :pointer], :int32)
+        @hegel_settings_new_for_profile_fn = bind(
+          "hegel_settings_new_for_profile", [:pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_settings_register_profile_fn = bind(
+          "hegel_settings_register_profile", [:pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_set_default_profile_fn = bind("hegel_set_default_profile", [:pointer, StringStruct.by_value], :int32)
         @hegel_settings_set_test_cases_fn = bind(
           "hegel_settings_set_test_cases", [:pointer, :pointer, :uint64], :int32
         )
@@ -109,6 +116,24 @@ module Hegel
         @hegel_settings_set_suppress_health_check_fn = bind(
           "hegel_settings_set_suppress_health_check", [:pointer, :pointer, :uint32], :int32
         )
+        @hegel_settings_set_stop_on_first_failure_fn = bind(
+          "hegel_settings_set_stop_on_first_failure", [:pointer, :pointer, :bool], :int32
+        )
+        @hegel_settings_set_print_blob_fn = bind("hegel_settings_set_print_blob", [:pointer, :pointer, :bool], :int32)
+        @hegel_settings_get_print_blob_fn = bind(
+          "hegel_settings_get_print_blob", [:pointer, :pointer, :pointer], :int32
+        )
+        @hegel_settings_set_show_statistics_fn = bind(
+          "hegel_settings_set_show_statistics", [:pointer, :pointer, :bool], :int32
+        )
+        @hegel_settings_set_nondeterminism_strictness_fn = bind(
+          "hegel_settings_set_nondeterminism_strictness", [:pointer, :pointer, :uint32], :int32
+        )
+        @hegel_settings_set_backend_fn = bind("hegel_settings_set_backend", [:pointer, :pointer, :uint32], :int32)
+        @hegel_settings_set_test_location_fn = bind(
+          "hegel_settings_set_test_location",
+          [:pointer, :pointer, StringStruct.by_value, :uint32, StringStruct.by_value, StringStruct.by_value], :int32
+        )
 
         @hegel_run_start_fn = bind(
           "hegel_run_start", [:pointer, :pointer, :pointer, :pointer, :pointer], :int32
@@ -124,6 +149,10 @@ module Hegel
         @hegel_test_case_free_fn = bind("hegel_test_case_free", [:pointer, :pointer], :int32)
         @hegel_mark_complete_fn = bind("hegel_mark_complete", [:pointer, :pointer, :uint32, :pointer], :int32)
         @hegel_target_fn = bind("hegel_target", [:pointer, :pointer, :double, StringStruct.by_value], :int32)
+        @hegel_event_fn = bind("hegel_event", [:pointer, :pointer, StringStruct.by_value], :int32)
+        @hegel_event_value_fn = bind(
+          "hegel_event_value", [:pointer, :pointer, :double, StringStruct.by_value], :int32
+        )
 
         @hegel_run_result_fn = bind("hegel_run_result", [:pointer, :pointer, :pointer], :int32)
         @hegel_run_result_free_fn = bind("hegel_run_result_free", [:pointer, :pointer], :int32)
@@ -170,7 +199,19 @@ module Hegel
         @hegel_pool_generate_fn = bind(
           "hegel_pool_generate", [:pointer, :pointer, :pointer, :bool, :pointer], :int32
         )
+        @hegel_pool_restore_fn = bind("hegel_pool_restore", [:pointer, :pointer, :pointer, :int64], :int32)
         @hegel_pool_free_fn = bind("hegel_pool_free", [:pointer, :pointer], :int32)
+
+        @hegel_new_recursion_fn = bind(
+          "hegel_new_recursion", [:pointer, :pointer, :uint64, :uint64, :pointer], :int32
+        )
+        @hegel_recursion_branch_fn = bind(
+          "hegel_recursion_branch", [:pointer, :pointer, :pointer, :uint64, :pointer], :int32
+        )
+        @hegel_recursion_leaf_fn = bind("hegel_recursion_leaf", [:pointer, :pointer, :pointer], :int32)
+        @hegel_recursion_retry_fn = bind("hegel_recursion_retry", [:pointer, :pointer, :pointer], :int32)
+        @hegel_recursion_finish_fn = bind("hegel_recursion_finish", [:pointer, :pointer, :pointer], :int32)
+        @hegel_recursion_free_fn = bind("hegel_recursion_free", [:pointer, :pointer], :int32)
 
         @hegel_new_state_machine_fn = bind(
           "hegel_new_state_machine",
@@ -198,10 +239,6 @@ module Hegel
           [:pointer, :pointer, :uint32, :double, :double, :bool, :bool, :bool, :bool, :double, :pointer], :int32
         )
 
-        # hegel_string_generator_text takes 12 arguments past ctx; the
-        # last 6 (categories through exclude_characters) are the category
-        # and explicit-character filter parameters this binding does not
-        # wire up (see #string_generator_text).
         @hegel_string_generator_text_fn = bind(
           "hegel_string_generator_text",
           [:pointer, :uint64, :uint64, :pointer, :uint32, :uint32,
@@ -246,6 +283,28 @@ module Hegel
         @hegel_generate_datetime_fn = bind(
           "hegel_generate_datetime",
           [:pointer, :pointer, DatetimeStruct.by_value, DatetimeStruct.by_value, :pointer], :int32
+        )
+
+        @hegel_grammar_builder_new_fn = bind(
+          "hegel_grammar_builder_new", [:pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_grammar_builder_file_fn = bind(
+          "hegel_grammar_builder_file", [:pointer, :pointer, :size_t, :pointer], :int32
+        )
+        @hegel_grammar_builder_provide_fn = bind(
+          "hegel_grammar_builder_provide", [:pointer, :pointer, :size_t, :pointer], :int32
+        )
+        @hegel_grammar_builder_free_fn = bind("hegel_grammar_builder_free", [:pointer, :pointer], :int32)
+        @hegel_grammar_new_fn = bind(
+          "hegel_grammar_new",
+          [:pointer, :pointer, :pointer, :uint64, :uint32, :pointer, :pointer, :size_t, :pointer], :int32
+        )
+        @hegel_grammar_placeholder_fn = bind(
+          "hegel_grammar_placeholder", [:pointer, :pointer, StringStruct.by_value, :pointer], :int32
+        )
+        @hegel_grammar_free_fn = bind("hegel_grammar_free", [:pointer, :pointer], :int32)
+        @hegel_generate_grammar_fn = bind(
+          "hegel_generate_grammar", [:pointer, :pointer, :pointer, :uint64, :pointer], :int32
         )
 
         LibHegel.with_context(self) { |ctx| LibHegel.warn_on_version_mismatch(self, ctx, io: io) }
@@ -296,6 +355,31 @@ module Hegel
         code = @hegel_settings_new_fn.call(ctx, out)
         LibHegel.check!(self, ctx, code)
         out.read_pointer
+      end
+
+      # Like #settings_new, but starts from the profile +name+, which still
+      # extends the default profile (except "base"). An unknown name returns
+      # HEGEL_E_INVALID_ARG.
+      def settings_new_for_profile(ctx, name)
+        out = FFI::MemoryPointer.new(:pointer)
+        code = @hegel_settings_new_for_profile_fn.call(ctx, string_view(name), out)
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # Registers a snapshot of +s+ as the profile +name+ for the whole
+      # process. The caller keeps ownership of +s+.
+      def settings_register_profile(ctx, name, s)
+        code = @hegel_settings_register_profile_fn.call(ctx, string_view(name), s)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # "" clears an earlier call.
+      def set_default_profile(ctx, name)
+        code = @hegel_set_default_profile_fn.call(ctx, string_view(name))
+        LibHegel.check!(self, ctx, code)
+        nil
       end
 
       # No-op when +s+ is nil, matching hegel_settings_free's documented
@@ -358,6 +442,14 @@ module Hegel
         nil
       end
 
+      def settings_set_test_location(ctx, s, file, begin_line, class_name, function)
+        code = @hegel_settings_set_test_location_fn.call(
+          ctx, s, string_view(file), begin_line, string_view(class_name), string_view(function)
+        )
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
       # +phases+ is a bitwise OR of the HEGEL_PHASE_* constants.
       def settings_set_phases(ctx, s, phases)
         code = @hegel_settings_set_phases_fn.call(ctx, s, phases)
@@ -369,6 +461,44 @@ module Hegel
       # overwrites the previous suppressions, per the header.
       def settings_set_suppress_health_check(ctx, s, checks)
         code = @hegel_settings_set_suppress_health_check_fn.call(ctx, s, checks)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_stop_on_first_failure(ctx, s, yes)
+        code = @hegel_settings_set_stop_on_first_failure_fn.call(ctx, s, yes)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_print_blob(ctx, s, yes)
+        code = @hegel_settings_set_print_blob_fn.call(ctx, s, yes)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # libhegel never prints the blob; the caller decides from the resolved value.
+      def settings_get_print_blob(ctx, s)
+        out = FFI::MemoryPointer.new(:bool)
+        code = @hegel_settings_get_print_blob_fn.call(ctx, s, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_uint8 != 0
+      end
+
+      def settings_set_show_statistics(ctx, s, yes)
+        code = @hegel_settings_set_show_statistics_fn.call(ctx, s, yes)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_nondeterminism_strictness(ctx, s, strictness)
+        code = @hegel_settings_set_nondeterminism_strictness_fn.call(ctx, s, strictness)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def settings_set_backend(ctx, s, backend)
+        code = @hegel_settings_set_backend_fn.call(ctx, s, backend)
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -457,6 +587,18 @@ module Hegel
       # argument-shape rule to the engine's own HEGEL_E_INVALID_ARG.
       def target(ctx, tc, value, label)
         code = @hegel_target_fn.call(ctx, tc, value, string_view(label))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def event(ctx, tc, label)
+        code = @hegel_event_fn.call(ctx, tc, string_view(label))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def event_value(ctx, tc, label, value)
+        code = @hegel_event_value_fn.call(ctx, tc, value, string_view(label))
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -721,6 +863,16 @@ module Hegel
         out.read_int64
       end
 
+      # Puts back +variable_id+, which a consuming #pool_generate removed, so
+      # it can be drawn again. libhegel never does this by itself: a consumed
+      # id stays consumed until it is restored. An id that was not consumed
+      # raises Hegel::Error (HEGEL_E_INVALID_ARG).
+      def pool_restore(ctx, tc, pool, variable_id)
+        code = @hegel_pool_restore_fn.call(ctx, tc, pool, variable_id)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
       # No-op when +pool+ is nil, matching hegel_pool_free's documented
       # no-op-on-NULL contract; not translated, for the same reason as
       # #context_free.
@@ -728,6 +880,55 @@ module Hegel
         # Removing this call only leaks native memory; Ruby has no way to
         # observe the leak.
         @hegel_pool_free_fn.call(ctx, pool) # mutineer:disable-line statement_removal
+        nil
+      end
+
+      # Returns a caller-owned recursion handle, released separately with
+      # #recursion_free.
+      def new_recursion(ctx, tc, max_depth, max_leaves)
+        out = FFI::MemoryPointer.new(:pointer)
+        code = @hegel_new_recursion_fn.call(ctx, tc, max_depth, max_leaves, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # Returns true when the sub-value at +depth+ is a branch, false when
+      # it is a leaf.
+      def recursion_branch(ctx, tc, recursion, depth)
+        out = FFI::MemoryPointer.new(:bool)
+        code = @hegel_recursion_branch_fn.call(ctx, tc, recursion, depth, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_uint8 != 0
+      end
+
+      # Returns false for HEGEL_E_RETRY: the attempt outgrew its leaf
+      # budget, and the caller unwinds it and calls #recursion_retry.
+      def recursion_leaf(ctx, tc, recursion)
+        code = @hegel_recursion_leaf_fn.call(ctx, tc, recursion)
+        retry_or_check!(ctx, code)
+      end
+
+      def recursion_retry(ctx, tc, recursion)
+        code = @hegel_recursion_retry_fn.call(ctx, tc, recursion)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Returns false for HEGEL_E_RETRY: the engine discarded the finished
+      # attempt, and the caller starts again from the root without calling
+      # #recursion_retry.
+      def recursion_finish(ctx, tc, recursion)
+        code = @hegel_recursion_finish_fn.call(ctx, tc, recursion)
+        retry_or_check!(ctx, code)
+      end
+
+      # No-op when +recursion+ is nil, matching hegel_recursion_free's
+      # documented no-op-on-NULL contract; not translated, for the same
+      # reason as #context_free.
+      def recursion_free(ctx, recursion)
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
+        @hegel_recursion_free_fn.call(ctx, recursion) # mutineer:disable-line statement_removal
         nil
       end
 
@@ -741,13 +942,16 @@ module Hegel
       # of labor #new_collection leaves to the caller for its own
       # min_size/max_size ordering.
       #
-      # The machine is always sequential: one concurrency group, equal rule
-      # weights, and a concurrency of exactly 1, so the engine draws no
-      # concurrency level and the drawn level needs no reading. These
+      # +rule_weights+ holds one number per rule name; the engine rejects one
+      # that is not finite and positive.
+      #
+      # The machine is always sequential: one concurrency group and a
+      # concurrency of exactly 1, so the engine draws no concurrency level
+      # and the drawn level needs no reading. These
       # bindings drive the engine from one thread, and a concurrent machine
       # needs one worker thread per drawn level. For the same reason the
       # rule calls below pass worker index 0, the only worker there is.
-      def new_state_machine(ctx, tc, rule_names, invariant_names, always_check, step_count)
+      def new_state_machine(ctx, tc, rule_names, rule_weights, invariant_names, always_check, step_count)
         out = FFI::MemoryPointer.new(:pointer)
         out_concurrency = FFI::MemoryPointer.new(:int64)
         # _rule_pointers / _invariant_pointers are unread past the call
@@ -762,9 +966,11 @@ module Hegel
         # A fresh MemoryPointer is zero-filled, which puts every rule in
         # group 0.
         rule_groups = FFI::MemoryPointer.new(:int64, rule_names.size)
+        weights = FFI::MemoryPointer.new(:double, rule_weights.size)
+        weights.write_array_of_double(rule_weights.map(&:to_f))
 
         code = @hegel_new_state_machine_fn.call(
-          ctx, tc, rule_names_ptr, rule_groups, nil, rule_names.size,
+          ctx, tc, rule_names_ptr, rule_groups, weights, rule_names.size,
           invariant_names_ptr, pack_flags(always_check), invariant_names.size,
           1, 1, step_count, out, out_concurrency
         )
@@ -841,17 +1047,19 @@ module Hegel
       # Returns a caller-owned string generator handle, released
       # separately with #string_generator_free (or scoped with
       # Hegel::TestCase#with_text_generator). +categories+ and
-      # +exclude_categories+ are always passed as NULL/0 below, and
-      # +include_characters+ and +exclude_characters+ as empty strings:
-      # this call only wires up the codepoint-range constraints of the
-      # 12-argument bind; the category and explicit-character filter
-      # arguments are a later generator's scope, layered on top of this
-      # same bind.
-      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF)
+      # +exclude_categories+ are Arrays of Unicode general category names,
+      # or nil for none: nil goes over as NULL, which is no restriction,
+      # while an empty Array goes over as a non-NULL pointer with length
+      # zero, which the header reads as an empty alphabet.
+      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF,
+        categories: nil, exclude_categories: nil, include_characters: "", exclude_characters: "")
         out = FFI::MemoryPointer.new(:pointer)
+        category_array, category_slots = optional_name_array(categories)
+        exclude_array, exclude_slots = optional_name_array(exclude_categories)
         code = @hegel_string_generator_text_fn.call(
           ctx, min_size, max_size, optional_string(codec), min_codepoint, max_codepoint,
-          nil, 0, nil, 0, StringStruct.new, StringStruct.new,
+          category_array, category_slots.size, exclude_array, exclude_slots.size,
+          string_view(include_characters), string_view(exclude_characters),
           out
         )
         LibHegel.check!(self, ctx, code)
@@ -1087,7 +1295,92 @@ module Hegel
         [read_date(out[:date]), read_time(out[:time])]
       end
 
+      # Returns a caller-owned grammar builder for +text+, a grammar in
+      # Lark's syntax, released with #grammar_builder_free.
+      def grammar_builder_new(ctx, text)
+        out = FFI::MemoryPointer.new(:pointer)
+        code = @hegel_grammar_builder_new_fn.call(ctx, string_view(text.encode(Encoding::UTF_8)), out)
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # The path of the +index+th file the grammar imports, or nil past the
+      # end of the list. HEGEL_E_NOT_FOUND marks that end rather than an
+      # error, so it is answered before LibHegel.check! sees it.
+      def grammar_builder_file(ctx, builder, index)
+        out = StringStruct.new
+        code = @hegel_grammar_builder_file_fn.call(ctx, builder, index, out)
+        return nil if code == HEGEL_E_NOT_FOUND
+
+        LibHegel.check!(self, ctx, code)
+        read_string(out)
+      end
+
+      # Supplies the +index+th file's +text+, or nil for a file that does
+      # not exist, which the header keeps apart from an empty file.
+      def grammar_builder_provide(ctx, builder, index, text)
+        code = @hegel_grammar_builder_provide_fn.call(ctx, builder, index, optional_string(text))
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      def grammar_builder_free(ctx, builder)
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
+        @hegel_grammar_builder_free_fn.call(ctx, builder) # mutineer:disable-line statement_removal
+        nil
+      end
+
+      # Returns a caller-owned grammar compiled from +builder+, released
+      # with #grammar_free. +start+ nil is the rule `start`; +alphabet+ is
+      # an optional text generator handle. +names+ always goes over as a
+      # non-NULL array, as hegel-rust passes it, even when it is empty.
+      def grammar_new(ctx, builder, start, max_size, max_depth, alphabet, names)
+        out = FFI::MemoryPointer.new(:pointer)
+        names_array, names_slots = optional_name_array(names)
+        code = @hegel_grammar_new_fn.call(
+          ctx, builder, optional_string(start), max_size, max_depth, alphabet, names_array, names_slots.size, out
+        )
+        LibHegel.check!(self, ctx, code)
+        out.read_pointer
+      end
+
+      # The marker standing for the explicit terminal +name+ in the strings
+      # drawn from +grammar+, copied out of the grammar's own buffer.
+      def grammar_placeholder(ctx, grammar, name)
+        out = StringStruct.new
+        code = @hegel_grammar_placeholder_fn.call(ctx, grammar, string_view(name), out)
+        LibHegel.check!(self, ctx, code)
+        read_string(out)
+      end
+
+      def grammar_free(ctx, grammar)
+        # Removing this call only leaks native memory; Ruby has no way to
+        # observe the leak.
+        @hegel_grammar_free_fn.call(ctx, grammar) # mutineer:disable-line statement_removal
+        nil
+      end
+
+      # A drawn string of +grammar+ of at most +max_size+ characters outside
+      # its markers, 0 meaning the grammar's own cap. Freed like
+      # #generate_string's result.
+      def generate_grammar(ctx, tc, grammar, max_size)
+        out = StringStruct.new
+        code = @hegel_generate_grammar_fn.call(ctx, tc, grammar, max_size, out)
+        LibHegel.check!(self, ctx, code)
+        read_string(out)
+      ensure
+        owned_string_free(ctx, out)
+      end
+
       private
+
+      def retry_or_check!(ctx, code)
+        return false if code == HEGEL_E_RETRY
+
+        LibHegel.check!(self, ctx, code)
+        true
+      end
 
       # Resolves +symbol+ against @handle and wraps it as a callable
       # FFI::Function, the direct form #initialize's own comment explains
@@ -1175,6 +1468,16 @@ module Hegel
           write_string(StringStruct.new(array + (i * StringStruct.size)), name)
         end
         [array, slots]
+      end
+
+      # #pack_name_array for an argument where nil and an empty Array mean
+      # different things: nil stays NULL, and an empty Array becomes a
+      # non-NULL pointer, which #pack_name_array alone would turn into NULL.
+      def optional_name_array(names)
+        return [nil, []] unless names
+
+        array, slots = pack_name_array(names)
+        [array || FFI::MemoryPointer.new(StringStruct), slots]
       end
 
       # Packs +flags+ (an Array of true/false) into a const bool * buffer,

@@ -23,6 +23,8 @@ module Hegel
       # already carries that state.
       Failure = Struct.new(:origin, :blob, :caveat)
 
+      RECURSION_MAX_ATTEMPTS = 9
+
       # Writers only: #version is also the name of the instance method
       # below that mimics the real ABI call, so an attr_accessor's 0-arity
       # reader would collide with (and be overwritten by) that method
@@ -34,7 +36,8 @@ module Hegel
       # the one it wants to drive down a specific LibHegel.check!
       # translation path. Mirrors the per-primitive return-code fields on
       # hegel-java's FakeLibhegel.
-      attr_writer :settings_new_code, :settings_set_test_cases_code, :settings_set_verbosity_code,
+      attr_writer :settings_new_code, :settings_new_for_profile_code, :settings_register_profile_code,
+        :set_default_profile_code, :settings_set_test_cases_code, :settings_set_verbosity_code,
         :settings_set_seed_code, :settings_set_derandomize_code, :settings_set_database_code,
         :run_start_code, :next_test_case_code, :mark_complete_code,
         :generate_boolean_code, :generate_integer_code, :generate_integer_big_code,
@@ -49,11 +52,27 @@ module Hegel
         :string_generator_url_code, :string_generator_domain_code, :generate_ipv4_code, :generate_ipv6_code,
         :generate_uuid_code, :generate_date_code, :generate_time_code, :generate_datetime_code,
         :settings_set_phases_code, :settings_set_suppress_health_check_code,
-        :settings_set_report_multiple_failures_code, :settings_set_database_key_code,
+        :settings_set_report_multiple_failures_code, :settings_set_database_key_code, :settings_set_test_location_code,
         :target_code,
-        :new_pool_code, :pool_add_code, :pool_generate_code,
+        :new_pool_code, :pool_add_code, :pool_generate_code, :pool_restore_code,
         :new_state_machine_code, :state_machine_next_group_code, :state_machine_next_rule_code,
-        :state_machine_rule_rejected_code, :state_machine_should_check_invariant_code
+        :state_machine_rule_rejected_code, :state_machine_should_check_invariant_code,
+        :grammar_builder_new_code, :grammar_builder_file_code, :grammar_builder_provide_code, :grammar_new_code,
+        :grammar_placeholder_code, :generate_grammar_code
+
+      # The paths #grammar_builder_file answers, by index, and the strings
+      # #generate_grammar answers, one per call in order, then "".
+      attr_writer :grammar_builder_files, :generate_grammar_values
+
+      # What the grammar calls were given: each builder's text, each
+      # [builder, index, text] provided, a Hash of each #grammar_new call's
+      # arguments, and the max_size of each #generate_grammar call.
+      attr_reader :grammar_builder_texts, :grammar_builder_provides, :grammar_new_calls, :generate_grammar_max_sizes,
+        :freed_grammar_builders, :freed_grammars
+
+      # context_free, the grammar calls, and spans, in the order they were
+      # made, so a test can check one happened before another.
+      attr_reader :events
 
       # Values #pool_add / #pool_generate / #state_machine_next_group /
       # #state_machine_next_rule / #state_machine_should_check_invariant hand
@@ -116,8 +135,19 @@ module Hegel
       # HEGEL_OK result, distinct from an error via #run_start_code=.
       attr_writer :run_start_returns_nil
 
-      attr_reader :freed_contexts, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
-        :freed_pools
+      attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
+        :freed_pools, :state_machine_rule_weights, :restored_pool_ids, :opened_collections, :freed_collections
+
+      # The arguments of each #string_generator_text call (a Hash of its
+      # keywords) and each #string_generator_regex call (a Hash of pattern,
+      # fullmatch and alphabet), paired with the handle that call returned.
+      attr_reader :string_generator_text_calls, :string_generator_regex_calls
+      # Result codes and branch decisions the recursion calls answer with,
+      # one element per call in order. #new_recursion_calls holds the
+      # [max_depth, max_leaves] pair each #new_recursion call was given.
+      attr_writer :new_recursion_code, :recursion_branch_code, :recursion_branch_values, :recursion_leaf_codes,
+        :recursion_retry_codes, :recursion_finish_codes
+      attr_reader :new_recursion_calls, :freed_recursions
 
       # The value passed to each settings setter, one array per keyword, so
       # a test can confirm Hegel::Settings.apply calls the setter its table
@@ -126,18 +156,38 @@ module Hegel
       # matching hegel_settings_set_seed's two value arguments.
       attr_reader :settings_test_cases_calls, :settings_verbosity_calls, :settings_seed_calls,
         :settings_derandomize_calls, :settings_database_calls, :settings_database_key_calls,
-        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls
+        :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls,
+        :settings_stop_on_first_failure_calls, :settings_print_blob_calls, :settings_show_statistics_calls,
+        :settings_nondeterminism_strictness_calls, :settings_backend_calls, :settings_test_location_calls, :event_calls, :event_value_calls,
+        :settings_new_for_profile_calls, :settings_register_profile_calls, :set_default_profile_calls
+
+      # What #settings_get_print_blob reports: true, the engine's own default,
+      # unless a test sets it to stand in for a profile that turns it off.
+      attr_accessor :settings_print_blob_value
 
       def initialize
         @version = Hegel::LIBHEGEL_VERSION
         @version_code = HEGEL_OK
         @last_error = "fake error"
         @freed_contexts = []
+        @freed_settings = []
         @freed_test_cases = []
         @freed_string_generators = []
+        @string_generator_text_calls = []
+        @string_generator_regex_calls = []
         @freed_pools = []
+        @state_machine_rule_weights = []
+        @restored_pool_ids = []
+        @opened_collections = []
+        @freed_collections = []
 
         @settings_new_code = HEGEL_OK
+        @settings_new_for_profile_code = HEGEL_OK
+        @settings_register_profile_code = HEGEL_OK
+        @set_default_profile_code = HEGEL_OK
+        @settings_new_for_profile_calls = []
+        @settings_register_profile_calls = []
+        @set_default_profile_calls = []
         @settings_set_test_cases_code = HEGEL_OK
         @settings_set_verbosity_code = HEGEL_OK
         @settings_set_seed_code = HEGEL_OK
@@ -149,9 +199,18 @@ module Hegel
         @settings_derandomize_calls = []
         @settings_database_calls = []
         @settings_database_key_calls = []
+        @settings_test_location_calls = []
         @settings_phases_calls = []
         @settings_suppress_health_check_calls = []
         @settings_report_multiple_failures_calls = []
+        @settings_stop_on_first_failure_calls = []
+        @settings_print_blob_calls = []
+        @settings_show_statistics_calls = []
+        @settings_nondeterminism_strictness_calls = []
+        @settings_backend_calls = []
+        @settings_print_blob_value = true
+        @event_calls = []
+        @event_value_calls = []
 
         @run_start_code = HEGEL_OK
         @run_start_returns_nil = false
@@ -228,6 +287,7 @@ module Hegel
         @settings_set_suppress_health_check_code = HEGEL_OK
         @settings_set_report_multiple_failures_code = HEGEL_OK
         @settings_set_database_key_code = HEGEL_OK
+        @settings_set_test_location_code = HEGEL_OK
 
         @target_code = HEGEL_OK
 
@@ -236,6 +296,7 @@ module Hegel
         @pool_add_value = 0
         @pool_generate_code = HEGEL_OK
         @pool_generate_value = 0
+        @pool_restore_code = HEGEL_OK
         @new_state_machine_code = HEGEL_OK
         # The machine ends before its first round unless a test says
         # otherwise, so a test that opens one never loops by accident.
@@ -246,6 +307,31 @@ module Hegel
         @state_machine_rule_rejected_code = HEGEL_OK
         @state_machine_should_check_invariant_code = HEGEL_OK
         @state_machine_should_check_invariant_value = true
+
+        @grammar_builder_new_code = HEGEL_OK
+        @grammar_builder_file_code = HEGEL_OK
+        @grammar_builder_provide_code = HEGEL_OK
+        @grammar_new_code = HEGEL_OK
+        @grammar_placeholder_code = HEGEL_OK
+        @generate_grammar_code = HEGEL_OK
+        @grammar_builder_files = []
+        @generate_grammar_values = []
+        @grammar_builder_texts = []
+        @grammar_builder_provides = []
+        @grammar_new_calls = []
+        @generate_grammar_max_sizes = []
+        @freed_grammar_builders = []
+        @freed_grammars = []
+        @events = []
+        @new_recursion_code = HEGEL_OK
+        @new_recursion_calls = []
+        @recursion_branch_code = HEGEL_OK
+        @recursion_branch_values = []
+        @recursion_leaf_codes = []
+        @recursion_retry_codes = []
+        @recursion_retries = Hash.new(0).compare_by_identity
+        @recursion_finish_codes = []
+        @freed_recursions = []
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -258,6 +344,7 @@ module Hegel
       # contract) so a test can assert a context was released.
       def context_free(ctx)
         @freed_contexts << ctx
+        @events << [:context_free]
         nil
       end
 
@@ -277,7 +364,26 @@ module Hegel
         Object.new
       end
 
-      def settings_free(_ctx, _s)
+      def settings_new_for_profile(ctx, name)
+        @settings_new_for_profile_calls << name
+        LibHegel.check!(self, ctx, @settings_new_for_profile_code)
+        Object.new
+      end
+
+      def settings_register_profile(ctx, name, s)
+        @settings_register_profile_calls << [name, s]
+        LibHegel.check!(self, ctx, @settings_register_profile_code)
+        nil
+      end
+
+      def set_default_profile(ctx, name)
+        @set_default_profile_calls << name
+        LibHegel.check!(self, ctx, @set_default_profile_code)
+        nil
+      end
+
+      def settings_free(_ctx, s)
+        @freed_settings << s
         nil
       end
 
@@ -438,19 +544,26 @@ module Hegel
         f.caveat
       end
 
-      def start_span(ctx, _tc, _label)
+      def start_span(ctx, _tc, label)
+        @events << [:start_span, label]
         LibHegel.check!(self, ctx, @start_span_code)
         nil
       end
 
-      def stop_span(ctx, _tc, _discard)
+      def stop_span(ctx, _tc, discard)
+        @events << [:stop_span, discard]
         LibHegel.check!(self, ctx, @stop_span_code)
         nil
       end
 
-      def new_collection(ctx, _tc, _min_size, _max_size)
+      # Records each collection it opens as [handle, min_size, max_size],
+      # and #collection_free records each handle it frees, so a test can
+      # pair every opened collection with its release.
+      def new_collection(ctx, _tc, min_size, max_size)
         LibHegel.check!(self, ctx, @new_collection_code)
-        Object.new
+        collection = Object.new
+        @opened_collections << [collection, min_size, max_size]
+        collection
       end
 
       # Answers true @collection_more_count times, then false, matching
@@ -469,7 +582,8 @@ module Hegel
         nil
       end
 
-      def collection_free(_ctx, _collection)
+      def collection_free(_ctx, collection)
+        @freed_collections << collection
         nil
       end
 
@@ -479,9 +593,15 @@ module Hegel
         @generate_float_value
       end
 
-      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF)
+      def string_generator_text(ctx, min_size:, max_size:, codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF,
+        categories: nil, exclude_categories: nil, include_characters: "", exclude_characters: "")
         LibHegel.check!(self, ctx, @string_generator_text_code)
-        Object.new
+        options = {
+          min_size: min_size, max_size: max_size, codec: codec, min_codepoint: min_codepoint,
+          max_codepoint: max_codepoint, categories: categories, exclude_categories: exclude_categories,
+          include_characters: include_characters, exclude_characters: exclude_characters
+        }
+        Object.new.tap { |handle| @string_generator_text_calls << [options, handle] }
       end
 
       # Records +generator+, so a test can confirm
@@ -510,9 +630,11 @@ module Hegel
         nil
       end
 
-      def string_generator_regex(ctx, _pattern, _fullmatch, _alphabet = nil)
+      def string_generator_regex(ctx, pattern, fullmatch, alphabet = nil)
         LibHegel.check!(self, ctx, @string_generator_regex_code)
-        Object.new
+        Object.new.tap do |handle|
+          @string_generator_regex_calls << [{pattern: pattern, fullmatch: fullmatch, alphabet: alphabet}, handle]
+        end
       end
 
       def string_generator_email(ctx)
@@ -584,6 +706,54 @@ module Hegel
         nil
       end
 
+      def settings_set_test_location(ctx, _s, file, begin_line, class_name, function)
+        @settings_test_location_calls << [file, begin_line, class_name, function]
+        LibHegel.check!(self, ctx, @settings_set_test_location_code)
+        nil
+      end
+
+      def settings_set_stop_on_first_failure(_ctx, _s, yes)
+        @settings_stop_on_first_failure_calls << yes
+        nil
+      end
+
+      # Also updates what #settings_get_print_blob reads back, as the engine
+      # does.
+      def settings_set_print_blob(_ctx, _s, yes)
+        @settings_print_blob_calls << yes
+        @settings_print_blob_value = yes
+        nil
+      end
+
+      def settings_get_print_blob(_ctx, _s)
+        @settings_print_blob_value
+      end
+
+      def settings_set_show_statistics(_ctx, _s, yes)
+        @settings_show_statistics_calls << yes
+        nil
+      end
+
+      def settings_set_nondeterminism_strictness(_ctx, _s, strictness)
+        @settings_nondeterminism_strictness_calls << strictness
+        nil
+      end
+
+      def settings_set_backend(_ctx, _s, backend)
+        @settings_backend_calls << backend
+        nil
+      end
+
+      def event(_ctx, _tc, label)
+        @event_calls << label
+        nil
+      end
+
+      def event_value(_ctx, _tc, label, value)
+        @event_value_calls << [label, value]
+        nil
+      end
+
       def target(ctx, _tc, _value, _label)
         LibHegel.check!(self, ctx, @target_code)
         nil
@@ -604,6 +774,12 @@ module Hegel
         @pool_generate_value
       end
 
+      def pool_restore(ctx, _tc, _pool, variable_id)
+        LibHegel.check!(self, ctx, @pool_restore_code)
+        @restored_pool_ids << variable_id
+        nil
+      end
+
       # Records +pool+ (readable via #freed_pools), so a test can confirm
       # Hegel::Runner freed every pool a test case opened, whether the case
       # came from an ordinary run or from a reproduce_failure: replay.
@@ -612,7 +788,8 @@ module Hegel
         nil
       end
 
-      def new_state_machine(ctx, _tc, _rule_names, _invariant_names, _always_check, _step_count)
+      def new_state_machine(ctx, _tc, _rule_names, rule_weights, _invariant_names, _always_check, _step_count)
+        @state_machine_rule_weights << rule_weights
         LibHegel.check!(self, ctx, @new_state_machine_code)
         Object.new
       end
@@ -639,6 +816,101 @@ module Hegel
 
       def state_machine_free(_ctx, _state_machine)
         nil
+      end
+
+      def grammar_builder_new(ctx, text)
+        LibHegel.check!(self, ctx, @grammar_builder_new_code)
+        @grammar_builder_texts << text
+        Object.new
+      end
+
+      def grammar_builder_file(ctx, _builder, index)
+        LibHegel.check!(self, ctx, @grammar_builder_file_code)
+        @grammar_builder_files[index]
+      end
+
+      def grammar_builder_provide(ctx, builder, index, text)
+        @grammar_builder_provides << [builder, index, text]
+        LibHegel.check!(self, ctx, @grammar_builder_provide_code)
+        nil
+      end
+
+      def grammar_builder_free(_ctx, builder)
+        @freed_grammar_builders << builder
+        nil
+      end
+
+      def grammar_new(ctx, builder, start, max_size, max_depth, alphabet, names)
+        @grammar_new_calls << {
+          builder: builder, start: start, max_size: max_size, max_depth: max_depth, alphabet: alphabet, names: names
+        }
+        LibHegel.check!(self, ctx, @grammar_new_code)
+        Object.new.tap { |grammar| @events << [:grammar_new, grammar] }
+      end
+
+      def grammar_placeholder(ctx, _grammar, name)
+        LibHegel.check!(self, ctx, @grammar_placeholder_code)
+        "<<EXPLICIT_#{name}_fake>>"
+      end
+
+      def grammar_free(_ctx, grammar)
+        @freed_grammars << grammar
+        @events << [:grammar_free, grammar]
+        nil
+      end
+
+      def generate_grammar(ctx, _tc, _grammar, max_size)
+        @generate_grammar_max_sizes << max_size
+        @events << [:generate_grammar, max_size]
+        LibHegel.check!(self, ctx, @generate_grammar_code)
+        @generate_grammar_values.shift || ""
+      end
+
+      def new_recursion(ctx, _tc, max_depth, max_leaves)
+        @new_recursion_calls << [max_depth, max_leaves]
+        LibHegel.check!(self, ctx, @new_recursion_code)
+        Object.new
+      end
+
+      # Answers the next of #recursion_branch_values, or false once they run
+      # out, so a recursive draw against this Fake ends in a leaf.
+      def recursion_branch(ctx, _tc, _recursion, _depth)
+        LibHegel.check!(self, ctx, @recursion_branch_code)
+        @recursion_branch_values.shift || false
+      end
+
+      # The next of #recursion_leaf_codes, HEGEL_OK once they run out.
+      # HEGEL_E_RETRY answers false, as LibHegel::Real#recursion_leaf does.
+      def recursion_leaf(ctx, _tc, _recursion)
+        retry_or_check!(ctx, @recursion_leaf_codes.shift || HEGEL_OK)
+      end
+
+      # The next of #recursion_retry_codes. Once they run out, HEGEL_OK
+      # until the ninth retry of one recursion, which answers
+      # HEGEL_E_ASSUME, as libhegel's RECURSION_MAX_ATTEMPTS has it.
+      def recursion_retry(ctx, _tc, recursion)
+        attempts = @recursion_retries[recursion] += 1
+        default = (attempts >= RECURSION_MAX_ATTEMPTS) ? HEGEL_E_ASSUME : HEGEL_OK
+        LibHegel.check!(self, ctx, @recursion_retry_codes.shift || default)
+        nil
+      end
+
+      def recursion_finish(ctx, _tc, _recursion)
+        retry_or_check!(ctx, @recursion_finish_codes.shift || HEGEL_OK)
+      end
+
+      def recursion_free(_ctx, recursion)
+        @freed_recursions << recursion
+        nil
+      end
+
+      private
+
+      def retry_or_check!(ctx, code)
+        return false if code == HEGEL_E_RETRY
+
+        LibHegel.check!(self, ctx, code)
+        true
       end
     end
   end

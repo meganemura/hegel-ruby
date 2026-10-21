@@ -61,6 +61,63 @@ class StringArgumentRecordingFake < Hegel::LibHegel::Fake
   end
 end
 
+class SequenceRecordingFake < SpanRecordingFake
+  attr_reader :collection_sizes, :integer_bounds
+  attr_writer :integer_values
+
+  def initialize
+    super
+    @collection_sizes = []
+    @integer_bounds = []
+    @integer_values = []
+  end
+
+  def new_collection(ctx, tc, min_size, max_size)
+    @collection_sizes << [min_size, max_size]
+    super
+  end
+
+  def generate_integer(ctx, tc, min_value, max_value)
+    @integer_bounds << [min_value, max_value]
+    value = super
+    @integer_values.empty? ? value : @integer_values.shift
+  end
+end
+
+# The Fake accepts #collection_reject and forgets it; the reason a
+# generator gives is only visible through a subclass that remembers it.
+class RejectRecordingFake < Hegel::LibHegel::Fake
+  attr_reader :rejections
+
+  def initialize
+    super
+    @rejections = []
+  end
+
+  def collection_reject(ctx, tc, collection, why = nil)
+    @rejections << why
+    super
+  end
+end
+
+# Which values reach hegel_generate_float is invisible to a real run when
+# the bounds hold no subnormal, so the default allow_subnormal derives
+# from the bounds is pinned on what the Fake receives.
+class FloatRecordingFake < Hegel::LibHegel::Fake
+  attr_reader :magnitudes
+
+  def initialize
+    super
+    @magnitudes = []
+  end
+
+  def generate_float(ctx, tc, width, min_value, max_value, allow_nan, allow_infinity, exclude_min, exclude_max,
+    smallest_nonzero_magnitude)
+    @magnitudes << smallest_nonzero_magnitude
+    super
+  end
+end
+
 class TestGenerators < Minitest::Test
   include HegelDirectoryGuard
   include Hegel::Syntax::Methods
@@ -262,6 +319,111 @@ class TestGenerators < Minitest::Test
     assert_all_examples(floats(min_value: 1.0, max_value: 1.0)) { |v| v.between?(1.0, 1.0) }
   end
 
+  def subnormal?(value)
+    value != 0.0 && value.abs < Float::MIN
+  end
+
+  def test_floats_allow_subnormal_false_never_draws_a_subnormal
+    assert_all_examples(floats(allow_nan: false, allow_infinity: false, allow_subnormal: false)) do |v|
+      !subnormal?(v)
+    end
+  end
+
+  def test_floats_draw_a_subnormal_by_default
+    assert subnormal?(find_any(floats(allow_nan: false, allow_infinity: false)) { |v| subnormal?(v) })
+  end
+
+  def test_floats_allow_subnormal_true_can_draw_a_subnormal
+    found = find_any(floats(allow_nan: false, allow_infinity: false, allow_subnormal: true)) { |v| subnormal?(v) }
+
+    assert subnormal?(found)
+  end
+
+  # A range whose only normal values are its two ends: the check that
+  # allow_subnormal: false leaves something to draw must not count an end
+  # as a subnormal.
+  def test_floats_allow_subnormal_false_draws_the_smallest_normal_at_either_end
+    assert_all_examples(floats(min_value: Float::MIN, max_value: Float::MIN, allow_subnormal: false)) { |v| v == Float::MIN }
+    assert_all_examples(floats(min_value: -Float::MIN, max_value: -Float::MIN, allow_subnormal: false)) { |v| v == -Float::MIN }
+  end
+
+  def test_floats_allow_subnormal_false_with_zero_at_either_end_of_a_subnormal_range_draws_zero
+    assert_all_examples(floats(min_value: 0.0, max_value: 1e-310, allow_subnormal: false)) { |v| v == 0.0 }
+    assert_all_examples(floats(min_value: -1e-310, max_value: 0.0, allow_subnormal: false)) { |v| v == 0.0 }
+  end
+
+  def test_floats_allow_subnormal_true_accepts_a_bound_just_below_the_smallest_normal
+    assert_all_examples(floats(min_value: Float::MIN.prev_float, max_value: 1.0, allow_subnormal: true)) do |v|
+      v >= Float::MIN.prev_float
+    end
+    assert_all_examples(floats(min_value: -1.0, max_value: (-Float::MIN).next_float, allow_subnormal: true)) do |v|
+      v <= (-Float::MIN).next_float
+    end
+  end
+
+  def test_floats_allow_subnormal_true_with_a_min_value_of_the_smallest_normal_or_more_raises_at_draw_time
+    [1.0, Float::MIN].each do |min_value|
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) { |tc| tc.draw(floats(min_value: min_value, allow_subnormal: true)) }
+      end
+
+      assert_equal "floats: InvalidArgument: allow_subnormal=true, but min_value excludes " \
+        "all values below the smallest positive normal #{Float::MIN}", error.message
+    end
+  end
+
+  def test_floats_allow_subnormal_true_with_a_max_value_of_the_negated_smallest_normal_or_less_raises_at_draw_time
+    [-1.0, -Float::MIN].each do |max_value|
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) { |tc| tc.draw(floats(max_value: max_value, allow_subnormal: true)) }
+      end
+
+      assert_equal "floats: InvalidArgument: allow_subnormal=true, but max_value excludes " \
+        "all values above the smallest negative normal -#{Float::MIN}", error.message
+    end
+  end
+
+  def test_floats_allow_subnormal_false_with_a_range_of_only_subnormals_raises_at_draw_time
+    [[5e-324, 1e-310], [-1e-310, -5e-324]].each do |min_value, max_value|
+      error = assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) do |tc|
+          tc.draw(floats(min_value: min_value, max_value: max_value, allow_subnormal: false))
+        end
+      end
+
+      assert_equal "floats: InvalidArgument: allow_subnormal=false leaves no 64-bit " \
+        "floating-point values in [#{min_value}, #{max_value}]", error.message
+    end
+  end
+
+  def smallest_nonzero_magnitude_sent_for(generator)
+    fake = FloatRecordingFake.new
+    generator.do_draw(Hegel::TestCase.new(fake, fake.context_new, Object.new))
+    fake.magnitudes.fetch(0)
+  end
+
+  def test_floats_allow_subnormal_defaults_to_what_the_bounds_admit
+    subnormal = Hegel::LibHegel::HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED
+    {
+      {} => subnormal,
+      {min_value: -1.0, max_value: 1.0} => subnormal,
+      {min_value: 0.0, max_value: 0.0} => subnormal,
+      {min_value: Float::MIN.prev_float} => subnormal,
+      {max_value: (-Float::MIN).next_float} => subnormal,
+      {min_value: Float::MIN} => Float::MIN,
+      {min_value: 1.0, max_value: 2.0} => Float::MIN,
+      {max_value: -Float::MIN} => Float::MIN,
+      {max_value: -1.0} => Float::MIN
+    }.each do |options, expected|
+      assert_equal expected, smallest_nonzero_magnitude_sent_for(floats(**options)), options.inspect
+    end
+  end
+
+  def test_floats_explicit_allow_subnormal_overrides_the_default
+    assert_equal Float::MIN, smallest_nonzero_magnitude_sent_for(floats(allow_subnormal: false))
+    assert_equal 5e-324, smallest_nonzero_magnitude_sent_for(floats(min_value: -1.0, allow_subnormal: true))
+  end
+
   # ---- text ----
 
   def test_text_draws_against_the_real_engine
@@ -323,6 +485,205 @@ class TestGenerators < Minitest::Test
   def test_text_default_max_size_bounds_the_draw_against_the_real_engine
     assert_all_examples(text) { |v| v.length <= 100 }
     assert_all_examples(text(min_size: 150)) { |v| v.length.between?(150, 250) }
+  end
+
+  # ---- text: alphabet options ----
+
+  # The engine's Unicode tables can be newer than Ruby's, so a codepoint
+  # Ruby calls unassigned (Cn) may be a letter to the engine.
+  def uppercase_or_unassigned?(char)
+    char.match?(/\p{Lu}|\p{Cn}/)
+  end
+
+  def draw_failure(generator)
+    assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
+  end
+
+  # What Fake#string_generator_text records for a call that leaves every
+  # character option at its default, which is what the engine then sees.
+  TEXT_HANDLE_DEFAULTS = {
+    codec: nil, min_codepoint: 0, max_codepoint: 0xFFFFFFFF, categories: nil, exclude_categories: nil,
+    include_characters: "", exclude_characters: ""
+  }.freeze
+
+  def draw_against_fake(generator, fake = Hegel::LibHegel::Fake.new)
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+    generator.do_draw(tc)
+    fake
+  end
+
+  def test_text_categories_restrict_the_alphabet
+    assert_all_examples(text(categories: ["Lu"], max_size: 20)) do |v|
+      v.each_char.all? { |c| uppercase_or_unassigned?(c) }
+    end
+  end
+
+  def test_text_categories_take_precedence_over_exclude_categories
+    assert_all_examples(text(categories: ["Lu"], exclude_categories: ["Lu"], min_size: 1, max_size: 5)) do |v|
+      !v.empty? && v.each_char.all? { |c| uppercase_or_unassigned?(c) }
+    end
+  end
+
+  def test_text_exclude_categories_removes_the_named_categories
+    assert_all_examples(text(exclude_categories: ["Cc", "Cs"])) { |v| !v.include?("\n") }
+  end
+
+  def test_text_include_characters_with_no_categories_draws_only_those
+    assert_all_examples(text(categories: [], include_characters: "xyz", max_size: 20)) { |v| v.match?(/\A[xyz]*\z/) }
+  end
+
+  def test_text_exclude_characters_are_never_drawn
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      excluded = tc.draw(text(codec: "ascii"))
+      value = tc.draw(text(codec: "ascii", exclude_characters: excluded))
+      assert value.each_char.none? { |c| excluded.include?(c) }, "drew an excluded character from #{value.inspect}"
+    end
+  end
+
+  def test_text_never_draws_a_surrogate
+    assert_all_examples(text(min_codepoint: 0xD700, max_codepoint: 0xE000)) do |v|
+      v.valid_encoding? && v.codepoints.none? { |cp| cp.between?(0xD800, 0xDFFF) }
+    end
+  end
+
+  def test_text_alphabet_string_restricts_the_alphabet
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      alphabet = tc.draw(text(codec: "ascii", min_size: 1))
+      value = tc.draw(text(alphabet: alphabet))
+      assert value.each_char.all? { |c| alphabet.include?(c) }, "#{value.inspect} left #{alphabet.inspect}"
+    end
+  end
+
+  def test_text_alphabet_string_reaches_every_character_of_it
+    find_any(text(alphabet: "abc", min_size: 10)) { |v| v.include?("a") && v.include?("b") && v.include?("c") }
+  end
+
+  def test_text_single_character_alphabet_draws_only_that_character
+    assert_all_examples(text(alphabet: "x", min_size: 1, max_size: 5)) { |v| v.match?(/\Ax{1,5}\z/) }
+  end
+
+  def test_text_alphabet_string_shrinks_to_its_first_character
+    assert_equal "AAA", minimal(text(alphabet: "FEDCBA", min_size: 3)) { true }
+  end
+
+  # An empty alphabet is legal when no character is drawn from it.
+  def test_text_empty_alphabet_draws_the_empty_string_when_max_size_is_zero
+    assert_all_examples(text(alphabet: "", max_size: 0)) { |v| v == "" }
+  end
+
+  def test_text_alphabet_with_a_character_option_raises_at_draw_time
+    options = {
+      codec: "ascii", min_codepoint: 0, max_codepoint: 127, categories: ["Lu"], exclude_categories: ["Ll"],
+      include_characters: "a", exclude_characters: "b"
+    }
+
+    options.each do |name, value|
+      error = draw_failure(text(alphabet: "abc", **{name => value}))
+
+      assert_includes error.message, "Cannot combine .alphabet() with character methods.", "for #{name}"
+    end
+  end
+
+  def test_text_alphabet_that_is_not_a_string_raises_at_draw_time
+    [3, characters].each do |alphabet|
+      error = draw_failure(text(alphabet: alphabet))
+
+      assert_includes error.message, "text: alphabet must be a String, not a #{alphabet.class}"
+    end
+  end
+
+  def test_text_unknown_codec_raises_at_draw_time
+    error = draw_failure(text(codec: "not-a-real-codec"))
+
+    assert_includes error.message, "text: invalid codec: not-a-real-codec"
+  end
+
+  def test_text_accepts_every_supported_codec
+    %w[ascii latin-1 iso-8859-1 utf-8].each do |codec|
+      assert_all_examples(text(codec: codec)) { |v| v.is_a?(String) }
+    end
+  end
+
+  def test_text_latin_1_codec_bounds_the_codepoints_to_one_byte
+    assert_all_examples(text(codec: "latin-1")) { |v| v.codepoints.all? { |cp| cp <= 0xFF } }
+  end
+
+  def test_text_categories_naming_a_surrogate_category_raise_at_draw_time
+    %w[Cs C].each do |category|
+      error = draw_failure(text(categories: [category]))
+
+      assert_includes error.message, "\"#{category}\" includes surrogate codepoints"
+    end
+  end
+
+  def test_text_nonexistent_category_raises_at_draw_time
+    error = draw_failure(text(exclude_categories: ["foo"]))
+
+    assert_includes error.message, "foo"
+  end
+
+  def test_text_min_codepoint_above_max_codepoint_raises_at_draw_time
+    error = draw_failure(text(min_codepoint: 200, max_codepoint: 100))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_text_include_characters_overlapping_exclude_characters_raise_at_draw_time
+    error = draw_failure(text(include_characters: "abc", exclude_characters: "cde"))
+
+    assert_includes error.message, "overlap"
+  end
+
+  def test_text_passes_its_options_to_a_text_handle_and_frees_it
+    fake = draw_against_fake(
+      text(
+        min_size: 2, max_size: 7, codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"],
+        exclude_categories: ["Ll"], include_characters: "xy", exclude_characters: "z"
+      )
+    )
+
+    options, handle = fake.string_generator_text_calls.fetch(0)
+    assert_equal(
+      {min_size: 2, max_size: 7, codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"],
+       exclude_categories: nil, include_characters: "xy", exclude_characters: "z"},
+      options
+    )
+    assert_equal [handle], fake.freed_string_generators
+  end
+
+  def test_text_passes_exclude_categories_when_there_are_no_categories
+    fake = draw_against_fake(text(exclude_categories: ["Ll"], max_size: 3))
+
+    assert_equal(
+      [TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 3, exclude_categories: ["Ll"])],
+      fake.string_generator_text_calls.map(&:first)
+    )
+  end
+
+  def test_text_without_options_sends_the_default_size_and_no_character_options
+    fake = draw_against_fake(text)
+
+    assert_equal(
+      [TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 100)],
+      fake.string_generator_text_calls.map(&:first)
+    )
+  end
+
+  def test_text_alphabet_string_builds_an_empty_category_handle_that_includes_the_string
+    fake = draw_against_fake(text(alphabet: "abc", max_size: 4))
+
+    assert_equal(
+      [TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 4, categories: [], include_characters: "abc")],
+      fake.string_generator_text_calls.map(&:first)
+    )
+  end
+
+  def test_text_frees_its_handle_when_the_draw_raises
+    fake = Hegel::LibHegel::Fake.new
+    fake.generate_string_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+
+    assert_raises(Hegel::StopTest) { draw_against_fake(text, fake) }
+    assert_equal fake.string_generator_text_calls.map(&:last), fake.freed_string_generators
   end
 
   # ---- arrays ----
@@ -393,6 +754,80 @@ class TestGenerators < Minitest::Test
     assert_all_examples(arrays(integers, min_size: 3, max_size: 3)) { |v| v.length == 3 }
   end
 
+  def test_arrays_unique_has_no_duplicates
+    assert_all_examples(arrays(integers(min_value: 0, max_value: 20), unique: true)) { |v| v.uniq == v }
+  end
+
+  def test_arrays_unique_false_can_hold_duplicates
+    assert find_any(arrays(integers(min_value: 0, max_value: 1), min_size: 2)) { |v| v.uniq != v }
+  end
+
+  # A generator that drew min_size elements and dropped the repeats would
+  # return fewer, and one that appended a repeat would break the
+  # uniqueness; three slots over a domain of three values leave one
+  # arrangement each way.
+  def test_arrays_unique_reaches_min_size_over_a_domain_of_exactly_that_size
+    assert_all_examples(arrays(sampled_from([0, 1, 2]), min_size: 3, max_size: 3, unique: true)) { |v| v.sort == [0, 1, 2] }
+  end
+
+  def test_arrays_unique_with_min_size_holds_both_bounds
+    assert_all_examples(arrays(integers, min_size: 5, max_size: 8, unique: true)) do |v|
+      v.length.between?(5, 8) && v.uniq == v
+    end
+  end
+
+  def test_arrays_unique_shrinks_to_the_smallest_distinct_values
+    assert_equal [0, 1, -1], minimal(arrays(integers, unique: true)) { |v| v.length >= 3 }
+  end
+
+  def test_arrays_unique_shrinks_over_sampled_from_to_the_first_values
+    assert_equal [0, 1, 2], minimal(arrays(sampled_from((0..9).to_a), min_size: 3, unique: true)) { |_| true }
+  end
+
+  def test_arrays_unique_shrinks_using_negative_values
+    result = minimal(arrays(integers(min_value: -10, max_value: 10), max_size: 5, unique: true), test_cases: 1000) do |v|
+      v.length >= 5
+    end
+
+    assert_equal [-2, -1, 0, 1, 2], result.sort
+  end
+
+  def test_arrays_unique_rejects_a_repeated_element_with_the_duplicate_element_reason
+    fake = RejectRecordingFake.new
+    fake.collection_more_count = 3
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+    assert_equal [0], arrays(integers, unique: true).do_draw(tc)
+    assert_equal ["duplicate element", "duplicate element"], fake.rejections
+  end
+
+  def test_arrays_without_unique_never_rejects_a_repeated_element
+    fake = RejectRecordingFake.new
+    fake.collection_more_count = 3
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+    assert_equal [0, 0, 0], arrays(integers).do_draw(tc)
+    assert_empty fake.rejections
+  end
+
+  def test_arrays_unique_keeps_the_array_span_protocol
+    generator = arrays(integers, unique: true)
+    assert_equal(
+      [[:start, generator.label], [:start, integers.label], [:stop, false], [:stop, false]],
+      draw_with_span_recording(generator)
+    )
+  end
+
+  def test_arrays_unique_of_a_single_value_cannot_reach_a_larger_min_size_and_does_not_hang
+    error = Timeout.timeout(5) do
+      assert_raises(Hegel::Error) do
+        Hegel.test(verbosity: :quiet) { |tc| tc.draw(arrays(just(1), min_size: 5, unique: true)) }
+      end
+    end
+
+    assert_includes error.message, "FilterTooMuch"
+  end
+
   # ---- just ----
 
   # just draws nothing, so there is no separate real-engine sanity check
@@ -415,6 +850,209 @@ class TestGenerators < Minitest::Test
     assert_kind_of Hegel::Generator, generator
     error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
     assert_includes error.message, "must not be empty"
+  end
+
+  # ---- permutations, subsequences, samples ----
+
+  def subsequence?(sub, source)
+    remaining = source.each
+    sub.all? { |x| remaining.any? { |y| y == x } }
+  end
+
+  def sample?(sample, source)
+    pool = source.dup
+    sample.all? { |x| (i = pool.index(x)) && pool.delete_at(i) }
+  end
+
+  def test_permutations_draws_against_the_real_engine
+    assert_all_examples(permutations([1, 2, 3, 4])) { |v| v.sort == [1, 2, 3, 4] }
+  end
+
+  def test_subsequences_draws_against_the_real_engine
+    assert_all_examples(subsequences([1, 2, 3, 4, 5])) { |v| subsequence?(v, [1, 2, 3, 4, 5]) }
+  end
+
+  def test_samples_draws_against_the_real_engine
+    assert_all_examples(samples([1, 2, 3])) { |v| v.all? { |x| [1, 2, 3].include?(x) } }
+  end
+
+  def test_subsequences_min_size_bounds_the_draw
+    assert_all_examples(subsequences([1, 2, 3, 4, 5], min_size: 2)) { |v| v.size >= 2 }
+  end
+
+  def test_subsequences_max_size_bounds_the_draw
+    assert_all_examples(subsequences([1, 2, 3, 4, 5], max_size: 3)) { |v| v.size <= 3 }
+  end
+
+  def test_subsequences_max_size_above_the_element_count_is_capped
+    assert_all_examples(subsequences([1, 2, 3], max_size: 10)) { |v| v.size <= 3 }
+  end
+
+  def test_samples_min_size_bounds_the_draw
+    assert_all_examples(samples([1, 2, 3, 4], min_size: 2)) { |v| v.size >= 2 }
+  end
+
+  def test_samples_max_size_bounds_the_draw
+    assert_all_examples(samples([1, 2, 3, 4], max_size: 2)) { |v| v.size <= 2 }
+  end
+
+  def test_samples_without_replacement_uses_each_element_at_most_once
+    assert_all_examples(samples([1, 2, 3, 4], replacement: false)) { |v| sample?(v, [1, 2, 3, 4]) }
+  end
+
+  def test_samples_without_replacement_caps_the_size_at_the_element_count
+    assert_all_examples(samples([1, 2, 3], replacement: false, max_size: 10)) { |v| v.size <= 3 }
+  end
+
+  def test_samples_without_replacement_treats_duplicates_as_distinct
+    assert_all_examples(samples([1, 1, 2], replacement: false, min_size: 3)) { |v| v.sort == [1, 1, 2] }
+  end
+
+  def test_samples_of_an_empty_sequence_are_empty
+    assert_all_examples(samples([])) { |v| v.empty? }
+    assert_all_examples(samples([], replacement: false)) { |v| v.empty? }
+    assert_all_examples(permutations([])) { |v| v.empty? }
+    assert_all_examples(subsequences([])) { |v| v.empty? }
+  end
+
+  def test_sequence_generators_accept_what_sampled_from_accepts
+    assert_all_examples(permutations(1..3)) { |v| v.sort == [1, 2, 3] }
+    assert_all_examples(subsequences(Set[1, 2, 3])) { |v| subsequence?(v, [1, 2, 3]) }
+    assert_all_examples(samples({a: 1}, min_size: 1, max_size: 1)) { |v| v == [[:a, 1]] }
+  end
+
+  def test_permutations_composed_inside_arrays
+    assert_all_examples(arrays(permutations([1, 2, 3]), max_size: 5)) { |v| v.all? { |p| p.sort == [1, 2, 3] } }
+  end
+
+  def test_samples_composed_inside_arrays
+    assert_all_examples(arrays(samples([1, 2, 3], max_size: 3), max_size: 5)) do |v|
+      v.all? { |s| s.all? { |x| [1, 2, 3].include?(x) } }
+    end
+  end
+
+  def test_subsequences_composed_inside_arrays
+    assert_all_examples(arrays(subsequences([1, 2, 3]), max_size: 5)) { |v| v.all? { |s| subsequence?(s, [1, 2, 3]) } }
+  end
+
+  def test_permutations_shrink_to_the_original_order
+    assert_equal [3, 1, 2], minimal(permutations([3, 1, 2])) { true }
+  end
+
+  def test_permutations_shrink_by_moving_one_element
+    assert_equal [5, 1, 2, 3, 4], minimal(permutations([1, 2, 3, 4, 5])) { |v| v[0] == 5 }
+  end
+
+  def test_subsequences_shrink_to_empty
+    assert_empty minimal(subsequences([1, 2, 3, 4, 5])) { true }
+  end
+
+  def test_subsequences_shrink_to_a_prefix
+    assert_equal [1, 2, 3], minimal(subsequences([1, 2, 3, 4, 5], min_size: 3)) { true }
+  end
+
+  def test_samples_shrink_to_empty
+    assert_empty minimal(samples([1, 2, 3], max_size: 5)) { true }
+  end
+
+  def test_samples_with_replacement_can_repeat_an_element
+    assert_equal [2, 2], minimal(samples([1, 2], max_size: 5)) { |v| v.count(2) >= 2 }
+  end
+
+  def test_samples_with_replacement_shrink_to_the_first_element_repeated
+    assert_equal [1, 1, 1], minimal(samples([1, 2, 3], min_size: 3, max_size: 5)) { true }
+  end
+
+  def test_samples_without_replacement_shrink_to_a_prefix
+    assert_equal [1, 2, 3], minimal(samples([1, 2, 3, 4, 5], replacement: false, min_size: 3)) { true }
+  end
+
+  def test_permutations_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), max_size: 10))
+      assert_equal source.sort, tc.draw(permutations(source)).sort
+    end
+  end
+
+  def test_subsequences_size_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), max_size: 10))
+      min = tc.draw(integers(min_value: 0, max_value: source.size))
+      max = tc.draw(integers(min_value: min, max_value: source.size))
+      value = tc.draw(subsequences(source, min_size: min, max_size: max))
+      assert_includes min..max, value.size
+      assert subsequence?(value, source)
+    end
+  end
+
+  def test_samples_without_replacement_size_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), max_size: 10))
+      min = tc.draw(integers(min_value: 0, max_value: source.size))
+      max = tc.draw(integers(min_value: min, max_value: source.size))
+      value = tc.draw(samples(source, min_size: min, max_size: max, replacement: false))
+      assert_includes min..max, value.size
+      assert sample?(value, source)
+    end
+  end
+
+  def test_samples_with_replacement_size_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), min_size: 1, max_size: 10))
+      min = tc.draw(integers(min_value: 0, max_value: 20))
+      max = tc.draw(integers(min_value: min, max_value: 20))
+      value = tc.draw(samples(source, min_size: min, max_size: max))
+      assert_includes min..max, value.size
+      assert value.all? { |x| source.include?(x) }
+    end
+  end
+
+  def draw_error(generator)
+    assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }.message
+  end
+
+  def test_invalid_sequence_generator_options_do_not_raise_until_draw_time
+    [
+      subsequences([1], min_size: 2, max_size: 1),
+      subsequences([1], min_size: 2),
+      subsequences([1], min_size: -1),
+      samples([1], min_size: 2, max_size: 1),
+      samples([], min_size: 1),
+      samples([1], min_size: 2, replacement: false),
+      samples([1], min_size: -1)
+    ].each { |generator| assert_kind_of Hegel::Generator, generator }
+  end
+
+  def test_subsequences_max_size_less_than_min_size_raises_at_draw_time
+    assert_equal "subsequences: Cannot have max_size < min_size", draw_error(subsequences([1, 2, 3], min_size: 2, max_size: 1))
+  end
+
+  def test_subsequences_min_size_larger_than_the_sequence_raises_at_draw_time
+    assert_equal "subsequences: Cannot generate a subsequence: min_size 4 is larger than the 3 elements in the sequence",
+      draw_error(subsequences([1, 2, 3], min_size: 4))
+  end
+
+  def test_subsequences_negative_min_size_raises_at_draw_time
+    assert_equal "subsequences: min_size must not be negative", draw_error(subsequences([1, 2, 3], min_size: -1))
+  end
+
+  def test_samples_max_size_less_than_min_size_raises_at_draw_time
+    assert_equal "samples: Cannot have max_size < min_size", draw_error(samples([1, 2, 3], min_size: 2, max_size: 1))
+    assert_equal "samples: Cannot have max_size < min_size",
+      draw_error(samples([1, 2, 3], min_size: 2, max_size: 1, replacement: false))
+  end
+
+  def test_samples_with_replacement_from_an_empty_sequence_raises_at_draw_time
+    assert_equal "samples: Cannot generate a non-empty sample from an empty sequence", draw_error(samples([], min_size: 1))
+  end
+
+  def test_samples_without_replacement_min_size_larger_than_the_sequence_raises_at_draw_time
+    assert_equal "samples: Cannot generate a sample without replacement: min_size 4 is larger than the 3 elements in the sequence",
+      draw_error(samples([1, 2, 3], min_size: 4, replacement: false))
+  end
+
+  def test_samples_negative_min_size_raises_at_draw_time
+    assert_equal "samples: min_size must not be negative", draw_error(samples([1, 2, 3], min_size: -1))
   end
 
   # ---- one_of ----
@@ -623,6 +1261,148 @@ class TestGenerators < Minitest::Test
     assert_all_examples(characters(max_codepoint: 0x7A)) { |v| v.codepoints.all? { |cp| cp <= 0x7A } }
   end
 
+  def test_characters_categories_restrict_the_alphabet
+    assert_all_examples(characters(categories: ["Lu"])) { |v| uppercase_or_unassigned?(v) }
+  end
+
+  def test_characters_exclude_categories_with_a_bounded_range
+    generator = characters(exclude_categories: ["Lu"], min_codepoint: 0x30, max_codepoint: 0x39)
+
+    assert_all_examples(generator) { |v| v.match?(/\A[0-9]\z/) }
+  end
+
+  def test_characters_include_characters_with_no_categories_draws_only_those
+    assert_all_examples(characters(categories: [], include_characters: "xyz")) { |v| "xyz".include?(v) }
+  end
+
+  def test_characters_exclude_characters_are_never_drawn
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      excluded = tc.draw(text(codec: "ascii"))
+      value = tc.draw(characters(codec: "ascii", exclude_characters: excluded))
+      assert_equal false, excluded.include?(value), "drew #{value.inspect} from #{excluded.inspect}"
+    end
+  end
+
+  def test_characters_codepoint_range_holds_for_any_bounds
+    Hegel.test(**Hegel::Conformance::QUIET_SETTINGS) do |tc|
+      low = tc.draw(integers(min_value: 0, max_value: 0x10FFFF))
+      high = tc.draw(integers(min_value: low, max_value: 0x10FFFF))
+      tc.assume(low < 0xD800 || high > 0xDFFF)
+      codepoint = tc.draw(characters(min_codepoint: low, max_codepoint: high)).ord
+      assert codepoint.between?(low, high), "#{codepoint} is outside #{low}..#{high}"
+    end
+  end
+
+  def test_characters_single_codepoint_range_shrinks_to_that_character
+    assert_equal "0", minimal(characters(min_codepoint: 48, max_codepoint: 48)) { true }
+  end
+
+  def test_characters_exclude_characters_shrink_past_the_excluded_ones
+    generator = characters(min_codepoint: 0x30, max_codepoint: 0x39, exclude_characters: "te02тест49st")
+
+    assert_equal "1", minimal(generator) { true }
+  end
+
+  def test_characters_include_characters_override_the_codepoint_range
+    generator = characters(min_codepoint: 0x30, max_codepoint: 0x39, include_characters: "teтестst")
+
+    find_any(generator) { |v| "teтестst".include?(v) }
+    find_any(generator) { |v| "0123456789".include?(v) }
+    assert_no_examples(generator) { |v| !"teтестst0123456789".include?(v) }
+  end
+
+  def test_characters_exclude_characters_disjoint_from_include_characters_are_never_drawn
+    generator = characters(min_codepoint: 0x30, max_codepoint: 0x39, exclude_characters: "456def",
+      include_characters: "123abc")
+
+    assert_no_examples(generator) { |v| "456def".include?(v) }
+  end
+
+  def test_characters_large_exclude_characters_are_never_drawn
+    identifier_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+
+    assert_all_examples(characters(exclude_characters: identifier_characters)) { |v| !identifier_characters.include?(v) }
+  end
+
+  def test_characters_unknown_codec_raises_at_draw_time
+    error = draw_failure(characters(codec: "not-a-real-codec"))
+
+    assert_includes error.message, "characters: invalid codec: not-a-real-codec"
+  end
+
+  def test_characters_accepts_every_supported_codec
+    %w[ascii latin-1 iso-8859-1 utf-8].each do |codec|
+      assert_all_examples(characters(codec: codec)) { |v| v.length == 1 }
+    end
+  end
+
+  def test_characters_categories_naming_a_surrogate_category_raise_at_draw_time
+    %w[Cs C].each do |category|
+      error = draw_failure(characters(categories: [category]))
+
+      assert_includes error.message, "characters: Category \"#{category}\" includes surrogate codepoints"
+    end
+  end
+
+  def test_characters_exclude_categories_naming_a_surrogate_category_are_accepted
+    assert_all_examples(characters(exclude_categories: ["Cs"])) { |v| v.valid_encoding? }
+  end
+
+  def test_characters_nonexistent_category_raises_at_draw_time
+    error = draw_failure(characters(exclude_categories: ["foo"]))
+
+    assert_includes error.message, "foo"
+  end
+
+  def test_characters_min_codepoint_above_max_codepoint_raises_at_draw_time
+    error = draw_failure(characters(min_codepoint: 42, max_codepoint: 24))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_characters_excluding_every_available_character_raises_at_draw_time
+    error = draw_failure(characters(min_codepoint: 0x30, max_codepoint: 0x30, exclude_characters: "0"))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_characters_categories_that_leave_nothing_in_the_range_raise_at_draw_time
+    error = draw_failure(characters(categories: ["Cc"], min_codepoint: 0x30, max_codepoint: 0x39))
+
+    assert_includes error.message, "No valid characters"
+  end
+
+  def test_characters_include_characters_overlapping_exclude_characters_raise_at_draw_time
+    error = draw_failure(
+      characters(min_codepoint: 0x30, max_codepoint: 0x39, include_characters: "te02тест49st",
+        exclude_characters: "ts94тсет")
+    )
+
+    assert_includes error.message, "overlap"
+  end
+
+  def test_characters_passes_its_options_to_a_one_character_handle_and_frees_it
+    fake = draw_against_fake(
+      characters(
+        codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"], include_characters: "xy",
+        exclude_characters: "z"
+      )
+    )
+
+    options, handle = fake.string_generator_text_calls.fetch(0)
+    assert_equal(
+      {min_size: 1, max_size: 1, codec: "ascii", min_codepoint: 3, max_codepoint: 90, categories: ["Lu"],
+       exclude_categories: nil, include_characters: "xy", exclude_characters: "z"},
+      options
+    )
+    assert_equal [handle], fake.freed_string_generators
+  end
+
+  def test_characters_options_given_is_false_without_options_and_true_with_any
+    refute characters.options_given?
+    assert characters(categories: []).options_given?
+  end
+
   # ---- binary ----
 
   def test_binary_draws_against_the_real_engine
@@ -730,6 +1510,105 @@ class TestGenerators < Minitest::Test
       Hegel.test(test_cases: 20, verbosity: :quiet, output: StringIO.new) { |tc| tc.draw(from_regex("(?!)")) }
     end
     assert_includes error.message, "matches no string"
+  end
+
+  # ---- from_regex: alphabet ----
+
+  def test_from_regex_alphabet_restricts_every_character
+    generator = from_regex("[a-z]+", fullmatch: true, alphabet: characters(max_codepoint: 0x7F))
+
+    assert_all_examples(generator) { |v| v.match?(/\A[a-z]+\z/) }
+  end
+
+  # The padding around a partial match comes from the alphabet too.
+  def test_from_regex_alphabet_restricts_the_padding_of_a_partial_match
+    generator = from_regex("x", fullmatch: false, alphabet: characters(categories: [], include_characters: "xy"))
+
+    assert_all_examples(generator) { |v| v.match?(/\A[xy]*x[xy]*\z/) }
+  end
+
+  def test_from_regex_generates_each_pattern_over_a_wide_alphabet
+    patterns = [
+      ".", "a", "abc", "[a][b][c]", "[^a][^b][^c]", "[a-z0-9_]", "[^a-z0-9_]", "ab?", "ab*", "ab+", "ab{5,10}",
+      "ab|cd|ef", "(foo)+", '\d', '\w', '\s'
+    ]
+
+    patterns.each do |pattern|
+      generator = from_regex(pattern, fullmatch: true, alphabet: characters(max_codepoint: 1000))
+
+      assert_all_examples(generator) { |v| v.codepoints.all? { |cp| cp <= 1000 } }
+    end
+  end
+
+  def test_from_regex_alphabet_keeps_a_flag_scoped_literal_out_of_the_draw
+    generator = from_regex("(?-i:Ā)*k", fullmatch: true, alphabet: characters(max_codepoint: 127))
+
+    assert_all_examples(generator) { |v| v == "k" }
+  end
+
+  def test_from_regex_alphabet_that_cannot_match_the_pattern_raises_at_draw_time
+    {
+      "abc" => characters(min_codepoint: 128),
+      "aa|bb" => characters(include_characters: "c", max_codepoint: 0),
+      "[abc]" => characters(include_characters: "def", max_codepoint: 0),
+      "[ab]x[de]" => characters(min_codepoint: "a".ord, max_codepoint: "f".ord),
+      "[a-z]" => characters(codec: "ascii", categories: ["Nd"]),
+      '\d' => characters(include_characters: "abc", max_codepoint: 0),
+      "[^a]" => characters(min_codepoint: "a".ord, max_codepoint: "a".ord)
+    }.each do |pattern, alphabet|
+      error = draw_failure(from_regex(pattern, alphabet: alphabet))
+
+      assert_includes error.message, "matches no string over the alphabet", "for #{pattern}"
+    end
+  end
+
+  def test_from_regex_alternative_outside_the_alphabet_is_skipped
+    generator = from_regex("[^a]|a", fullmatch: true, alphabet: characters(min_codepoint: "a".ord, max_codepoint: "a".ord))
+
+    assert_all_examples(generator) { |v| v == "a" }
+  end
+
+  # An alphabet with no characters still builds, because its handle draws
+  # strings of length zero; a pattern that needs no character matches.
+  def test_from_regex_empty_alphabet_matches_a_pattern_that_needs_no_character
+    assert_all_examples(from_regex("", fullmatch: true, alphabet: characters(categories: []))) { |v| v == "" }
+  end
+
+  def test_from_regex_alphabet_that_is_not_a_characters_generator_raises_at_draw_time
+    error = draw_failure(from_regex("a", alphabet: "abc"))
+
+    assert_includes error.message, "from_regex: alphabet must be a characters generator, not a String"
+  end
+
+  def test_from_regex_alphabet_with_an_unknown_codec_raises_at_draw_time
+    error = draw_failure(from_regex("a", alphabet: characters(codec: "not-a-real-codec")))
+
+    assert_includes error.message, "from_regex: invalid codec: not-a-real-codec"
+  end
+
+  def test_from_regex_alphabet_builds_a_zero_length_text_handle_and_frees_both_handles
+    fake = draw_against_fake(from_regex("a+", fullmatch: true, alphabet: characters(max_codepoint: 90)))
+
+    (text_options, alphabet_handle) = fake.string_generator_text_calls.fetch(0)
+    (regex_arguments, regex_handle) = fake.string_generator_regex_calls.fetch(0)
+    assert_equal TEXT_HANDLE_DEFAULTS.merge(min_size: 0, max_size: 0, max_codepoint: 90), text_options
+    assert_equal({pattern: "a+", fullmatch: true, alphabet: alphabet_handle}, regex_arguments)
+    assert_equal [regex_handle, alphabet_handle], fake.freed_string_generators
+  end
+
+  def test_from_regex_without_an_alphabet_builds_no_text_handle
+    fake = draw_against_fake(from_regex("a+"))
+
+    assert_empty fake.string_generator_text_calls
+    assert_equal [{pattern: "a+", fullmatch: true, alphabet: nil}], fake.string_generator_regex_calls.map(&:first)
+  end
+
+  def test_from_regex_frees_the_alphabet_handle_when_building_the_regex_handle_raises
+    fake = Hegel::LibHegel::Fake.new
+    fake.string_generator_regex_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+
+    assert_raises(Hegel::Error) { draw_against_fake(from_regex("a", alphabet: characters), fake) }
+    assert_equal fake.string_generator_text_calls.map(&:last), fake.freed_string_generators
   end
 
   # ---- emails ----
@@ -978,6 +1857,236 @@ class TestGenerators < Minitest::Test
     end
   end
 
+  # ---- date_strings, time_strings, datetime_strings ----
+
+  DATE_STRING = /\A\d{4}-\d{2}-\d{2}\z/
+  TIME_STRING = /\A\d{2}:\d{2}:\d{2}(\.\d{9})?\z/
+  DATETIME_STRING = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{9})?\z/
+
+  def parse_date_string(string)
+    string.split("-").map(&:to_i)
+  end
+
+  def parse_time_string(string)
+    clock, fraction = string.split(".")
+    hour, minute, second = clock.split(":").map(&:to_i)
+    [hour, minute, second, fraction.to_i]
+  end
+
+  def parse_datetime_string(string)
+    date, time = string.split("T")
+    parse_date_string(date) + parse_time_string(time)
+  end
+
+  def test_date_strings_draws_against_the_real_engine
+    assert_all_examples(date_strings) { |v| v.match?(DATE_STRING) && Date.valid_date?(*parse_date_string(v)) }
+  end
+
+  def test_time_strings_draws_against_the_real_engine
+    assert_all_examples(time_strings) { |v| v.match?(TIME_STRING) }
+  end
+
+  def test_datetime_strings_draws_against_the_real_engine
+    assert_all_examples(datetime_strings) { |v| v.match?(DATETIME_STRING) }
+  end
+
+  def test_time_strings_reach_nanosecond_precision
+    value = find_any(time_strings) { |v| v.include?(".") && !v.end_with?("000") }
+    assert_match(/\.\d{9}\z/, value)
+  end
+
+  def test_time_strings_reach_a_whole_second
+    assert_match(/\A\d{2}:\d{2}:\d{2}\z/, find_any(time_strings) { |v| !v.include?(".") })
+  end
+
+  def test_datetime_strings_shrink_to_the_millennium
+    assert_equal "2000-01-01T00:00:00", minimal(datetime_strings) { true }
+  end
+
+  def test_datetime_strings_are_naive
+    assert_all_examples(datetime_strings) { |v| !v.include?("+") && !v.include?("Z") }
+  end
+
+  def test_date_strings_shrink_to_the_first_year_after_2000
+    assert_equal 2001, parse_date_string(minimal(date_strings) { |v| parse_date_string(v)[0] > 2000 })[0]
+  end
+
+  def test_date_strings_shrink_to_the_last_year_before_2000
+    assert_equal 1999, parse_date_string(minimal(date_strings) { |v| parse_date_string(v)[0] < 2000 })[0]
+  end
+
+  def test_date_strings_reach_every_month
+    (1..12).each do |month|
+      find_any(date_strings) { |v| parse_date_string(v)[1] == month }
+    end
+  end
+
+  def test_time_strings_reach_midnight
+    find_any(time_strings) { |v| parse_time_string(v)[0, 3] == [0, 0, 0] }
+  end
+
+  def test_time_strings_shrink_to_the_first_hour_after_midnight
+    assert_equal 1, parse_time_string(minimal(time_strings) { |v| parse_time_string(v)[0] != 0 })[0]
+  end
+
+  def test_time_strings_reach_and_miss_the_minute
+    find_any(time_strings) { |v| parse_time_string(v)[2].zero? }
+    find_any(time_strings) { |v| !parse_time_string(v)[2].zero? }
+  end
+
+  def test_time_strings_shrink_to_midnight
+    assert_equal "00:00:00", minimal(time_strings) { true }
+  end
+
+  def test_time_strings_are_naive
+    assert_all_examples(time_strings) { |v| !v.include?("+") && !v.include?("Z") }
+  end
+
+  def test_datetime_strings_compose_inside_arrays
+    assert_equal ["2000-01-01T00:00:00"] * 2, minimal(arrays(datetime_strings, min_size: 2, max_size: 2)) { true }
+  end
+
+  class ArgumentRecordingFake < Hegel::LibHegel::Fake
+    attr_reader :calls
+
+    def initialize
+      super
+      @calls = []
+    end
+
+    def generate_date(ctx, tc, min_value, max_value)
+      @calls << [:date, min_value, max_value]
+      super
+    end
+
+    def generate_time(ctx, tc, min_value, max_value)
+      @calls << [:time, min_value, max_value]
+      super
+    end
+
+    def generate_datetime(ctx, tc, min_date, min_time, max_date, max_time)
+      @calls << [:datetime, min_date, min_time, max_date, max_time]
+      super
+    end
+  end
+
+  def draw_recording_arguments(generator, **values)
+    fake = ArgumentRecordingFake.new
+    values.each { |name, value| fake.public_send(:"#{name}=", value) }
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+    [generator.do_draw(tc), fake.calls]
+  end
+
+  def test_date_strings_pad_every_field_and_ask_for_years_1_through_9999
+    value, calls = draw_recording_arguments(date_strings, generate_date_value: [1, 2, 3])
+
+    assert_equal "0001-02-03", value
+    assert_equal [[:date, [1, 1, 1], [9999, 12, 31]]], calls
+  end
+
+  def test_date_strings_keep_a_four_digit_year
+    value, = draw_recording_arguments(date_strings, generate_date_value: [9999, 12, 31])
+
+    assert_equal "9999-12-31", value
+  end
+
+  def test_time_strings_omit_the_fraction_for_a_whole_second
+    value, calls = draw_recording_arguments(time_strings, generate_time_value: [1, 2, 3, 0])
+
+    assert_equal "01:02:03", value
+    assert_equal [[:time, [0, 0, 0, 0], [23, 59, 59, 999_999_999]]], calls
+  end
+
+  def test_time_strings_print_nine_digits_for_a_nonzero_nanosecond
+    assert_equal "01:02:03.000000007", draw_recording_arguments(time_strings, generate_time_value: [1, 2, 3, 7]).first
+    assert_equal "23:59:59.999999999",
+      draw_recording_arguments(time_strings, generate_time_value: [23, 59, 59, 999_999_999]).first
+    assert_equal "01:02:03.123456000", draw_recording_arguments(time_strings, generate_time_value: [1, 2, 3, 123_456_000]).first
+  end
+
+  def test_datetime_strings_join_date_and_time_with_t_over_the_full_range
+    value, calls = draw_recording_arguments(
+      datetime_strings, generate_datetime_value: [[24, 3, 17], [13, 45, 6, 123_456_789]]
+    )
+
+    assert_equal "0024-03-17T13:45:06.123456789", value
+    assert_equal [[:datetime, [1, 1, 1], [0, 0, 0, 0], [9999, 12, 31], [23, 59, 59, 999_999_999]]], calls
+    assert_equal "0001-01-01T00:00:00",
+      draw_recording_arguments(datetime_strings, generate_datetime_value: [[1, 1, 1], [0, 0, 0, 0]]).first
+  end
+
+  def test_date_time_strings_open_no_span
+    [date_strings, time_strings, datetime_strings].each do |generator|
+      assert_empty draw_with_span_recording(generator)
+    end
+  end
+
+  # ---- durations ----
+
+  def test_durations_default_range_is_unsigned_64_bit_nanoseconds
+    assert_all_examples(durations) { |v| v.is_a?(Integer) && v.between?(0, 2**64 - 1) }
+  end
+
+  def test_durations_bounds_the_draw
+    assert_all_examples(durations(min_value: 5, max_value: 60)) { |v| v.between?(5, 60) }
+  end
+
+  # The engine's integer draw above int64_t goes through a different native
+  # call than below it, so only a draw that cannot fit in 63 bits shows the
+  # unsigned range is reachable.
+  def test_durations_draw_above_the_signed_64_bit_range
+    assert find_any(durations(min_value: 2**63)) { |v| v >= 2**63 }
+  end
+
+  def test_durations_min_value_equals_max_value_returns_that_value
+    assert_all_examples(durations(min_value: 2**64 - 1)) { |v| v == 2**64 - 1 }
+  end
+
+  def test_durations_max_value_above_the_largest_duration_saturates
+    assert_all_examples(durations(min_value: 2**64 - 1, max_value: 2**70)) { |v| v == 2**64 - 1 }
+  end
+
+  def test_durations_shrinks_to_min_value
+    assert_equal 1_000, minimal(durations(min_value: 1_000)) { |_| true }
+  end
+
+  def test_durations_composed_inside_arrays_respect_the_bounds
+    assert_all_examples(arrays(durations(max_value: 60), max_size: 5)) { |v| v.all? { |d| d <= 60 } }
+  end
+
+  def test_durations_min_value_negative_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(min_value: -1)) }
+    end
+
+    assert_equal "durations: min_value must not be negative", error.message
+  end
+
+  def test_durations_min_value_above_the_largest_duration_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(min_value: 2**64)) }
+    end
+
+    assert_equal "durations: min_value exceeds the largest generatable Duration " \
+      "(u64::MAX nanoseconds, about 584 years)", error.message
+  end
+
+  def test_durations_max_value_less_than_min_value_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(min_value: 5, max_value: 1)) }
+    end
+
+    assert_equal "durations: Cannot have max_value < min_value", error.message
+  end
+
+  def test_durations_max_value_negative_raises_at_draw_time
+    error = assert_raises(Hegel::Error) do
+      Hegel.test(verbosity: :quiet) { |tc| tc.draw(durations(max_value: -1)) }
+    end
+
+    assert_includes error.message, "max_value < min_value"
+  end
+
   # ---- composite ----
 
   def test_composite_draws_against_the_real_engine
@@ -1183,6 +2292,119 @@ class TestGenerators < Minitest::Test
   def test_composite_do_draw_opens_and_closes_its_own_span_kept
     generator = composite { |dtc| dtc.draw(integers) }
     assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  # ---- sequence generators against the Fake ----
+
+  # Draws +generator+ once against a SequenceRecordingFake. +integers+ are
+  # the values generate_integer hands back in turn, +more+ the number of
+  # elements the collection offers. Returns the value and the fake.
+  def draw_sequence(generator, more: 0, integers: [])
+    fake = SequenceRecordingFake.new
+    fake.collection_more_count = more
+    fake.integer_values = integers
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+    [generator.do_draw(tc), fake]
+  end
+
+  def test_sequence_generators_open_one_span_around_the_whole_draw
+    [permutations([1, 2]), subsequences([1, 2]), samples([1, 2]), samples([1, 2], replacement: false)].each do |generator|
+      _, fake = draw_sequence(generator, more: 2)
+      assert_equal [[:start, generator.label], [:stop, false]], fake.span_events
+    end
+  end
+
+  def test_sequence_generators_have_distinct_labels
+    labels = [permutations([1]), subsequences([1]), samples([1])].map(&:label)
+    assert_equal labels.uniq, labels
+  end
+
+  def test_sequence_generators_close_the_span_and_free_the_collection_when_a_draw_raises
+    [permutations([1, 2]), subsequences([1, 2]), samples([1, 2]), samples([1, 2], replacement: false)].each do |generator|
+      fake = SequenceRecordingFake.new
+      fake.collection_more_count = 2
+      fake.generate_integer_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+      tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+      assert_raises(Hegel::Error) { generator.do_draw(tc) }
+      assert_equal [[:start, generator.label], [:stop, false]], fake.span_events
+      assert_equal 1, fake.freed_collections.size
+    end
+  end
+
+  def test_validation_failures_open_no_span_and_no_collection
+    [subsequences([1], min_size: 2), samples([], min_size: 1), samples([1], min_size: 2, replacement: false)].each do |generator|
+      fake = SequenceRecordingFake.new
+      tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+      assert_raises(Hegel::Error) { generator.do_draw(tc) }
+      assert_empty fake.span_events
+      assert_empty fake.collection_sizes
+    end
+  end
+
+  def test_permutations_draw_each_index_from_what_is_left
+    value, fake = draw_sequence(permutations(%w[a b c]), more: 3, integers: [2, 0, 0])
+
+    assert_equal %w[c a b], value
+    assert_equal [[3, 3]], fake.collection_sizes
+    assert_equal [[0, 2], [0, 1], [0, 0]], fake.integer_bounds
+    assert_equal 1, fake.freed_collections.size
+  end
+
+  def test_permutations_of_nothing_draw_no_index
+    value, fake = draw_sequence(permutations([]), more: 1)
+
+    assert_empty value
+    assert_equal [[0, 0]], fake.collection_sizes
+    assert_empty fake.integer_bounds
+    assert_equal 1, fake.freed_collections.size
+  end
+
+  def test_subsequences_keep_the_original_order
+    value, fake = draw_sequence(subsequences(%w[a b c]), more: 2, integers: [2, 0])
+
+    assert_equal %w[a c], value
+    assert_equal [[0, 3]], fake.collection_sizes
+  end
+
+  def test_subsequences_cap_max_size_at_the_element_count
+    assert_equal [[1, 3]], draw_sequence(subsequences([1, 2, 3], min_size: 1, max_size: 10)).last.collection_sizes
+    assert_equal [[1, 2]], draw_sequence(subsequences([1, 2, 3], min_size: 1, max_size: 2)).last.collection_sizes
+  end
+
+  def test_samples_with_replacement_draw_each_element_from_the_whole_sequence
+    value, fake = draw_sequence(samples(%w[a b c]), more: 3, integers: [2, 0, 2])
+
+    assert_equal %w[c a c], value
+    assert_equal [[0, Hegel::LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED]], fake.collection_sizes
+    assert_equal [[0, 2]] * 3, fake.integer_bounds
+    assert_equal 1, fake.freed_collections.size
+  end
+
+  def test_samples_with_replacement_pass_max_size_to_the_collection
+    assert_equal [[1, 4]], draw_sequence(samples([1, 2], min_size: 1, max_size: 4)).last.collection_sizes
+  end
+
+  def test_samples_with_replacement_from_nothing_are_bounded_at_zero
+    value, fake = draw_sequence(samples([]))
+
+    assert_empty value
+    assert_equal [[0, 0]], fake.collection_sizes
+    assert_empty fake.integer_bounds
+    assert_equal [[0, 0]], draw_sequence(samples([], max_size: 5)).last.collection_sizes
+  end
+
+  def test_samples_without_replacement_cap_max_size_at_the_element_count
+    assert_equal [[0, 3]], draw_sequence(samples([1, 2, 3], replacement: false)).last.collection_sizes
+    assert_equal [[0, 3]], draw_sequence(samples([1, 2, 3], replacement: false, max_size: 10)).last.collection_sizes
+    assert_equal [[0, 2]], draw_sequence(samples([1, 2, 3], replacement: false, max_size: 2)).last.collection_sizes
+  end
+
+  def test_samples_without_replacement_keep_draw_order
+    value, = draw_sequence(samples(%w[a b c], replacement: false), more: 2, integers: [2, 0])
+
+    assert_equal %w[c a], value
   end
 
   # ---- labels ----

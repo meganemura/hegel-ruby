@@ -2,6 +2,125 @@
 
 ## [Unreleased]
 
+### Profiles
+
+`Hegel.test` takes `profile:`, the name of a settings profile to start the
+run from: a shipped one, one in `hegel.toml`, or one you register. Left
+`nil`, the run starts from the default profile as before, and a keyword
+passed alongside still beats the profile.
+
+`Hegel::Settings.register_profile(name, profile: nil, **keywords)`
+registers a profile for the whole process, and
+`Hegel::Settings.set_default_profile(name)` makes a profile the default
+for every run; `""` clears it. They follow hegel-rust's
+`Settings::register_profile` and `set_default_profile`. An unknown or
+reserved name raises `Hegel::Error` with the engine's message. See
+[ADR 0028](docs/adr/0028-expose-settings-profiles-as-a-keyword-and-module-functions.md).
+
+### Settings
+
+`Hegel.test` takes five more keywords, with the names and meanings of
+hegel-rust's `Settings` methods. Each one left `nil` takes its value from
+the engine's settings profile, like `test_cases:` and `seed:`.
+
+- `stop_on_first_failure: false` keeps generating after a failure and
+  spends the whole `test_cases` budget before reporting.
+- `print_blob: false` leaves the `reproduce_failure:` line out of the
+  failure report. Left `nil`, a profile or `HEGEL_PRINT_BLOB` decides.
+- `show_statistics: true` makes the engine print, at the end of the run,
+  what `tc.event` and `tc.event_value` recorded.
+- `nondeterminism_strictness:` takes `:quiet`, `:warn`, or `:error`.
+  `:error` ends a run whose test behaves differently on a replay with
+  `Hegel::Error`.
+- `backend:` takes `:default` or `:urandom`.
+
+### Test location
+
+Every `Hegel.test` run now reports where its test lives to libhegel, with
+`hegel_settings_set_test_location`. Under Antithesis the engine writes one
+`always` assertion, "<class>::<function> passes properties", for each
+location; elsewhere it uses nothing, and no keyword changes. The file is
+relative to the working directory when it lies under it, and the class and
+function come from the frame that called `Hegel.test`. A call inside a
+block takes the name of the method holding the block, and a call outside
+any method, such as an RSpec example, takes the file without `.rb` as the
+class and `line <n>` as the function, so each example in a file has its
+own name.
+
+### Test cases
+
+`tc.event(label)` and `tc.event_value(label, value)` record what a test
+reached, for the statistics that `show_statistics: true` prints. They follow
+hegel-rust's `TestCase#event` and `TestCase#event_value`.
+
+### Generators
+
+- `date_strings`, `time_strings`, and `datetime_strings` generate ISO 8601
+  date, time, and datetime Strings, with no options, as hegel-rust does.
+  A time keeps nanoseconds: nine fractional digits appear when the
+  nanosecond is not zero.
+- `permutations`, `subsequences`, and `samples` draw reorderings, ordered
+  subsets, and samples of a given sequence, as hegel-rust does. Its
+  `with_replacement` and `without_replacement` setters are one keyword here,
+  `samples(replacement: true)`, which is the default.
+- `durations(min_value: 0, max_value: 2**64 - 1)` draws a duration as an
+  `Integer` count of nanoseconds, as hegel-rust's `durations` does for a
+  `Duration`. It follows [ADR 0030](docs/adr/0030-represent-a-duration-as-integer-nanoseconds.md).
+- `arrays(elements, unique: true)` draws an array with no two equal entries,
+  as hegel-rust's `vecs(...).unique(true)` does. An element equal to one
+  already drawn is rejected and drawn again, so `min_size` still counts
+  distinct entries.
+- `floats(allow_subnormal: nil)` allows or rules out subnormal values, as
+  hegel-rust's `allow_subnormal` does. Left `nil`, it allows them whenever
+  the bounds admit one. A `floats` call whose bounds admit none, such as
+  `floats(min_value: 1.0, max_value: 2.0)`, now tells the engine so.
+- `recursive(leaf, max_depth: 32, max_leaves: 100) { |subtrees| ... }`
+  draws a recursively defined value, such as a tree, through the engine's
+  recursion calls, as hegel-rust's `recursive` does. The engine decides each
+  leaf-or-branch choice and owns both budgets. An attempt that outgrows
+  `max_leaves` is drawn again from the root, and the spans it opened are
+  discarded, not kept. See
+  [ADR 0032](docs/adr/0032-suppress-span-closes-while-an-abandoned-recursion-attempt-unwinds.md).
+
+### Text generators
+
+`text` and `characters` take `categories:`, `exclude_categories:`,
+`include_characters:`, and `exclude_characters:`, with the names hegel-rust
+gives them. `text` also takes `alphabet:`, a `String` of the permitted
+characters, and raises `Hegel::Error` at draw
+time when it is combined with another character option. `from_regex` takes
+`alphabet:`, a `characters` generator that limits every character of the
+string, padding included. An unknown `codec:` now raises `"text: invalid
+codec: ..."` (or `characters:`) before the engine is called, and a
+surrogate category in `categories:` raises too.
+
+### Grammar strings
+
+`from_lark(grammar)` draws strings that a grammar written in the syntax of
+the [Lark](https://lark-parser.readthedocs.io/en/stable/grammar.html)
+parsing library accepts, as hegel-rust's `from_lark` does. It takes
+`start:`, `explicit:` (a `Hash` from terminal name to a generator of the
+values drawn for it), `alphabet:` (a `characters` generator),
+`max_size:`, `max_depth:`, and `import_path:`. An invalid option raises
+`Hegel::Error` at draw time, with hegel-rust's message where it has one.
+A grammar is compiled on its first draw in a run and freed when the run
+ends.
+
+### Added
+
+- `rule(name, weight: 1.0)` sets how often the engine picks a rule relative to
+  the machine's other rules, as `#[rule(weight = w)]` does in hegel-rust. A
+  weight that is not finite and positive raises `Hegel::Error` when the machine
+  runs. `Hegel::StateMachine.rule_definitions` now maps each name to a
+  `Hegel::StateMachine::Rule` with `block` and `weight`, where it mapped to the
+  block alone.
+
+### Fixed
+
+- A filter on `Pool#values_consumed` no longer loses the values it rejects. They
+  go back into the pool through `hegel_pool_restore` once the draw is over, and
+  only the accepted value is consumed, as in hegel-rust.
+
 ### Changed
 
 Three defaults now match hegel-rust, which defines the interface. The results
@@ -15,6 +134,29 @@ change for a caller who relied on the old default.
   `max_size` are shorter than before. To draw longer strings, pass the
   larger `max_size` you need.
 - `binary` defaults `max_size` the same way, to 100 or `min_size + 100`.
+
+- A filter over a filter now spends 3 attempts between the two predicates, as
+  hegel-rust does, where each level used to spend 3 of its own.
+- `Hegel::Generator#do_draw_filtered(tc, predicate)` is the draw behind
+  `#filter`. A generator whose draws have effects that a rejected value must
+  not keep overrides it.
+
+### Repeat a test body
+
+`tc.repeat { ... }` runs its block again and again, for as long as the
+engine keeps the loop going, the way hegel-rust's `TestCase::repeat` does.
+The engine chooses how many times it runs, and shrinks a failure toward
+fewer iterations. Each iteration shows in the failure report as a
+`// Repetition #N` line, with what the iteration recorded indented under
+it. A `tc.assume` or `tc.reject` inside the block skips that iteration
+instead of discarding the whole test case.
+
+The loop does not return when it ends. It raises `Hegel::LoopDone`, which
+`Hegel.test` counts as a passing test case. It descends from `Exception`,
+like the other control exceptions, so a `rescue => e` in the body does not
+catch it. A `break` in the block ends the loop and returns from
+`tc.repeat`. See
+[ADR 0034](docs/adr/0034-repeat-a-test-body-with-a-ruby-side-indent.md).
 
 ## [0.3.4] - 2026-10-20
 
