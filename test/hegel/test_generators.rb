@@ -443,7 +443,7 @@ class TestGenerators < Minitest::Test
     char.match?(/\p{Lu}|\p{Cn}/)
   end
 
-  def draw_error(generator)
+  def draw_failure(generator)
     assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
   end
 
@@ -526,7 +526,7 @@ class TestGenerators < Minitest::Test
     }
 
     options.each do |name, value|
-      error = draw_error(text(alphabet: "abc", **{name => value}))
+      error = draw_failure(text(alphabet: "abc", **{name => value}))
 
       assert_includes error.message, "Cannot combine .alphabet() with character methods.", "for #{name}"
     end
@@ -534,14 +534,14 @@ class TestGenerators < Minitest::Test
 
   def test_text_alphabet_that_is_not_a_string_raises_at_draw_time
     [3, characters].each do |alphabet|
-      error = draw_error(text(alphabet: alphabet))
+      error = draw_failure(text(alphabet: alphabet))
 
       assert_includes error.message, "text: alphabet must be a String, not a #{alphabet.class}"
     end
   end
 
   def test_text_unknown_codec_raises_at_draw_time
-    error = draw_error(text(codec: "not-a-real-codec"))
+    error = draw_failure(text(codec: "not-a-real-codec"))
 
     assert_includes error.message, "text: invalid codec: not-a-real-codec"
   end
@@ -558,26 +558,26 @@ class TestGenerators < Minitest::Test
 
   def test_text_categories_naming_a_surrogate_category_raise_at_draw_time
     %w[Cs C].each do |category|
-      error = draw_error(text(categories: [category]))
+      error = draw_failure(text(categories: [category]))
 
       assert_includes error.message, "\"#{category}\" includes surrogate codepoints"
     end
   end
 
   def test_text_nonexistent_category_raises_at_draw_time
-    error = draw_error(text(exclude_categories: ["foo"]))
+    error = draw_failure(text(exclude_categories: ["foo"]))
 
     assert_includes error.message, "foo"
   end
 
   def test_text_min_codepoint_above_max_codepoint_raises_at_draw_time
-    error = draw_error(text(min_codepoint: 200, max_codepoint: 100))
+    error = draw_failure(text(min_codepoint: 200, max_codepoint: 100))
 
     assert_includes error.message, "No valid characters"
   end
 
   def test_text_include_characters_overlapping_exclude_characters_raise_at_draw_time
-    error = draw_error(text(include_characters: "abc", exclude_characters: "cde"))
+    error = draw_failure(text(include_characters: "abc", exclude_characters: "cde"))
 
     assert_includes error.message, "overlap"
   end
@@ -1273,7 +1273,7 @@ class TestGenerators < Minitest::Test
   end
 
   def test_characters_unknown_codec_raises_at_draw_time
-    error = draw_error(characters(codec: "not-a-real-codec"))
+    error = draw_failure(characters(codec: "not-a-real-codec"))
 
     assert_includes error.message, "characters: invalid codec: not-a-real-codec"
   end
@@ -1286,7 +1286,7 @@ class TestGenerators < Minitest::Test
 
   def test_characters_categories_naming_a_surrogate_category_raise_at_draw_time
     %w[Cs C].each do |category|
-      error = draw_error(characters(categories: [category]))
+      error = draw_failure(characters(categories: [category]))
 
       assert_includes error.message, "characters: Category \"#{category}\" includes surrogate codepoints"
     end
@@ -1297,31 +1297,31 @@ class TestGenerators < Minitest::Test
   end
 
   def test_characters_nonexistent_category_raises_at_draw_time
-    error = draw_error(characters(exclude_categories: ["foo"]))
+    error = draw_failure(characters(exclude_categories: ["foo"]))
 
     assert_includes error.message, "foo"
   end
 
   def test_characters_min_codepoint_above_max_codepoint_raises_at_draw_time
-    error = draw_error(characters(min_codepoint: 42, max_codepoint: 24))
+    error = draw_failure(characters(min_codepoint: 42, max_codepoint: 24))
 
     assert_includes error.message, "No valid characters"
   end
 
   def test_characters_excluding_every_available_character_raises_at_draw_time
-    error = draw_error(characters(min_codepoint: 0x30, max_codepoint: 0x30, exclude_characters: "0"))
+    error = draw_failure(characters(min_codepoint: 0x30, max_codepoint: 0x30, exclude_characters: "0"))
 
     assert_includes error.message, "No valid characters"
   end
 
   def test_characters_categories_that_leave_nothing_in_the_range_raise_at_draw_time
-    error = draw_error(characters(categories: ["Cc"], min_codepoint: 0x30, max_codepoint: 0x39))
+    error = draw_failure(characters(categories: ["Cc"], min_codepoint: 0x30, max_codepoint: 0x39))
 
     assert_includes error.message, "No valid characters"
   end
 
   def test_characters_include_characters_overlapping_exclude_characters_raise_at_draw_time
-    error = draw_error(
+    error = draw_failure(
       characters(min_codepoint: 0x30, max_codepoint: 0x39, include_characters: "te02тест49st",
         exclude_characters: "ts94тсет")
     )
@@ -1473,7 +1473,7 @@ class TestGenerators < Minitest::Test
       '\d' => characters(include_characters: "abc", max_codepoint: 0),
       "[^a]" => characters(min_codepoint: "a".ord, max_codepoint: "a".ord)
     }.each do |pattern, alphabet|
-      error = draw_error(from_regex(pattern, alphabet: alphabet))
+      error = draw_failure(from_regex(pattern, alphabet: alphabet))
 
       assert_includes error.message, "matches no string over the alphabet", "for #{pattern}"
     end
@@ -1492,13 +1492,13 @@ class TestGenerators < Minitest::Test
   end
 
   def test_from_regex_alphabet_that_is_not_a_characters_generator_raises_at_draw_time
-    error = draw_error(from_regex("a", alphabet: "abc"))
+    error = draw_failure(from_regex("a", alphabet: "abc"))
 
     assert_includes error.message, "from_regex: alphabet must be a characters generator, not a String"
   end
 
   def test_from_regex_alphabet_with_an_unknown_codec_raises_at_draw_time
-    error = draw_error(from_regex("a", alphabet: characters(codec: "not-a-real-codec")))
+    error = draw_failure(from_regex("a", alphabet: characters(codec: "not-a-real-codec")))
 
     assert_includes error.message, "from_regex: invalid codec: not-a-real-codec"
   end
