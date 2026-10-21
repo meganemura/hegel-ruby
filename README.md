@@ -211,7 +211,7 @@ Expected: [0, 0]
 
 Each one composes through `map` and `filter`. Options are keywords, with the
 names the other Hegel implementations use, such as
-`integers(min_value: 0, max_value: 9)` or `arrays(text, max_size: 5)`. An
+`integers(min_value: 0, max_value: 9)`, `arrays(text, max_size: 5)`, or `arrays(integers, unique: true)`. An
 invalid combination of options raises when the generator is drawn, not when it
 is built.
 
