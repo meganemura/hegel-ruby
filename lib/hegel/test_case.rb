@@ -430,6 +430,12 @@ module Hegel
       @impl.pool_generate(@ctx, live_handle, pool, consume)
     end
 
+    # hegel_pool_restore: puts back +variable_id+, a consuming
+    # #pool_generate's answer that the caller is throwing away unused.
+    def pool_restore(pool, variable_id)
+      @impl.pool_restore(@ctx, live_handle, pool, variable_id)
+    end
+
     # hegel_pool_free. Not called directly by a caller of
     # Hegel::Stateful::Pool -- only #free_pools below, which Hegel::Runner
     # calls once this test case is done -- but kept its own wrapper the same

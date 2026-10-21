@@ -199,6 +199,7 @@ module Hegel
         @hegel_pool_generate_fn = bind(
           "hegel_pool_generate", [:pointer, :pointer, :pointer, :bool, :pointer], :int32
         )
+        @hegel_pool_restore_fn = bind("hegel_pool_restore", [:pointer, :pointer, :pointer, :int64], :int32)
         @hegel_pool_free_fn = bind("hegel_pool_free", [:pointer, :pointer], :int32)
 
         @hegel_new_recursion_fn = bind(
@@ -860,6 +861,16 @@ module Hegel
         code = @hegel_pool_generate_fn.call(ctx, tc, pool, consume, out)
         LibHegel.check!(self, ctx, code)
         out.read_int64
+      end
+
+      # Puts back +variable_id+, which a consuming #pool_generate removed, so
+      # it can be drawn again. libhegel never does this by itself: a consumed
+      # id stays consumed until it is restored. An id that was not consumed
+      # raises Hegel::Error (HEGEL_E_INVALID_ARG).
+      def pool_restore(ctx, tc, pool, variable_id)
+        code = @hegel_pool_restore_fn.call(ctx, tc, pool, variable_id)
+        LibHegel.check!(self, ctx, code)
+        nil
       end
 
       # No-op when +pool+ is nil, matching hegel_pool_free's documented

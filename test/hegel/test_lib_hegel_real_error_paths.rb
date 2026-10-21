@@ -108,6 +108,7 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         collection_more: -> { real.collection_more(ctx, nil, nil) },
         collection_reject: -> { real.collection_reject(ctx, nil, nil) },
         pool_add: -> { real.pool_add(ctx, nil, nil) },
+        pool_restore: -> { real.pool_restore(ctx, nil, nil, 0) },
         state_machine_next_group: -> { real.state_machine_next_group(ctx, nil, nil) },
         test_case_should_capture: -> { real.test_case_should_capture(ctx, nil) },
         state_machine_next_rule: -> { real.state_machine_next_rule(ctx, nil, nil) },

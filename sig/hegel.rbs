@@ -67,6 +67,7 @@ module Hegel
     def new_pool: () -> untyped
     def pool_add: (untyped pool) -> Integer
     def pool_generate: (untyped pool, bool consume) -> Integer
+    def pool_restore: (untyped pool, Integer variable_id) -> nil
     def pool_free: (untyped pool) -> nil
     def free_pools: () -> void
     def new_state_machine: (Array[String] rule_names, Array[Float] rule_weights, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
@@ -113,9 +114,12 @@ module Hegel
   end
 
   class Generator
+    FILTER_ATTEMPT_LABEL: Integer
+
     def self.label: () -> Integer
     def self.label_of: (untyped part) -> Integer
     def do_draw: (untyped tc) -> untyped
+    def do_draw_filtered: (untyped tc, Proc predicate) -> untyped
     def label: () -> Integer
     def map: () { (untyped) -> untyped } -> Generator
     def filter: () { (untyped) -> boolish } -> Generator
@@ -130,6 +134,7 @@ module Hegel
 
       def initialize: (Generator source, Proc block) -> void
       def do_draw: (untyped tc) -> untyped
+      def do_draw_filtered: (untyped tc, Proc predicate) -> untyped
     end
   end
 
@@ -480,6 +485,11 @@ module Hegel
       class ValuesConsumed < Generator
         def initialize: (untyped pool, Hash[Integer, untyped] values) -> void
         def do_draw: (untyped tc) -> untyped
+        def do_draw_filtered: (untyped tc, Proc predicate) -> untyped
+
+        private
+
+        def filtered_attempt: (untyped tc, Proc predicate, Array[Integer] attempted) -> Integer?
       end
     end
   end
@@ -752,6 +762,7 @@ module Hegel
       def new_pool: (untyped ctx, untyped tc) -> untyped
       def pool_add: (untyped ctx, untyped tc, untyped pool) -> Integer
       def pool_generate: (untyped ctx, untyped tc, untyped pool, bool consume) -> Integer
+      def pool_restore: (untyped ctx, untyped tc, untyped pool, Integer variable_id) -> nil
       def pool_free: (untyped ctx, untyped pool) -> nil
       def new_state_machine: (untyped ctx, untyped tc, Array[String] rule_names, Array[Float] rule_weights, Array[String] invariant_names, Array[bool] always_check, Integer step_count) -> untyped
       def state_machine_next_group: (untyped ctx, untyped tc, untyped state_machine) -> Integer
