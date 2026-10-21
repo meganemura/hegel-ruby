@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
 ### Engine: libhegel 0.48.0 (was 0.47.2)
 
 The [libhegel 0.48.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.48.0)
@@ -24,6 +26,7 @@ change in code. The engine move changes these results for a caller:
   to draw. The draw now raises `Hegel::Error` with `HEGEL_E_INVALID_ARG` and
   a message that contains "leaves no value". In 0.47.2, the draw raised
   `Hegel::Error` with `HEGEL_E_INTERNAL`.
+
 ### Profiles
 
 `Hegel.test` takes `profile:`, the name of a settings profile to start the
@@ -451,6 +454,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.4.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.4.0
 [0.3.4]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.4
 [0.3.3]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.3
 [0.3.2]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.2
