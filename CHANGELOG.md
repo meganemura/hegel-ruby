@@ -74,6 +74,13 @@ hegel-rust's `TestCase#event` and `TestCase#event_value`.
   hegel-rust's `allow_subnormal` does. Left `nil`, it allows them whenever
   the bounds admit one. A `floats` call whose bounds admit none, such as
   `floats(min_value: 1.0, max_value: 2.0)`, now tells the engine so.
+- `recursive(leaf, max_depth: 32, max_leaves: 100) { |subtrees| ... }`
+  draws a recursively defined value, such as a tree, through the engine's
+  recursion calls, as hegel-rust's `recursive` does. The engine decides each
+  leaf-or-branch choice and owns both budgets. An attempt that outgrows
+  `max_leaves` is drawn again from the root, and the spans it opened are
+  discarded, not kept. See
+  [ADR 0032](docs/adr/0032-suppress-span-closes-while-an-abandoned-recursion-attempt-unwinds.md).
 
 ### Text generators
 

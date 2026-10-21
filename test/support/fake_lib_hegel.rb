@@ -23,6 +23,8 @@ module Hegel
       # already carries that state.
       Failure = Struct.new(:origin, :blob, :caveat)
 
+      RECURSION_MAX_ATTEMPTS = 9
+
       # Writers only: #version is also the name of the instance method
       # below that mimics the real ABI call, so an attr_accessor's 0-arity
       # reader would collide with (and be overwritten by) that method
@@ -140,6 +142,12 @@ module Hegel
       # keywords) and each #string_generator_regex call (a Hash of pattern,
       # fullmatch and alphabet), paired with the handle that call returned.
       attr_reader :string_generator_text_calls, :string_generator_regex_calls
+      # Result codes and branch decisions the recursion calls answer with,
+      # one element per call in order. #new_recursion_calls holds the
+      # [max_depth, max_leaves] pair each #new_recursion call was given.
+      attr_writer :new_recursion_code, :recursion_branch_code, :recursion_branch_values, :recursion_leaf_codes,
+        :recursion_retry_codes, :recursion_finish_codes
+      attr_reader :new_recursion_calls, :freed_recursions
 
       # The value passed to each settings setter, one array per keyword, so
       # a test can confirm Hegel::Settings.apply calls the setter its table
@@ -310,6 +318,15 @@ module Hegel
         @freed_grammar_builders = []
         @freed_grammars = []
         @events = []
+        @new_recursion_code = HEGEL_OK
+        @new_recursion_calls = []
+        @recursion_branch_code = HEGEL_OK
+        @recursion_branch_values = []
+        @recursion_leaf_codes = []
+        @recursion_retry_codes = []
+        @recursion_retries = Hash.new(0).compare_by_identity
+        @recursion_finish_codes = []
+        @freed_recursions = []
       end
 
       # A fresh, distinct handle per call; the only thing callers may do
@@ -829,6 +846,53 @@ module Hegel
         @events << [:generate_grammar, max_size]
         LibHegel.check!(self, ctx, @generate_grammar_code)
         @generate_grammar_values.shift || ""
+      end
+
+      def new_recursion(ctx, _tc, max_depth, max_leaves)
+        @new_recursion_calls << [max_depth, max_leaves]
+        LibHegel.check!(self, ctx, @new_recursion_code)
+        Object.new
+      end
+
+      # Answers the next of #recursion_branch_values, or false once they run
+      # out, so a recursive draw against this Fake ends in a leaf.
+      def recursion_branch(ctx, _tc, _recursion, _depth)
+        LibHegel.check!(self, ctx, @recursion_branch_code)
+        @recursion_branch_values.shift || false
+      end
+
+      # The next of #recursion_leaf_codes, HEGEL_OK once they run out.
+      # HEGEL_E_RETRY answers false, as LibHegel::Real#recursion_leaf does.
+      def recursion_leaf(ctx, _tc, _recursion)
+        retry_or_check!(ctx, @recursion_leaf_codes.shift || HEGEL_OK)
+      end
+
+      # The next of #recursion_retry_codes. Once they run out, HEGEL_OK
+      # until the ninth retry of one recursion, which answers
+      # HEGEL_E_ASSUME, as libhegel's RECURSION_MAX_ATTEMPTS has it.
+      def recursion_retry(ctx, _tc, recursion)
+        attempts = @recursion_retries[recursion] += 1
+        default = (attempts >= RECURSION_MAX_ATTEMPTS) ? HEGEL_E_ASSUME : HEGEL_OK
+        LibHegel.check!(self, ctx, @recursion_retry_codes.shift || default)
+        nil
+      end
+
+      def recursion_finish(ctx, _tc, _recursion)
+        retry_or_check!(ctx, @recursion_finish_codes.shift || HEGEL_OK)
+      end
+
+      def recursion_free(_ctx, recursion)
+        @freed_recursions << recursion
+        nil
+      end
+
+      private
+
+      def retry_or_check!(ctx, code)
+        return false if code == HEGEL_E_RETRY
+
+        LibHegel.check!(self, ctx, code)
+        true
       end
     end
   end

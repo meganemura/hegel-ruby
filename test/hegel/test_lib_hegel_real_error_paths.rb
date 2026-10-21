@@ -114,7 +114,12 @@ class TestLibHegelRealErrorPaths < Minitest::Test
         state_machine_should_check_invariant: -> { real.state_machine_should_check_invariant(ctx, nil, nil, 0) },
         state_machine_rule_rejected: -> { real.state_machine_rule_rejected(ctx, nil, nil) },
         event: -> { real.event(ctx, nil, "e") },
-        event_value: -> { real.event_value(ctx, nil, "v", 1.0) }
+        event_value: -> { real.event_value(ctx, nil, "v", 1.0) },
+        new_recursion: -> { real.new_recursion(ctx, nil, 1, 1) },
+        recursion_branch: -> { real.recursion_branch(ctx, nil, nil, 0) },
+        recursion_leaf: -> { real.recursion_leaf(ctx, nil, nil) },
+        recursion_retry: -> { real.recursion_retry(ctx, nil, nil) },
+        recursion_finish: -> { real.recursion_finish(ctx, nil, nil) }
       }
 
       calls.each do |name, call|

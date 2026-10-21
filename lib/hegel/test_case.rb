@@ -65,6 +65,7 @@ module Hegel
       @entries = record ? [] : nil
       @pools = []
       @grammars = grammars
+      @poison = nil
     end
 
     # The [:draw, name, value] / [:note, message] entries recorded so far, in
@@ -162,14 +163,14 @@ module Hegel
     # IntegerGenerator's own primitive; #draw_integer is this plus
     # recording.
     def generate_integer(min_value, max_value)
-      @impl.generate_integer(@ctx, @handle, min_value, max_value)
+      @impl.generate_integer(@ctx, live_handle, min_value, max_value)
     end
 
     # hegel_generate_integer_big, without recording. Hegel::Generators::
     # IntegerGenerator's own primitive for bounds outside int64_t's range,
     # used instead of #generate_integer only then; see IntegerGenerator#do_draw.
     def generate_integer_big(min_value, max_value)
-      @impl.generate_integer_big(@ctx, @handle, min_value, max_value)
+      @impl.generate_integer_big(@ctx, live_handle, min_value, max_value)
     end
 
     # hegel_generate_boolean, without recording. Hegel::Generators::
@@ -179,14 +180,14 @@ module Hegel
       # has_forced is false, so the engine ignores the forced argument's value.
       # .mutineer.yml ignores that mutant by id, since a line marker would also
       # hide the killed mutant of has_forced.
-      @impl.generate_boolean(@ctx, @handle, p, false, false)
+      @impl.generate_boolean(@ctx, live_handle, p, false, false)
     end
 
     # hegel_generate_float. Hegel::Generators::FloatGenerator's own
     # primitive.
     def generate_float(width, min_value, max_value, allow_nan:, allow_infinity:, exclude_min:, exclude_max:,
       smallest_nonzero_magnitude:)
-      @impl.generate_float(@ctx, @handle, width, min_value, max_value, allow_nan, allow_infinity, exclude_min,
+      @impl.generate_float(@ctx, live_handle, width, min_value, max_value, allow_nan, allow_infinity, exclude_min,
         exclude_max, smallest_nonzero_magnitude)
     end
 
@@ -224,43 +225,49 @@ module Hegel
     # this class makes. Writing the same check on this side would only
     # give one mistake two messages to drift apart from each other.
     def target(value, label: "")
-      @impl.target(@ctx, @handle, value, label)
+      @impl.target(@ctx, live_handle, value, label)
     end
 
     def event(label)
-      @impl.event(@ctx, @handle, label)
+      @impl.event(@ctx, live_handle, label)
     end
 
     # No finite check here: hegel_event_value's HEGEL_E_INVALID_ARG reaches
     # the caller through LibHegel.check!, as it does for #target.
     def event_value(label, value)
-      @impl.event_value(@ctx, @handle, label, value)
+      @impl.event_value(@ctx, live_handle, label, value)
     end
 
     # hegel_start_span, labelled with a generator's label (see
     # Hegel::Generator#label). Every compound Hegel::Generator (map, filter,
     # arrays) opens one of these around its own draw; see #stop_span.
     def start_span(label)
-      @impl.start_span(@ctx, @handle, label)
+      @impl.start_span(@ctx, live_handle, label)
     end
 
     # hegel_stop_span, closing the span #start_span most recently opened.
     # +discard+ true marks it rejected (a filter predicate that did not
     # hold), so libhegel retries from before the span opened.
+    #
+    # Makes no native call while an abandoned recursive attempt unwinds:
+    # hegel_recursion_retry discards the spans that attempt left open, and
+    # closing them here first would keep them. See docs/adr/0032.
     def stop_span(discard: false)
+      return if @poison
+
       @impl.stop_span(@ctx, @handle, discard)
     end
 
     # hegel_new_collection: Hegel::Generators::ArrayGenerator's own sizing
     # primitive, paired with #collection_more and #collection_free.
     def new_collection(min_size, max_size)
-      @impl.new_collection(@ctx, @handle, min_size, max_size)
+      @impl.new_collection(@ctx, live_handle, min_size, max_size)
     end
 
     # hegel_collection_more: whether to draw another element into
     # +collection+.
     def collection_more(collection)
-      @impl.collection_more(@ctx, @handle, collection)
+      @impl.collection_more(@ctx, live_handle, collection)
     end
 
     # hegel_collection_reject: tells libhegel the element most recently
@@ -269,7 +276,7 @@ module Hegel
     # #collection_more call offers another attempt at the same slot instead
     # of treating the collection as one element closer to done.
     def collection_reject(collection, why: nil)
-      @impl.collection_reject(@ctx, @handle, collection, why)
+      @impl.collection_reject(@ctx, live_handle, collection, why)
     end
 
     # hegel_collection_free.
@@ -319,26 +326,26 @@ module Hegel
     # #with_regex_generator, #with_email_generator, #with_url_generator, or
     # #with_domain_generator).
     def generate_string(generator)
-      @impl.generate_string(@ctx, @handle, generator)
+      @impl.generate_string(@ctx, live_handle, generator)
     end
 
     # hegel_generate_bytes. A future Hegel::Generators::BinaryGenerator's
     # own primitive, the bytes counterpart to #generate_string.
     def generate_bytes(min_size, max_size)
-      @impl.generate_bytes(@ctx, @handle, min_size, max_size)
+      @impl.generate_bytes(@ctx, live_handle, min_size, max_size)
     end
 
     # hegel_generate_ipv4, returning the address's 4 raw bytes. Converting
     # to a caller-facing address type (IPAddr or similar) is left to the
     # generator built on top of this call.
     def generate_ipv4
-      @impl.generate_ipv4(@ctx, @handle)
+      @impl.generate_ipv4(@ctx, live_handle)
     end
 
     # hegel_generate_ipv6, returning the address's 16 raw bytes. Same
     # division of labor as #generate_ipv4.
     def generate_ipv6
-      @impl.generate_ipv6(@ctx, @handle)
+      @impl.generate_ipv6(@ctx, live_handle)
     end
 
     # hegel_generate_uuid, returning 16 raw bytes. Hegel::Generators::
@@ -346,7 +353,7 @@ module Hegel
     # hex String is that generator's job, the same division of labor
     # #generate_ipv4/#generate_ipv6 already follow.
     def generate_uuid(version, has_version)
-      @impl.generate_uuid(@ctx, @handle, version, has_version)
+      @impl.generate_uuid(@ctx, live_handle, version, has_version)
     end
 
     # hegel_string_generator_regex. +alphabet+ is an optional string
@@ -400,7 +407,7 @@ module Hegel
     # Hegel::Stateful::Pool.new cannot forget it and leak the handle --
     # docs/adr/0011 has the ownership decision behind this.
     def new_pool
-      pool = @impl.new_pool(@ctx, @handle)
+      pool = @impl.new_pool(@ctx, live_handle)
       @pools << pool
       pool
     end
@@ -409,7 +416,7 @@ module Hegel
     # associate with the value it just generated. Hegel::Stateful::Pool#add's
     # own primitive.
     def pool_add(pool)
-      @impl.pool_add(@ctx, @handle, pool)
+      @impl.pool_add(@ctx, live_handle, pool)
     end
 
     # hegel_pool_generate: the variable id libhegel chose from +pool+ (and
@@ -420,7 +427,7 @@ module Hegel
     # translates that to Hegel::AssumeFailed, the same as every other
     # assumption failure.
     def pool_generate(pool, consume)
-      @impl.pool_generate(@ctx, @handle, pool, consume)
+      @impl.pool_generate(@ctx, live_handle, pool, consume)
     end
 
     # hegel_pool_free. Not called directly by a caller of
@@ -447,33 +454,33 @@ module Hegel
     # call is a method on this class: Hegel::Stateful never touches @impl or
     # @ctx directly, only this handle-scoped surface.
     def new_state_machine(rule_names, invariant_names, always_check, step_count)
-      @impl.new_state_machine(@ctx, @handle, rule_names, invariant_names, always_check, step_count)
+      @impl.new_state_machine(@ctx, live_handle, rule_names, invariant_names, always_check, step_count)
     end
 
     # hegel_state_machine_next_group: starts the next round, or returns
     # LibHegel::HEGEL_STATE_MACHINE_DONE once the machine is done.
     def state_machine_next_group(state_machine)
-      @impl.state_machine_next_group(@ctx, @handle, state_machine)
+      @impl.state_machine_next_group(@ctx, live_handle, state_machine)
     end
 
     # hegel_state_machine_next_rule: the index (into the +rule_names+
     # #new_state_machine was given) of the next rule to run this round, or
     # LibHegel::HEGEL_STATE_MACHINE_DONE once the round is over.
     def state_machine_next_rule(state_machine)
-      @impl.state_machine_next_rule(@ctx, @handle, state_machine)
+      @impl.state_machine_next_rule(@ctx, live_handle, state_machine)
     end
 
     # hegel_state_machine_rule_rejected: tells libhegel the rule most
     # recently returned by #state_machine_next_rule stopped early on a
     # failed assumption, so its round does not count toward the step budget.
     def state_machine_rule_rejected(state_machine)
-      @impl.state_machine_rule_rejected(@ctx, @handle, state_machine)
+      @impl.state_machine_rule_rejected(@ctx, live_handle, state_machine)
     end
 
     # hegel_state_machine_should_check_invariant: whether to run the
     # invariant at +index+ at this join point.
     def state_machine_should_check_invariant(state_machine, index)
-      @impl.state_machine_should_check_invariant(@ctx, @handle, state_machine, index)
+      @impl.state_machine_should_check_invariant(@ctx, live_handle, state_machine, index)
     end
 
     # hegel_state_machine_free. Takes no test-case handle, unlike every
@@ -485,11 +492,69 @@ module Hegel
       @impl.state_machine_free(@ctx, state_machine)
     end
 
+    # A hegel_new_recursion handle, and whether #recursion_free has
+    # released it.
+    Recursion = Struct.new(:handle, :freed)
+
+    # hegel_new_recursion. Hegel::Generators::RecursiveGenerator's own
+    # scope, freed by #recursion_free in that generator's `ensure`.
+    def new_recursion(max_depth, max_leaves)
+      Recursion.new(@impl.new_recursion(@ctx, live_handle, max_depth, max_leaves), false)
+    end
+
+    # hegel_recursion_branch: whether the sub-value at +depth+ is a branch.
+    def recursion_branch(recursion, depth)
+      @impl.recursion_branch(@ctx, live_handle, recursion.handle, depth)
+    end
+
+    # hegel_recursion_leaf. Raises Hegel::LeafBudgetExceeded when the
+    # attempt outgrew its leaf budget, and keeps it until #recursion_retry:
+    # every call that takes the test-case handle raises it again instead of
+    # reaching the engine, so a body that rescues it cannot draw on into an
+    # attempt the engine is about to discard.
+    def recursion_leaf(recursion)
+      return if @impl.recursion_leaf(@ctx, live_handle, recursion.handle)
+
+      @poison = LeafBudgetExceeded.new(recursion)
+      raise @poison
+    end
+
+    # True while the attempt +recursion+ abandoned through #recursion_leaf
+    # still waits for #recursion_retry.
+    def abandoned_by?(recursion)
+      @poison.is_a?(LeafBudgetExceeded) && @poison.recursion.equal?(recursion)
+    end
+
+    # hegel_recursion_retry, which reaches the engine with the raw handle
+    # while an attempt is abandoned. HEGEL_E_ASSUME or HEGEL_E_STOP_TEST ends the
+    # test case, so its exception takes the abandoned attempt's place and
+    # later calls raise it without reaching the engine.
+    def recursion_retry(recursion)
+      @impl.recursion_retry(@ctx, @handle, recursion.handle)
+      @poison = nil
+    rescue AssumeFailed, StopTest => e
+      @poison = e
+      raise
+    end
+
+    # hegel_recursion_finish: false when the engine discarded the finished
+    # attempt, which the caller then draws again from the root.
+    def recursion_finish(recursion)
+      @impl.recursion_finish(@ctx, live_handle, recursion.handle)
+    end
+
+    # hegel_recursion_free. Takes no test-case handle, so it runs while an
+    # attempt is abandoned.
+    def recursion_free(recursion)
+      recursion.freed = true
+      @impl.recursion_free(@ctx, recursion.handle)
+    end
+
     # hegel_generate_date, without recording. Hegel::Generators::
     # DatesGenerator's own primitive. +min_value+/+max_value+ are each a
     # [year, month, day] Array; the return value is the same shape.
     def generate_date(min_value, max_value)
-      @impl.generate_date(@ctx, @handle, min_value, max_value)
+      @impl.generate_date(@ctx, live_handle, min_value, max_value)
     end
 
     # hegel_generate_time, without recording. Hegel::Generators::
@@ -497,7 +562,7 @@ module Hegel
     # [hour, minute, second, microsecond] Array; the return value is the
     # same shape.
     def generate_time(min_value, max_value)
-      @impl.generate_time(@ctx, @handle, min_value, max_value)
+      @impl.generate_time(@ctx, live_handle, min_value, max_value)
     end
 
     # hegel_generate_datetime, without recording. Hegel::Generators::
@@ -506,7 +571,7 @@ module Hegel
     # [hour, minute, second, microsecond] Array; the return value is a
     # [[year, month, day], [hour, minute, second, microsecond]] pair.
     def generate_datetime(min_date, min_time, max_date, max_time)
-      @impl.generate_datetime(@ctx, @handle, min_date, min_time, max_date, max_time)
+      @impl.generate_datetime(@ctx, live_handle, min_date, min_time, max_date, max_time)
     end
 
     # Yields the Hegel::GrammarCache::Compiled under +key+ in the run's
@@ -553,10 +618,16 @@ module Hegel
 
     # hegel_generate_grammar, without recording.
     def generate_grammar(grammar, max_size)
-      @impl.generate_grammar(@ctx, @handle, grammar, max_size)
+      @impl.generate_grammar(@ctx, live_handle, grammar, max_size)
     end
 
     private
+
+    def live_handle
+      raise @poison if @poison
+
+      @handle
+    end
 
     # Runs the block with +generator+, freeing it via #string_generator_free
     # whether the block returns or raises. The one #ensure

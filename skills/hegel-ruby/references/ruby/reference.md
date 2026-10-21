@@ -6,7 +6,7 @@
 - [Test Structure](#test-structure): `Hegel.test`, its block, return value, failure behavior
 - [Settings](#settings): `profile:` `test_cases:` `seed:` `derandomize:` `verbosity:` `database:` `database_key:` `phases:` `suppress_health_check:` `report_multiple_failures:` `stop_on_first_failure:` `print_blob:` `show_statistics:` `nondeterminism_strictness:` `backend:` `output:` `reproduce_failure:`
 - [TestCase Methods](#testcase-methods): `draw`, `draw_integer`, `draw_boolean`, `assume`, `reject`, `note`, `target`, `event`, `event_value`
-- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `from_lark`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations`, `composite`, `deferred`
+- [Generator Reference](#generator-reference): `booleans`, `integers`, `floats`, `text`, `arrays`, `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional`, `tuples`, `sets`, `hashes`, `characters`, `binary`, `from_regex`, `from_lark`, `emails`, `urls`, `domains`, `ip_addresses`, `uuids`, `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations`, `composite`, `deferred`, `recursive`
 - [Stateful Testing](#stateful-testing): `Hegel::StateMachine`, `rule`, `invariant`, `Hegel::Stateful.run`, `Hegel::Stateful::Pool`
 - [Combinator Methods](#combinator-methods): `.map`, `.filter`
 - [Gotchas](#gotchas)
@@ -34,7 +34,7 @@ include Hegel::Syntax::Methods
 ```
 
 `Hegel::Syntax::Methods` makes every generator method (`booleans` through
-`deferred`; see [Generator Reference](#generator-reference)) callable bare,
+`recursive`; see [Generator Reference](#generator-reference)) callable bare,
 the way FactoryBot's own `Syntax::Methods` makes `create` callable bare.
 With Minitest, include it once on the base test class:
 
@@ -1309,6 +1309,52 @@ seen # => [0, [0, []], 4]
 Drawing from it before `#set` raises `Hegel::Error` at draw time:
 `"deferred: draw called before set"`. Calling `#set` a second time raises
 immediately (not at draw time): `"deferred: set called more than once"`.
+
+### `recursive(leaf, max_depth: 32, max_leaves: 100, &branch)`
+
+A recursively defined value, such as a tree: either a value from `leaf`, or
+what the block's generator builds from sub-values of the same kind. The
+block receives the generator of those sub-values and returns a generator
+that combines some number of them. It is called afresh for each branch.
+
+```ruby
+tree = recursive(integers(min_value: 0, max_value: 10), max_leaves: 10) do |subtrees|
+  arrays(subtrees, max_size: 3)
+end
+
+result = Hegel.test(test_cases: 20, verbosity: :quiet) do |tc|
+  v = tc.draw(tree)
+  raise "wrong type" unless v.is_a?(Integer) || v.is_a?(Array)
+end
+result # => nil
+
+seen = []
+Hegel.test(test_cases: 3, seed: 1, derandomize: true, verbosity: :quiet) do |tc|
+  seen << tc.draw(tree)
+end
+seen # => [0, [[]], []]
+```
+
+The engine decides each leaf-or-branch choice. `max_depth` caps how deeply
+branches nest; at that depth every sub-value is a leaf, so `max_depth: 0`
+draws only leaves. An attempt that draws more than `max_leaves` leaves is
+discarded and drawn again, and the test case is discarded, as by `assume`,
+when several attempts in a row do not fit. A tree shrinks toward one of its
+own subtrees.
+
+Draw the sub-values only through the generator the block returns. Drawing
+the block's argument after the recursive draw has ended raises
+`Hegel::Error`: `"recursive: a subtree generator was drawn outside the draw
+that made it"`. These raise at draw time:
+
+- no block: `"recursive: block is required"`
+- a `leaf` that is not a generator: `"recursive: leaf must be a generator,
+  got 5"`
+- a bound that is not an Integer from 0 to 2\*\*64 - 1: `"recursive:
+  max_depth must be an Integer between 0 and 2**64 - 1, got -1"`, and the
+  same for `max_leaves`
+- a block that returns something other than a generator: `"recursive: the
+  block must return a generator, got 5"`
 
 ## Stateful Testing
 

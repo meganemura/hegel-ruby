@@ -1441,5 +1441,118 @@ module Hegel
         @inner.do_draw(tc)
       end
     end
+
+    # Hegel::Syntax::Methods#recursive. A value built from +leaf+ values by
+    # +branch+, which receives a SubtreeGenerator for the sub-values and
+    # returns a generator combining them. The engine decides every
+    # leaf-or-branch choice and owns the depth and leaf budgets, as
+    # hegel-rust's generators/recursive.rs leaves them to it.
+    class RecursiveGenerator < Generator
+      UINT64_MAX = (2**64) - 1
+
+      def initialize(leaf, max_depth:, max_leaves:, &branch)
+        @leaf = leaf
+        @max_depth = max_depth
+        @max_leaves = max_leaves
+        @branch = branch
+        @label = combined_label(@leaf)
+      end
+
+      attr_reader :label
+
+      def do_draw(tc)
+        raise Hegel::Error, "recursive: block is required" unless @branch
+        raise Hegel::Error, "recursive: leaf must be a generator, got #{@leaf.inspect}" unless @leaf.is_a?(Generator)
+
+        validate_bound("max_depth", @max_depth)
+        validate_bound("max_leaves", @max_leaves)
+
+        tc.start_span(label)
+        begin
+          draw_recursion(tc)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      private
+
+      def validate_bound(name, value)
+        return if value.is_a?(Integer) && value.between?(0, UINT64_MAX)
+
+        raise Hegel::Error, "recursive: #{name} must be an Integer between 0 and 2**64 - 1, got #{value.inspect}"
+      end
+
+      # An attempt abandoned over the leaf budget is retried even when a
+      # body rescued the exception and returned a value instead: that value
+      # was built from draws the engine is about to discard.
+      def draw_recursion(tc)
+        recursion = tc.new_recursion(@max_depth, @max_leaves)
+        begin
+          root = SubtreeGenerator.new(@leaf, @branch, recursion, 0, label)
+          loop do
+            begin
+              value = root.draw_subtree(tc)
+            rescue LeafBudgetExceeded => e
+              raise unless e.recursion.equal?(recursion)
+            end
+            if tc.abandoned_by?(recursion)
+              tc.recursion_retry(recursion)
+            elsif tc.recursion_finish(recursion)
+              return value
+            end
+          end
+        ensure
+          tc.recursion_free(recursion)
+        end
+      end
+    end
+
+    # What a #recursive block receives: a generator of one sub-value, itself
+    # a leaf or a further branch. Every depth shares the recursive
+    # generator's label, which is what lets the shrinker replace a tree with
+    # one of its own subtrees.
+    class SubtreeGenerator < Generator
+      def initialize(leaf, branch, recursion, depth, label)
+        @leaf = leaf
+        @branch = branch
+        @recursion = recursion
+        @depth = depth
+        @label = label
+      end
+
+      attr_reader :label
+
+      def do_draw(tc)
+        if @recursion.freed
+          raise Hegel::Error, "recursive: a subtree generator was drawn outside the draw that made it"
+        end
+
+        tc.start_span(label)
+        begin
+          draw_subtree(tc)
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      # Called directly for the root, which needs no span of its own: the
+      # recursive generator's span around it carries the same label. The
+      # leaf and the branch generator get no span here either, unlike
+      # hegel-rust's draw_silent; docs/adr/0032 has the measurement.
+      def draw_subtree(tc)
+        if tc.recursion_branch(@recursion, @depth)
+          generator = @branch.call(SubtreeGenerator.new(@leaf, @branch, @recursion, @depth + 1, label))
+          unless generator.is_a?(Generator)
+            raise Hegel::Error, "recursive: the block must return a generator, got #{generator.inspect}"
+          end
+
+          generator.do_draw(tc)
+        else
+          tc.recursion_leaf(@recursion)
+          @leaf.do_draw(tc)
+        end
+      end
+    end
   end
 end

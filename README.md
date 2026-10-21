@@ -207,7 +207,7 @@ Expected: [0, 0]
 | Choice | `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional` |
 | Formats | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
 | Time | `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings`, `durations` |
-| Your own | `composite`, `deferred` |
+| Your own | `composite`, `deferred`, `recursive` |
 
 Each one composes through `map` and `filter`. Options are keywords, with the
 names the other Hegel implementations use, such as

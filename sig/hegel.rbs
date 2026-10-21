@@ -12,6 +12,11 @@ module Hegel
   class AssumeFailed < Exception
   end
 
+  class LeafBudgetExceeded < Exception
+    attr_reader recursion: TestCase::Recursion
+    def initialize: (TestCase::Recursion recursion) -> void
+  end
+
   def self.test: (?profile: String?, ?test_cases: Integer?, ?seed: Integer?, ?derandomize: bool?, ?verbosity: Symbol?, ?database: String?, ?database_key: String?, ?phases: Array[Symbol]?, ?suppress_health_check: Array[Symbol]?, ?report_multiple_failures: bool, ?stop_on_first_failure: bool?, ?print_blob: bool?, ?show_statistics: bool?, ?nondeterminism_strictness: Symbol?, ?backend: Symbol?, ?output: untyped, ?reproduce_failure: String?, ?impl: untyped) { (TestCase) -> void } -> nil
   def self.default_impl: () -> untyped
 
@@ -79,6 +84,19 @@ module Hegel
     def grammar_placeholder: (untyped grammar, String name) -> String
     def grammar_free: (untyped grammar) -> nil
     def generate_grammar: (untyped grammar, Integer max_size) -> String
+    def new_recursion: (Integer max_depth, Integer max_leaves) -> Recursion
+    def recursion_branch: (Recursion recursion, Integer depth) -> bool
+    def recursion_leaf: (Recursion recursion) -> nil
+    def abandoned_by?: (Recursion recursion) -> bool
+    def recursion_retry: (Recursion recursion) -> nil
+    def recursion_finish: (Recursion recursion) -> bool
+    def recursion_free: (Recursion recursion) -> nil
+
+    class Recursion < Struct[untyped]
+      attr_accessor handle: untyped
+      attr_accessor freed: bool
+      def initialize: (untyped handle, bool freed) -> void
+    end
   end
 
   class GrammarCache
@@ -394,6 +412,24 @@ module Hegel
       def do_draw: (untyped tc) -> untyped
     end
 
+    class RecursiveGenerator < Generator
+      UINT64_MAX: Integer
+
+      def initialize: (untyped leaf, max_depth: untyped, max_leaves: untyped) ?{ (SubtreeGenerator) -> untyped } -> void
+      def do_draw: (untyped tc) -> untyped
+
+      private
+
+      def validate_bound: (String name, untyped value) -> void
+      def draw_recursion: (untyped tc) -> untyped
+    end
+
+    class SubtreeGenerator < Generator
+      def initialize: (Generator leaf, ^(SubtreeGenerator) -> untyped branch, TestCase::Recursion recursion, Integer depth, Integer label) -> void
+      def do_draw: (untyped tc) -> untyped
+      def draw_subtree: (untyped tc) -> untyped
+    end
+
     extend Syntax::Methods
   end
 
@@ -477,6 +513,7 @@ module Hegel
       def durations: (?min_value: Integer, ?max_value: Integer) -> Generators::DurationsGenerator
       def composite: () { (Generators::CompositeGenerator::BlockTestCase) -> untyped } -> Generators::CompositeGenerator
       def deferred: () -> Generators::DeferredGenerator
+      def recursive: (Generator leaf, ?max_depth: Integer, ?max_leaves: Integer) { (Generators::SubtreeGenerator) -> Generator } -> Generators::RecursiveGenerator
     end
   end
 
@@ -608,6 +645,7 @@ module Hegel
     HEGEL_E_NOT_COMPLETE: Integer
     HEGEL_E_INTERNAL: Integer
     HEGEL_E_CONCURRENT_USE: Integer
+    HEGEL_E_RETRY: Integer
     HEGEL_E_NOT_FOUND: Integer
     CODE_NAMES: Hash[Integer, String]
     HEGEL_STATUS_VALID: Integer
@@ -715,6 +753,12 @@ module Hegel
       def state_machine_rule_rejected: (untyped ctx, untyped tc, untyped state_machine) -> nil
       def state_machine_should_check_invariant: (untyped ctx, untyped tc, untyped state_machine, Integer index) -> bool
       def state_machine_free: (untyped ctx, untyped state_machine) -> nil
+      def new_recursion: (untyped ctx, untyped tc, Integer max_depth, Integer max_leaves) -> untyped
+      def recursion_branch: (untyped ctx, untyped tc, untyped recursion, Integer depth) -> bool
+      def recursion_leaf: (untyped ctx, untyped tc, untyped recursion) -> bool
+      def recursion_retry: (untyped ctx, untyped tc, untyped recursion) -> nil
+      def recursion_finish: (untyped ctx, untyped tc, untyped recursion) -> bool
+      def recursion_free: (untyped ctx, untyped recursion) -> nil
       def generate_float: (untyped ctx, untyped tc, Integer width, Float min_value, Float max_value, bool allow_nan, bool allow_infinity, bool exclude_min, bool exclude_max, Float smallest_nonzero_magnitude) -> Float
       def string_generator_text: (untyped ctx, min_size: Integer, max_size: Integer, ?codec: String?, ?min_codepoint: Integer, ?max_codepoint: Integer, ?categories: Array[String]?, ?exclude_categories: Array[String]?, ?include_characters: String, ?exclude_characters: String) -> untyped
       def string_generator_free: (untyped ctx, untyped generator) -> nil

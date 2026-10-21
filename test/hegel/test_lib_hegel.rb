@@ -111,7 +111,8 @@ class TestLibHegel < Minitest::Test
       Hegel::LibHegel::HEGEL_E_ASSUME => Hegel::AssumeFailed,
       Hegel::LibHegel::HEGEL_E_BACKEND => Hegel::Error,
       Hegel::LibHegel::HEGEL_E_INVALID_ARG => Hegel::Error,
-      Hegel::LibHegel::HEGEL_E_CONCURRENT_USE => Hegel::Error
+      Hegel::LibHegel::HEGEL_E_CONCURRENT_USE => Hegel::Error,
+      Hegel::LibHegel::HEGEL_E_RETRY => Hegel::Error
     }.each do |code, klass|
       error = assert_raises(klass) { Hegel::LibHegel.check!(fake, ctx, code) }
       code_name = Hegel::LibHegel::CODE_NAMES.fetch(code)
@@ -1967,6 +1968,90 @@ class TestLibHegel < Minitest::Test
     real = Hegel::LibHegel::Real.new
     assert_nil real.pool_free(nil, nil)
     assert_nil real.state_machine_free(nil, nil)
+    assert_nil real.recursion_free(nil, nil)
+  end
+
+  # At max_depth 1 a decision at depth 1 is forced to a leaf, so reading the
+  # out-parameter inverted fails here, and over 20 cases the root branches at
+  # least once.
+  def test_real_recursion_branch_leaf_and_finish_answer_booleans
+    real = Hegel::LibHegel::Real.new
+    branched = false
+
+    with_real_test_cases(real, test_cases: 20) do |ctx, tc|
+      recursion = real.new_recursion(ctx, tc, 1, 4)
+      refute_predicate recursion, :null?
+      begin
+        if real.recursion_branch(ctx, tc, recursion, 0)
+          branched = true
+          2.times do
+            assert_equal false, real.recursion_branch(ctx, tc, recursion, 1)
+            assert_equal true, real.recursion_leaf(ctx, tc, recursion)
+          end
+        else
+          assert_equal true, real.recursion_leaf(ctx, tc, recursion)
+        end
+        assert_includes [true, false], real.recursion_finish(ctx, tc, recursion)
+      ensure
+        assert_nil real.recursion_free(ctx, recursion)
+      end
+      Hegel::LibHegel::HEGEL_STATUS_VALID
+    end
+
+    assert branched, "no root decision branched"
+  end
+
+  # With max_leaves 0 every leaf outgrows the budget, so each attempt ends in
+  # HEGEL_E_RETRY until hegel_recursion_retry runs out of attempts and
+  # answers HEGEL_E_ASSUME.
+  def test_real_recursion_leaf_over_budget_retries_until_the_attempts_run_out
+    real = Hegel::LibHegel::Real.new
+
+    with_real_test_cases(real, test_cases: 1) do |ctx, tc|
+      recursion = real.new_recursion(ctx, tc, 0, 0)
+      retries = 0
+      begin
+        assert_raises(Hegel::AssumeFailed) do
+          loop do
+            assert_equal false, real.recursion_branch(ctx, tc, recursion, 0)
+            assert_equal false, real.recursion_leaf(ctx, tc, recursion)
+            assert_nil real.recursion_retry(ctx, tc, recursion)
+            retries += 1
+          end
+        end
+      ensure
+        real.recursion_free(ctx, recursion)
+      end
+      assert_operator retries, :>, 0
+      Hegel::LibHegel::HEGEL_STATUS_INVALID
+    end
+  end
+
+  # Runs a quiet, database-off run of +test_cases+ against +real+, yielding
+  # each case's context and handle; the block answers the status to mark.
+  def with_real_test_cases(real, test_cases:)
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, test_cases)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+      begin
+        loop do
+          tc = real.next_test_case(ctx, run)
+          break if tc.nil?
+
+          begin
+            real.mark_complete(ctx, tc, yield(ctx, tc), nil)
+          ensure
+            real.test_case_free(ctx, tc)
+          end
+        end
+      ensure
+        real.run_free(ctx, run)
+      end
+    end
   end
 
   def test_fake_profile_calls_record_their_arguments_and_translate_error_codes
@@ -2070,6 +2155,36 @@ class TestLibHegel < Minitest::Test
     assert_equal false, fake.state_machine_should_check_invariant(ctx, Object.new, state_machine, 0)
     assert_nil fake.state_machine_rule_rejected(ctx, Object.new, state_machine)
     assert_nil fake.state_machine_free(ctx, state_machine)
+  end
+
+  def test_fake_recursion_calls_answer_their_queues_then_defaults
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.recursion_branch_values = [true]
+    fake.recursion_leaf_codes = [Hegel::LibHegel::HEGEL_E_RETRY]
+    fake.recursion_finish_codes = [Hegel::LibHegel::HEGEL_E_RETRY]
+    fake.recursion_retry_codes = [Hegel::LibHegel::HEGEL_E_ASSUME]
+
+    recursion = fake.new_recursion(ctx, Object.new, 3, 7)
+    assert_equal [[3, 7]], fake.new_recursion_calls
+    assert_equal [true, false], 2.times.map { fake.recursion_branch(ctx, Object.new, recursion, 0) }
+    assert_equal [false, true], 2.times.map { fake.recursion_leaf(ctx, Object.new, recursion) }
+    assert_equal [false, true], 2.times.map { fake.recursion_finish(ctx, Object.new, recursion) }
+    assert_raises(Hegel::AssumeFailed) { fake.recursion_retry(ctx, Object.new, recursion) }
+    assert_nil fake.recursion_retry(ctx, Object.new, recursion)
+    assert_nil fake.recursion_free(ctx, recursion)
+    assert_equal [recursion], fake.freed_recursions
+
+    other = fake.new_recursion(ctx, Object.new, 1, 1)
+    8.times { assert_nil fake.recursion_retry(ctx, Object.new, other) }
+    assert_raises(Hegel::AssumeFailed) { fake.recursion_retry(ctx, Object.new, other) }
+
+    fake.new_recursion_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.new_recursion(ctx, Object.new, 1, 1) }
+    fake.recursion_branch_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.recursion_branch(ctx, Object.new, recursion, 0) }
+    fake.recursion_leaf_codes = [Hegel::LibHegel::HEGEL_E_STOP_TEST]
+    assert_raises(Hegel::StopTest) { fake.recursion_leaf(ctx, Object.new, recursion) }
   end
 
   def test_fake_state_machine_calls_translate_configured_error_codes

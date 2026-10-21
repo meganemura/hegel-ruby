@@ -368,7 +368,11 @@ module Hegel
       [LibHegel::HEGEL_STATUS_VALID, nil, nil, nil]
     rescue *Hegel::FATAL_EXCEPTIONS
       raise
-    rescue Hegel::AssumeFailed
+    # A LeafBudgetExceeded gets here only when a body swallowed the
+    # exception that replaced it mid-unwind and then drew again. It is
+    # library control flow, not a property failing, and its attempt never
+    # reached hegel_recursion_retry, so the case is discarded.
+    rescue Hegel::AssumeFailed, Hegel::LeafBudgetExceeded
       [LibHegel::HEGEL_STATUS_INVALID, nil, nil, nil]
     rescue Hegel::StopTest
       [LibHegel::HEGEL_STATUS_OVERRUN, nil, nil, nil]
