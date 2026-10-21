@@ -121,7 +121,7 @@ module Hegel
     # responds to each name here.
     METHODS = %i[
       context_new context_free context_last_error version
-      settings_new settings_new_for_profile settings_register_profile set_default_profile
+      settings_new settings_new_for_profile settings_register_profile set_default_profile set_unicode_version
       settings_free settings_set_test_cases settings_set_verbosity
       settings_set_seed settings_set_derandomize settings_set_database
       run_start next_test_case run_free test_case_free mark_complete
@@ -210,6 +210,21 @@ module Hegel
       io.puts(<<~MESSAGE.chomp)
         hegel: loaded libhegel #{loaded} but these bindings were built for #{Hegel::LIBHEGEL_VERSION}; behaviour may differ. Unset HEGEL_LIBHEGEL_PATH to use the bundled engine, or point it at a matching build.
       MESSAGE
+    end
+
+    # What a freshly loaded engine needs before it builds a generator. Held
+    # here rather than in Real#initialize so the Fake can check it.
+    def prepare(impl, ctx, io: $stderr)
+      warn_on_version_mismatch(impl, ctx, io: io)
+      follow_host_unicode_version(impl, ctx)
+    end
+
+    # Sets the engine's Unicode version to the one Ruby's own Regexp and
+    # String methods follow, so a drawn character falls in the category Ruby
+    # puts it in (docs/adr/0036). The setting is process-wide and read when
+    # a generator is built, so it is made once, when the engine is loaded.
+    def follow_host_unicode_version(impl, ctx)
+      impl.set_unicode_version(ctx, RbConfig::CONFIG.fetch("UNICODE_VERSION"))
     end
 
     # A span label is an opaque u64 that names the generator which opened

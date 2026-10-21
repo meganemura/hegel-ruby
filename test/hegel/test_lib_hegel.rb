@@ -161,6 +161,35 @@ class TestLibHegel < Minitest::Test
     assert_includes io.string, Hegel::LIBHEGEL_VERSION
   end
 
+  def test_follow_host_unicode_version_sends_the_version_ruby_reports
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+
+    assert_nil Hegel::LibHegel.follow_host_unicode_version(fake, ctx)
+
+    assert_equal [RbConfig::CONFIG["UNICODE_VERSION"]], fake.set_unicode_version_calls
+  end
+
+  def test_prepare_warns_on_a_mismatch_and_follows_the_host_unicode_version
+    fake = Hegel::LibHegel::Fake.new
+    fake.version = "9.9.9"
+    ctx = fake.context_new
+    io = StringIO.new
+
+    Hegel::LibHegel.prepare(fake, ctx, io: io)
+
+    assert_includes io.string, "9.9.9"
+    assert_equal [RbConfig::CONFIG["UNICODE_VERSION"]], fake.set_unicode_version_calls
+  end
+
+  def test_fake_set_unicode_version_translates_its_error_code
+    fake = Hegel::LibHegel::Fake.new
+    ctx = fake.context_new
+    fake.set_unicode_version_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+
+    assert_raises(Hegel::Error) { fake.set_unicode_version(ctx, "15.0.0") }
+  end
+
   def test_warn_on_version_mismatch_is_silent_on_a_match
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
@@ -2310,6 +2339,28 @@ class TestLibHegel < Minitest::Test
       real.settings_free(ctx, registered)
 
       assert_nil real.set_default_profile(ctx, "")
+    end
+  end
+
+  # The version is process-wide, so each test that changes it puts back the
+  # one Real.new set.
+  def test_real_set_unicode_version_takes_a_version_it_has_tables_for
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      assert_nil real.set_unicode_version(ctx, "14.0.0")
+      assert_nil real.set_unicode_version(ctx, "")
+    ensure
+      Hegel::LibHegel.follow_host_unicode_version(real, ctx)
+    end
+  end
+
+  def test_real_set_unicode_version_raises_on_a_version_without_tables
+    real = Hegel::LibHegel::Real.new
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      error = assert_raises(Hegel::Error) { real.set_unicode_version(ctx, "13.0.0") }
+      assert_includes error.message, "HEGEL_E_INVALID_ARG"
     end
   end
 

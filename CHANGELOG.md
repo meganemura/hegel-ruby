@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The string generators follow the Unicode version Ruby was built with,
+  `RbConfig::CONFIG["UNICODE_VERSION"]`, through libhegel's
+  `hegel_set_unicode_version`. A drawn character falls in the General
+  Category Ruby gives it, and `from_regex` reads `\w`, `\d`, and `\s` as
+  Ruby does. Before, they followed the engine's newest tables, Unicode 17.0.0.
+  On Ruby 3.4, which follows Unicode 15.0.0, a character assigned after 15.0.0
+  is now drawn as unassigned. See
+  [ADR 0036](docs/adr/0036-follow-rubys-unicode-version.md).
+
 ## [0.4.0] - 2026-10-21
 
 ### Engine: libhegel 0.48.0 (was 0.47.2)

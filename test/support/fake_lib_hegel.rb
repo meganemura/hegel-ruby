@@ -37,7 +37,7 @@ module Hegel
       # translation path. Mirrors the per-primitive return-code fields on
       # hegel-java's FakeLibhegel.
       attr_writer :settings_new_code, :settings_new_for_profile_code, :settings_register_profile_code,
-        :set_default_profile_code, :settings_set_test_cases_code, :settings_set_verbosity_code,
+        :set_default_profile_code, :set_unicode_version_code, :settings_set_test_cases_code, :settings_set_verbosity_code,
         :settings_set_seed_code, :settings_set_derandomize_code, :settings_set_database_code,
         :run_start_code, :next_test_case_code, :mark_complete_code,
         :generate_boolean_code, :generate_integer_code, :generate_integer_big_code,
@@ -159,7 +159,8 @@ module Hegel
         :settings_phases_calls, :settings_suppress_health_check_calls, :settings_report_multiple_failures_calls,
         :settings_stop_on_first_failure_calls, :settings_print_blob_calls, :settings_show_statistics_calls,
         :settings_nondeterminism_strictness_calls, :settings_backend_calls, :settings_test_location_calls, :event_calls, :event_value_calls,
-        :settings_new_for_profile_calls, :settings_register_profile_calls, :set_default_profile_calls
+        :settings_new_for_profile_calls, :settings_register_profile_calls, :set_default_profile_calls,
+        :set_unicode_version_calls
 
       # What #settings_get_print_blob reports: true, the engine's own default,
       # unless a test sets it to stand in for a profile that turns it off.
@@ -185,9 +186,11 @@ module Hegel
         @settings_new_for_profile_code = HEGEL_OK
         @settings_register_profile_code = HEGEL_OK
         @set_default_profile_code = HEGEL_OK
+        @set_unicode_version_code = HEGEL_OK
         @settings_new_for_profile_calls = []
         @settings_register_profile_calls = []
         @set_default_profile_calls = []
+        @set_unicode_version_calls = []
         @settings_set_test_cases_code = HEGEL_OK
         @settings_set_verbosity_code = HEGEL_OK
         @settings_set_seed_code = HEGEL_OK
@@ -379,6 +382,12 @@ module Hegel
       def set_default_profile(ctx, name)
         @set_default_profile_calls << name
         LibHegel.check!(self, ctx, @set_default_profile_code)
+        nil
+      end
+
+      def set_unicode_version(ctx, version)
+        @set_unicode_version_calls << version
+        LibHegel.check!(self, ctx, @set_unicode_version_code)
         nil
       end
 

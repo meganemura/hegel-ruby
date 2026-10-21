@@ -543,6 +543,17 @@ class TestGenerators < Minitest::Test
     assert_all_examples(text(exclude_categories: ["Cc", "Cs"])) { |v| !v.include?("\n") }
   end
 
+  # U+20C1 is unassigned up to Unicode 16.0 and a currency sign from 17.0, the
+  # engine's newest tables. Drawn as unassigned, it shows the engine follows
+  # the Unicode version Ruby reports.
+  def test_characters_follow_the_unicode_version_of_ruby
+    skip "this Ruby follows Unicode 17.0 or later" unless "⃁".match?(/\p{Cn}/)
+
+    assert_all_examples(characters(min_codepoint: 0x20C1, max_codepoint: 0x20C1, categories: ["Cn"])) do |c|
+      c == "⃁"
+    end
+  end
+
   def test_text_include_characters_with_no_categories_draws_only_those
     assert_all_examples(text(categories: [], include_characters: "xyz", max_size: 20)) { |v| v.match?(/\A[xyz]*\z/) }
   end
