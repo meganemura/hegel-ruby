@@ -7,70 +7,70 @@ require "stringio"
 # Records, in one list and in call order, every native call a recursive draw
 # can make, so a test can assert the exact sequence the engine would see.
 class RecursionEventFake < Hegel::LibHegel::Fake
-  attr_reader :events
+  attr_reader :calls
 
   def initialize
     super
-    @events = []
+    @calls = []
   end
 
   def start_span(ctx, tc, label)
-    @events << [:start, label]
+    @calls << [:start, label]
     super
   end
 
   def stop_span(ctx, tc, discard)
-    @events << [:stop, discard]
+    @calls << [:stop, discard]
     super
   end
 
   def generate_integer(ctx, tc, min_value, max_value)
-    @events << :integer
+    @calls << :integer
     super
   end
 
   def new_collection(ctx, tc, min_size, max_size)
-    @events << :new_collection
+    @calls << :new_collection
     super
   end
 
   def collection_more(ctx, tc, collection)
-    @events << :more
+    @calls << :more
     super
   end
 
   def collection_free(ctx, collection)
-    @events << :collection_free
+    @calls << :collection_free
     super
   end
 
   def new_recursion(ctx, tc, max_depth, max_leaves)
-    @events << :new_recursion
+    @calls << :new_recursion
     super
   end
 
   def recursion_branch(ctx, tc, recursion, depth)
-    @events << [:branch, depth]
+    @calls << [:branch, depth]
     super
   end
 
   def recursion_leaf(ctx, tc, recursion)
-    @events << :leaf
+    @calls << :leaf
     super
   end
 
   def recursion_retry(ctx, tc, recursion)
-    @events << :retry
+    @calls << :retry
     super
   end
 
   def recursion_finish(ctx, tc, recursion)
-    @events << :finish
+    @calls << :finish
     super
   end
 
   def recursion_free(ctx, recursion)
-    @events << :free
+    @calls << :free
     super
   end
 end
@@ -122,7 +122,7 @@ class TestRecursive < Minitest::Test
     refute tc.abandoned_by?(recursion)
     tc.generate_integer(0, 1)
 
-    assert_equal [:new_recursion, :leaf, :integer], fake.events
+    assert_equal [:new_recursion, :leaf, :integer], fake.calls
     assert_equal [[3, 5]], fake.new_recursion_calls
   end
 
@@ -163,7 +163,7 @@ class TestRecursive < Minitest::Test
     tc.collection_free(Object.new)
     tc.recursion_free(recursion)
 
-    assert_equal [:new_recursion, :leaf, :collection_free, :free], fake.events
+    assert_equal [:new_recursion, :leaf, :collection_free, :free], fake.calls
     assert recursion.freed
   end
 
@@ -179,7 +179,7 @@ class TestRecursive < Minitest::Test
     tc.generate_integer(0, 1)
     tc.stop_span(discard: false)
 
-    assert_equal [:new_recursion, :leaf, :retry, :integer, [:stop, false]], fake.events
+    assert_equal [:new_recursion, :leaf, :retry, :integer, [:stop, false]], fake.calls
   end
 
   def test_a_retry_that_ends_the_test_case_raises_its_verdict_from_then_on
@@ -197,7 +197,7 @@ class TestRecursive < Minitest::Test
         assert_same verdict, assert_raises(klass) { tc.generate_integer(0, 1) }
         tc.stop_span(discard: false)
 
-        assert_equal [:new_recursion, :leaf, :retry], fake.events
+        assert_equal [:new_recursion, :leaf, :retry], fake.calls
       end
   end
 
@@ -212,7 +212,7 @@ class TestRecursive < Minitest::Test
     assert_equal false, tc.recursion_branch(recursion, 1)
     assert_equal false, tc.recursion_finish(recursion)
     assert_equal true, tc.recursion_finish(recursion)
-    assert_equal [:new_recursion, [:branch, 0], [:branch, 1], :finish, :finish], fake.events
+    assert_equal [:new_recursion, [:branch, 0], [:branch, 1], :finish, :finish], fake.calls
   end
 
   # ---- RecursiveGenerator against the Fake ----
@@ -223,7 +223,7 @@ class TestRecursive < Minitest::Test
 
     assert_equal 0, generator.do_draw(fake_test_case(fake))
     assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :integer, :finish, :free,
-      [:stop, false]], fake.events
+      [:stop, false]], fake.calls
   end
 
   # Every subtree span carries the recursive generator's own label.
@@ -241,7 +241,7 @@ class TestRecursive < Minitest::Test
       [:start, generator.label], [:start, generator.label], [:branch, 1], :leaf, :integer, [:stop, false], [:stop, false],
       :more, :collection_free, [:stop, false],
       :finish, :free, [:stop, false]
-    ], fake.events
+    ], fake.calls
   end
 
   def test_the_block_is_called_afresh_for_each_branch
@@ -275,7 +275,7 @@ class TestRecursive < Minitest::Test
       [:start, array_label], :new_collection, :more, [:start, generator.label], [:start, generator.label],
       [:branch, 1], :leaf, :collection_free, :retry,
       [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
-    ], fake.events
+    ], fake.calls
   end
 
   def test_a_finished_attempt_the_engine_discards_starts_again_from_the_root_without_a_retry
@@ -285,7 +285,7 @@ class TestRecursive < Minitest::Test
 
     generator.do_draw(fake_test_case(fake))
     assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :integer, :finish,
-      [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]], fake.events
+      [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]], fake.calls
   end
 
   def test_a_retry_out_of_attempts_discards_the_case_and_later_draws_never_reach_the_engine
@@ -297,7 +297,7 @@ class TestRecursive < Minitest::Test
 
     verdict = assert_raises(Hegel::AssumeFailed) { generator.do_draw(tc) }
     assert_same verdict, assert_raises(Hegel::AssumeFailed) { tc.draw(integers) }
-    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :retry, :free], fake.events
+    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :retry, :free], fake.calls
   end
 
   def test_a_stop_test_from_a_leaf_propagates_and_frees_the_recursion
@@ -306,7 +306,7 @@ class TestRecursive < Minitest::Test
     generator = recursive(integers) { |subtrees| arrays(subtrees) }
 
     assert_raises(Hegel::StopTest) { generator.do_draw(fake_test_case(fake)) }
-    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :free, [:stop, false]], fake.events
+    assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], :leaf, :free, [:stop, false]], fake.calls
     assert_equal 1, fake.freed_recursions.size
   end
 
@@ -322,7 +322,7 @@ class TestRecursive < Minitest::Test
       [:start, generator.label], :new_recursion, [:branch, 0],
       [:start, branches.first.label], [:start, generator.label], [:branch, 1], :leaf, :retry,
       [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
-    ], fake.events
+    ], fake.calls
   end
 
   # The four ways a branch's own code can meet the abandoned attempt all end
@@ -363,7 +363,7 @@ class TestRecursive < Minitest::Test
         [:start, generator.label], :new_recursion, [:branch, 0],
         [:start, composites.first.label], [:start, generator.label], [:branch, 1], :leaf, :retry,
         [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
-      ], fake.events, name
+      ], fake.calls, name
     end
   end
 
@@ -383,7 +383,7 @@ class TestRecursive < Minitest::Test
     error = assert_raises(RuntimeError) { generator.do_draw(fake_test_case(fake)) }
     assert_equal "cleanup failed", error.message
     assert_equal [[:start, generator.label], :new_recursion, [:branch, 0], [:start, composites.first.label],
-      [:start, generator.label], [:branch, 1], :leaf, :free], fake.events
+      [:start, generator.label], [:branch, 1], :leaf, :free], fake.calls
   end
 
   # The body that rescues that error and draws again gets the abandoned
@@ -429,7 +429,7 @@ class TestRecursive < Minitest::Test
       [:branch, 1], :leaf, :collection_free, :retry,
       [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false],
       :finish, :free, [:stop, false]
-    ], fake.events
+    ], fake.calls
   end
 
   # The inner draw's leaves are subtrees of the outer one, so an outer leaf
@@ -450,7 +450,7 @@ class TestRecursive < Minitest::Test
       [:start, inners.first.label], :new_recursion, [:branch, 0], :leaf,
       [:start, outer.label], [:branch, 1], :leaf, :free, :retry,
       [:branch, 0], :leaf, :integer, :finish, :free, [:stop, false]
-    ], fake.events
+    ], fake.calls
   end
 
   def test_a_subtree_drawn_after_its_recursive_draw_raises
@@ -500,7 +500,7 @@ class TestRecursive < Minitest::Test
       fake = RecursionEventFake.new
       error = assert_raises(Hegel::Error) { generator.do_draw(fake_test_case(fake)) }
       assert_equal message, error.message
-      assert_empty fake.events, message
+      assert_empty fake.calls, message
     end
   end
 

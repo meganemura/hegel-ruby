@@ -18,7 +18,7 @@ recorded, and prints a blob that `Hegel.test(reproduce_failure:)` replays.
 The report comes from the cases the engine stamps for capture during the
 run; see
 [ADR 0019](adr/0019-report-failures-from-the-cases-the-engine-stamps.md).
-The generator layer covers thirty-three generators composing through `map`
+The generator layer covers thirty-four generators composing through `map`
 and `filter`, reachable bare through `Hegel::Syntax::Methods`. A test case
 can discard itself with `tc.assume` or `tc.reject`. A run can be shaped by
 `phases:`, `suppress_health_check:`, `report_multiple_failures:`, and the
