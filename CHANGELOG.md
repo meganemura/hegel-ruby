@@ -59,6 +59,10 @@ hegel-rust's `TestCase#event` and `TestCase#event_value`.
   date, time, and datetime Strings, with no options, as hegel-rust does.
   A time keeps nanoseconds: nine fractional digits appear when the
   nanosecond is not zero.
+- `permutations`, `subsequences`, and `samples` draw reorderings, ordered
+  subsets, and samples of a given sequence, as hegel-rust does. Its
+  `with_replacement` and `without_replacement` setters are one keyword here,
+  `samples(replacement: true)`, which is the default.
 
 ## [0.3.4] - 2026-10-20
 

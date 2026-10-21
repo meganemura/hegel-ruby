@@ -429,6 +429,148 @@ module Hegel
       end
     end
 
+    # What permutations, subsequences, and samples share: a draw of distinct
+    # indices into the caller's sequence, and the span around the whole draw.
+    module SequenceDrawing
+      private
+
+      # Raises for a size bound no draw can honour. The max_size check
+      # reads as hegel-rust's does; the negative min_size check has no
+      # hegel-rust counterpart, since a usize cannot be negative.
+      def check_sizes(name, min_size, max_size)
+        raise Hegel::Error, "#{name}: min_size must not be negative" if min_size.negative?
+        raise Hegel::Error, "#{name}: Cannot have max_size < min_size" if max_size && max_size < min_size
+      end
+
+      def with_span(tc)
+        tc.start_span(label)
+        begin
+          yield
+        ensure
+          tc.stop_span(discard: false)
+        end
+      end
+
+      # Between +min_size+ and +max_size+ (nil, or anything above +size+,
+      # means +size+) distinct indices below +size+, in draw order. Each draw is the index into what is still unchosen, not
+      # into the whole sequence, so the shrinker's smallest value is the
+      # earliest index not yet taken: the minimal sample is 0...min_size in
+      # increasing order.
+      def draw_index_sample(tc, size, min_size, max_size)
+        remaining = (0...size).to_a
+        chosen = []
+        collection = tc.new_collection(min_size, [max_size || size, size].min)
+        begin
+          chosen << remaining.delete_at(tc.generate_integer(0, remaining.size - 1)) while !remaining.empty? && tc.collection_more(collection)
+          chosen
+        ensure
+          tc.collection_free(collection)
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#permutations. Every element of +elements+, in an
+    # order the engine picks and shrinks towards the original one.
+    class PermutationsGenerator < Generator
+      include SequenceDrawing
+
+      def initialize(elements)
+        @elements = elements
+      end
+
+      def do_draw(tc)
+        elements = @elements.to_a
+        with_span(tc) do
+          draw_index_sample(tc, elements.size, elements.size, elements.size).map { |index| elements[index] }
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#subsequences. A subset of +elements+ with
+    # [min_size, max_size] entries, in their original order. Duplicate
+    # elements count as distinct.
+    class SubsequencesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize(elements, min_size:, max_size:)
+        @elements = elements
+        @min_size = min_size
+        @max_size = max_size
+      end
+
+      def do_draw(tc)
+        elements = @elements.to_a
+        check_sizes("subsequences", @min_size, @max_size)
+        if @min_size > elements.size
+          raise Hegel::Error,
+            "subsequences: Cannot generate a subsequence: min_size #{@min_size} is larger than " \
+            "the #{elements.size} elements in the sequence"
+        end
+
+        with_span(tc) do
+          indices = draw_index_sample(tc, elements.size, @min_size, @max_size)
+          indices.sort.map { |index| elements[index] }
+        end
+      end
+    end
+
+    # Hegel::Syntax::Methods#samples. Between min_size and max_size elements
+    # of +elements+, drawn with or without replacement. Without replacement
+    # each element is used at most once, and duplicates in +elements+ count
+    # as distinct. With replacement the size is unbounded unless max_size
+    # bounds it.
+    class SamplesGenerator < Generator
+      include SequenceDrawing
+
+      def initialize(elements, min_size:, max_size:, replacement:)
+        @elements = elements
+        @min_size = min_size
+        @max_size = max_size
+        @replacement = replacement
+      end
+
+      def do_draw(tc)
+        elements = @elements.to_a
+        check_sizes("samples", @min_size, @max_size)
+        validate_for(elements.size)
+
+        with_span(tc) do
+          if @replacement
+            draw_with_replacement(tc, elements)
+          else
+            indices = draw_index_sample(tc, elements.size, @min_size, @max_size)
+            indices.map { |index| elements[index] }
+          end
+        end
+      end
+
+      private
+
+      def validate_for(size)
+        if @replacement
+          if size.zero? && @min_size.positive?
+            raise Hegel::Error, "samples: Cannot generate a non-empty sample from an empty sequence"
+          end
+        elsif @min_size > size
+          raise Hegel::Error,
+            "samples: Cannot generate a sample without replacement: min_size #{@min_size} is larger than " \
+            "the #{size} elements in the sequence"
+        end
+      end
+
+      def draw_with_replacement(tc, elements)
+        max_size = elements.empty? ? 0 : @max_size || LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+        collection = tc.new_collection(@min_size, max_size)
+        begin
+          result = []
+          result << elements[tc.generate_integer(0, elements.size - 1)] while tc.collection_more(collection)
+          result
+        ensure
+          tc.collection_free(collection)
+        end
+      end
+    end
+
     # Hegel::Syntax::Methods#characters. A String of exactly one character,
     # sharing TextGenerator's own alphabet options (codec, min_codepoint,
     # max_codepoint) by delegating to a TextGenerator built with min_size

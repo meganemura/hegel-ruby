@@ -32,6 +32,35 @@ class SpanRecordingFake < Hegel::LibHegel::Fake
   end
 end
 
+class SequenceRecordingFake < SpanRecordingFake
+  attr_reader :collection_sizes, :freed_collections, :integer_bounds
+  attr_writer :integer_values
+
+  def initialize
+    super
+    @collection_sizes = []
+    @freed_collections = []
+    @integer_bounds = []
+    @integer_values = []
+  end
+
+  def new_collection(ctx, tc, min_size, max_size)
+    @collection_sizes << [min_size, max_size]
+    super
+  end
+
+  def collection_free(ctx, collection)
+    @freed_collections << collection
+    super
+  end
+
+  def generate_integer(ctx, tc, min_value, max_value)
+    @integer_bounds << [min_value, max_value]
+    value = super
+    @integer_values.empty? ? value : @integer_values.shift
+  end
+end
+
 class TestGenerators < Minitest::Test
   include HegelDirectoryGuard
   include Hegel::Syntax::Methods
@@ -357,6 +386,209 @@ class TestGenerators < Minitest::Test
     assert_kind_of Hegel::Generator, generator
     error = assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }
     assert_includes error.message, "must not be empty"
+  end
+
+  # ---- permutations, subsequences, samples ----
+
+  def subsequence?(sub, source)
+    remaining = source.each
+    sub.all? { |x| remaining.any? { |y| y == x } }
+  end
+
+  def sample?(sample, source)
+    pool = source.dup
+    sample.all? { |x| (i = pool.index(x)) && pool.delete_at(i) }
+  end
+
+  def test_permutations_draws_against_the_real_engine
+    assert_all_examples(permutations([1, 2, 3, 4])) { |v| v.sort == [1, 2, 3, 4] }
+  end
+
+  def test_subsequences_draws_against_the_real_engine
+    assert_all_examples(subsequences([1, 2, 3, 4, 5])) { |v| subsequence?(v, [1, 2, 3, 4, 5]) }
+  end
+
+  def test_samples_draws_against_the_real_engine
+    assert_all_examples(samples([1, 2, 3])) { |v| v.all? { |x| [1, 2, 3].include?(x) } }
+  end
+
+  def test_subsequences_min_size_bounds_the_draw
+    assert_all_examples(subsequences([1, 2, 3, 4, 5], min_size: 2)) { |v| v.size >= 2 }
+  end
+
+  def test_subsequences_max_size_bounds_the_draw
+    assert_all_examples(subsequences([1, 2, 3, 4, 5], max_size: 3)) { |v| v.size <= 3 }
+  end
+
+  def test_subsequences_max_size_above_the_element_count_is_capped
+    assert_all_examples(subsequences([1, 2, 3], max_size: 10)) { |v| v.size <= 3 }
+  end
+
+  def test_samples_min_size_bounds_the_draw
+    assert_all_examples(samples([1, 2, 3, 4], min_size: 2)) { |v| v.size >= 2 }
+  end
+
+  def test_samples_max_size_bounds_the_draw
+    assert_all_examples(samples([1, 2, 3, 4], max_size: 2)) { |v| v.size <= 2 }
+  end
+
+  def test_samples_without_replacement_uses_each_element_at_most_once
+    assert_all_examples(samples([1, 2, 3, 4], replacement: false)) { |v| sample?(v, [1, 2, 3, 4]) }
+  end
+
+  def test_samples_without_replacement_caps_the_size_at_the_element_count
+    assert_all_examples(samples([1, 2, 3], replacement: false, max_size: 10)) { |v| v.size <= 3 }
+  end
+
+  def test_samples_without_replacement_treats_duplicates_as_distinct
+    assert_all_examples(samples([1, 1, 2], replacement: false, min_size: 3)) { |v| v.sort == [1, 1, 2] }
+  end
+
+  def test_samples_of_an_empty_sequence_are_empty
+    assert_all_examples(samples([])) { |v| v.empty? }
+    assert_all_examples(samples([], replacement: false)) { |v| v.empty? }
+    assert_all_examples(permutations([])) { |v| v.empty? }
+    assert_all_examples(subsequences([])) { |v| v.empty? }
+  end
+
+  def test_sequence_generators_accept_what_sampled_from_accepts
+    assert_all_examples(permutations(1..3)) { |v| v.sort == [1, 2, 3] }
+    assert_all_examples(subsequences(Set[1, 2, 3])) { |v| subsequence?(v, [1, 2, 3]) }
+    assert_all_examples(samples({a: 1}, min_size: 1, max_size: 1)) { |v| v == [[:a, 1]] }
+  end
+
+  def test_permutations_composed_inside_arrays
+    assert_all_examples(arrays(permutations([1, 2, 3]), max_size: 5)) { |v| v.all? { |p| p.sort == [1, 2, 3] } }
+  end
+
+  def test_samples_composed_inside_arrays
+    assert_all_examples(arrays(samples([1, 2, 3], max_size: 3), max_size: 5)) do |v|
+      v.all? { |s| s.all? { |x| [1, 2, 3].include?(x) } }
+    end
+  end
+
+  def test_subsequences_composed_inside_arrays
+    assert_all_examples(arrays(subsequences([1, 2, 3]), max_size: 5)) { |v| v.all? { |s| subsequence?(s, [1, 2, 3]) } }
+  end
+
+  def test_permutations_shrink_to_the_original_order
+    assert_equal [3, 1, 2], minimal(permutations([3, 1, 2])) { true }
+  end
+
+  def test_permutations_shrink_by_moving_one_element
+    assert_equal [5, 1, 2, 3, 4], minimal(permutations([1, 2, 3, 4, 5])) { |v| v[0] == 5 }
+  end
+
+  def test_subsequences_shrink_to_empty
+    assert_empty minimal(subsequences([1, 2, 3, 4, 5])) { true }
+  end
+
+  def test_subsequences_shrink_to_a_prefix
+    assert_equal [1, 2, 3], minimal(subsequences([1, 2, 3, 4, 5], min_size: 3)) { true }
+  end
+
+  def test_samples_shrink_to_empty
+    assert_empty minimal(samples([1, 2, 3], max_size: 5)) { true }
+  end
+
+  def test_samples_with_replacement_can_repeat_an_element
+    assert_equal [2, 2], minimal(samples([1, 2], max_size: 5)) { |v| v.count(2) >= 2 }
+  end
+
+  def test_samples_with_replacement_shrink_to_the_first_element_repeated
+    assert_equal [1, 1, 1], minimal(samples([1, 2, 3], min_size: 3, max_size: 5)) { true }
+  end
+
+  def test_samples_without_replacement_shrink_to_a_prefix
+    assert_equal [1, 2, 3], minimal(samples([1, 2, 3, 4, 5], replacement: false, min_size: 3)) { true }
+  end
+
+  def test_permutations_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), max_size: 10))
+      assert_equal source.sort, tc.draw(permutations(source)).sort
+    end
+  end
+
+  def test_subsequences_size_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), max_size: 10))
+      min = tc.draw(integers(min_value: 0, max_value: source.size))
+      max = tc.draw(integers(min_value: min, max_value: source.size))
+      value = tc.draw(subsequences(source, min_size: min, max_size: max))
+      assert_includes min..max, value.size
+      assert subsequence?(value, source)
+    end
+  end
+
+  def test_samples_without_replacement_size_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), max_size: 10))
+      min = tc.draw(integers(min_value: 0, max_value: source.size))
+      max = tc.draw(integers(min_value: min, max_value: source.size))
+      value = tc.draw(samples(source, min_size: min, max_size: max, replacement: false))
+      assert_includes min..max, value.size
+      assert sample?(value, source)
+    end
+  end
+
+  def test_samples_with_replacement_size_property
+    Hegel.test(**QUIET_SETTINGS) do |tc|
+      source = tc.draw(arrays(integers(min_value: -50, max_value: 50), min_size: 1, max_size: 10))
+      min = tc.draw(integers(min_value: 0, max_value: 20))
+      max = tc.draw(integers(min_value: min, max_value: 20))
+      value = tc.draw(samples(source, min_size: min, max_size: max))
+      assert_includes min..max, value.size
+      assert value.all? { |x| source.include?(x) }
+    end
+  end
+
+  def draw_error(generator)
+    assert_raises(Hegel::Error) { Hegel.test(verbosity: :quiet) { |tc| tc.draw(generator) } }.message
+  end
+
+  def test_invalid_sequence_generator_options_do_not_raise_until_draw_time
+    [
+      subsequences([1], min_size: 2, max_size: 1),
+      subsequences([1], min_size: 2),
+      subsequences([1], min_size: -1),
+      samples([1], min_size: 2, max_size: 1),
+      samples([], min_size: 1),
+      samples([1], min_size: 2, replacement: false),
+      samples([1], min_size: -1)
+    ].each { |generator| assert_kind_of Hegel::Generator, generator }
+  end
+
+  def test_subsequences_max_size_less_than_min_size_raises_at_draw_time
+    assert_equal "subsequences: Cannot have max_size < min_size", draw_error(subsequences([1, 2, 3], min_size: 2, max_size: 1))
+  end
+
+  def test_subsequences_min_size_larger_than_the_sequence_raises_at_draw_time
+    assert_equal "subsequences: Cannot generate a subsequence: min_size 4 is larger than the 3 elements in the sequence",
+      draw_error(subsequences([1, 2, 3], min_size: 4))
+  end
+
+  def test_subsequences_negative_min_size_raises_at_draw_time
+    assert_equal "subsequences: min_size must not be negative", draw_error(subsequences([1, 2, 3], min_size: -1))
+  end
+
+  def test_samples_max_size_less_than_min_size_raises_at_draw_time
+    assert_equal "samples: Cannot have max_size < min_size", draw_error(samples([1, 2, 3], min_size: 2, max_size: 1))
+    assert_equal "samples: Cannot have max_size < min_size",
+      draw_error(samples([1, 2, 3], min_size: 2, max_size: 1, replacement: false))
+  end
+
+  def test_samples_with_replacement_from_an_empty_sequence_raises_at_draw_time
+    assert_equal "samples: Cannot generate a non-empty sample from an empty sequence", draw_error(samples([], min_size: 1))
+  end
+
+  def test_samples_without_replacement_min_size_larger_than_the_sequence_raises_at_draw_time
+    assert_equal "samples: Cannot generate a sample without replacement: min_size 4 is larger than the 3 elements in the sequence",
+      draw_error(samples([1, 2, 3], min_size: 4, replacement: false))
+  end
+
+  def test_samples_negative_min_size_raises_at_draw_time
+    assert_equal "samples: min_size must not be negative", draw_error(samples([1, 2, 3], min_size: -1))
   end
 
   # ---- one_of ----
@@ -1258,6 +1490,119 @@ class TestGenerators < Minitest::Test
   def test_composite_do_draw_opens_and_closes_its_own_span_kept
     generator = composite { |dtc| dtc.draw(integers) }
     assert_equal [[:start, generator.label], [:stop, false]], draw_with_span_recording(generator)
+  end
+
+  # ---- sequence generators against the Fake ----
+
+  # Draws +generator+ once against a SequenceRecordingFake. +integers+ are
+  # the values generate_integer hands back in turn, +more+ the number of
+  # elements the collection offers. Returns the value and the fake.
+  def draw_sequence(generator, more: 0, integers: [])
+    fake = SequenceRecordingFake.new
+    fake.collection_more_count = more
+    fake.integer_values = integers
+    tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+    [generator.do_draw(tc), fake]
+  end
+
+  def test_sequence_generators_open_one_span_around_the_whole_draw
+    [permutations([1, 2]), subsequences([1, 2]), samples([1, 2]), samples([1, 2], replacement: false)].each do |generator|
+      _, fake = draw_sequence(generator, more: 2)
+      assert_equal [[:start, generator.label], [:stop, false]], fake.span_events
+    end
+  end
+
+  def test_sequence_generators_have_distinct_labels
+    labels = [permutations([1]), subsequences([1]), samples([1])].map(&:label)
+    assert_equal labels.uniq, labels
+  end
+
+  def test_sequence_generators_close_the_span_and_free_the_collection_when_a_draw_raises
+    [permutations([1, 2]), subsequences([1, 2]), samples([1, 2]), samples([1, 2], replacement: false)].each do |generator|
+      fake = SequenceRecordingFake.new
+      fake.collection_more_count = 2
+      fake.generate_integer_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+      tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+      assert_raises(Hegel::Error) { generator.do_draw(tc) }
+      assert_equal [[:start, generator.label], [:stop, false]], fake.span_events
+      assert_equal 1, fake.freed_collections.size
+    end
+  end
+
+  def test_validation_failures_open_no_span_and_no_collection
+    [subsequences([1], min_size: 2), samples([], min_size: 1), samples([1], min_size: 2, replacement: false)].each do |generator|
+      fake = SequenceRecordingFake.new
+      tc = Hegel::TestCase.new(fake, fake.context_new, Object.new)
+
+      assert_raises(Hegel::Error) { generator.do_draw(tc) }
+      assert_empty fake.span_events
+      assert_empty fake.collection_sizes
+    end
+  end
+
+  def test_permutations_draw_each_index_from_what_is_left
+    value, fake = draw_sequence(permutations(%w[a b c]), more: 3, integers: [2, 0, 0])
+
+    assert_equal %w[c a b], value
+    assert_equal [[3, 3]], fake.collection_sizes
+    assert_equal [[0, 2], [0, 1], [0, 0]], fake.integer_bounds
+    assert_equal 1, fake.freed_collections.size
+  end
+
+  def test_permutations_of_nothing_draw_no_index
+    value, fake = draw_sequence(permutations([]), more: 1)
+
+    assert_empty value
+    assert_equal [[0, 0]], fake.collection_sizes
+    assert_empty fake.integer_bounds
+    assert_equal 1, fake.freed_collections.size
+  end
+
+  def test_subsequences_keep_the_original_order
+    value, fake = draw_sequence(subsequences(%w[a b c]), more: 2, integers: [2, 0])
+
+    assert_equal %w[a c], value
+    assert_equal [[0, 3]], fake.collection_sizes
+  end
+
+  def test_subsequences_cap_max_size_at_the_element_count
+    assert_equal [[1, 3]], draw_sequence(subsequences([1, 2, 3], min_size: 1, max_size: 10)).last.collection_sizes
+    assert_equal [[1, 2]], draw_sequence(subsequences([1, 2, 3], min_size: 1, max_size: 2)).last.collection_sizes
+  end
+
+  def test_samples_with_replacement_draw_each_element_from_the_whole_sequence
+    value, fake = draw_sequence(samples(%w[a b c]), more: 3, integers: [2, 0, 2])
+
+    assert_equal %w[c a c], value
+    assert_equal [[0, Hegel::LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED]], fake.collection_sizes
+    assert_equal [[0, 2]] * 3, fake.integer_bounds
+    assert_equal 1, fake.freed_collections.size
+  end
+
+  def test_samples_with_replacement_pass_max_size_to_the_collection
+    assert_equal [[1, 4]], draw_sequence(samples([1, 2], min_size: 1, max_size: 4)).last.collection_sizes
+  end
+
+  def test_samples_with_replacement_from_nothing_are_bounded_at_zero
+    value, fake = draw_sequence(samples([]))
+
+    assert_empty value
+    assert_equal [[0, 0]], fake.collection_sizes
+    assert_empty fake.integer_bounds
+    assert_equal [[0, 0]], draw_sequence(samples([], max_size: 5)).last.collection_sizes
+  end
+
+  def test_samples_without_replacement_cap_max_size_at_the_element_count
+    assert_equal [[0, 3]], draw_sequence(samples([1, 2, 3], replacement: false)).last.collection_sizes
+    assert_equal [[0, 3]], draw_sequence(samples([1, 2, 3], replacement: false, max_size: 10)).last.collection_sizes
+    assert_equal [[0, 2]], draw_sequence(samples([1, 2, 3], replacement: false, max_size: 2)).last.collection_sizes
+  end
+
+  def test_samples_without_replacement_keep_draw_order
+    value, = draw_sequence(samples(%w[a b c], replacement: false), more: 2, integers: [2, 0])
+
+    assert_equal %w[c a], value
   end
 
   # ---- labels ----

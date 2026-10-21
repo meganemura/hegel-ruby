@@ -204,7 +204,7 @@ Expected: [0, 0]
 | Numbers and booleans | `integers`, `floats`, `booleans` |
 | Text and bytes | `text`, `characters`, `binary`, `from_regex` |
 | Collections | `arrays`, `sets`, `hashes`, `tuples` |
-| Choice | `just`, `sampled_from`, `one_of`, `optional` |
+| Choice | `just`, `sampled_from`, `permutations`, `subsequences`, `samples`, `one_of`, `optional` |
 | Formats | `emails`, `urls`, `domains`, `ip_addresses`, `uuids` |
 | Time | `dates`, `times`, `datetimes`, `date_strings`, `time_strings`, `datetime_strings` |
 | Your own | `composite`, `deferred` |

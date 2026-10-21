@@ -59,6 +59,29 @@ module Hegel
         Generators::SampledFromGenerator.new(collection)
       end
 
+      # An Array holding every element of +elements+ (anything #sampled_from
+      # accepts) in an order the engine picks, shrinking towards the
+      # original one.
+      def permutations(elements)
+        Generators::PermutationsGenerator.new(elements)
+      end
+
+      # An Array holding [min_size, max_size] of the elements of +elements+,
+      # in their original order. Duplicate elements count as distinct.
+      def subsequences(elements, min_size: 0, max_size: nil)
+        Generators::SubsequencesGenerator.new(elements, min_size: min_size, max_size: max_size)
+      end
+
+      # An Array of [min_size, max_size] elements of +elements+. With
+      # +replacement+ (the default) each is drawn independently and the
+      # size is unbounded unless +max_size+ bounds it. Without it, each
+      # element is used at most once and the size is capped at the number
+      # of elements; hegel-rust names the two modes with_replacement and
+      # without_replacement.
+      def samples(elements, min_size: 0, max_size: nil, replacement: true)
+        Generators::SamplesGenerator.new(elements, min_size: min_size, max_size: max_size, replacement: replacement)
+      end
+
       # A value drawn from one of +generators+, picked at random.
       def one_of(*generators)
         Generators::OneOfGenerator.new(generators)
