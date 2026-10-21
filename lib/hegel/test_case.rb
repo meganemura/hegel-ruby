@@ -75,7 +75,8 @@ module Hegel
       @entries = record ? [] : nil
       @pools = []
       @grammars = grammars
-      @poison = nil
+      # Only declares the ivar: an unset one already reads as nil.
+      @poison = nil # mutineer:disable-line statement_removal
       @indent = 0
     end
 
