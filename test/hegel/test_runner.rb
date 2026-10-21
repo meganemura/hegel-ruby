@@ -1041,8 +1041,8 @@ class TestRunner < Minitest::Test
   # health check turns the run into an ERROR (Hegel::Error) after 50
   # rejections; suppressed, the same property runs to completion. test_cases
   # is kept small (20) because Hegel::AssumeFailed / #reject cases do not
-  # count against that budget (measured against libhegel 0.47.1, this shape
-  # calls the body 811 to 1847 times at a budget of 20), so a larger budget
+  # count against that budget (measured against libhegel 0.48.0, this shape
+  # calls the body 782 to 2047 times at a budget of 20), so a larger budget
   # would only cost more wall time without exercising a different branch.
   def test_suppress_health_check_filter_too_much_against_the_real_engine
     body = lambda do |tc|
