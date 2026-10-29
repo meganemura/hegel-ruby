@@ -110,6 +110,14 @@ module Hegel
     # value a 64-bit unsigned integer maxes out at.
     HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED = (2**64) - 1
 
+    # HEGEL_MAX_SIZE_DEFAULT, named from hegel.h's #define of the same name,
+    # UINT64_MAX - 1. Since libhegel 0.49.0, hegel_new_collection,
+    # hegel_string_generator_text, and hegel_generate_bytes read this max_size
+    # as "no maximum given" and apply the default of text and bytes. The header
+    # tells a binding to pass UINT64_MAX for a caller's own maximum at or above
+    # it. See #max_size_arg.
+    HEGEL_MAX_SIZE_DEFAULT = (2**64) - 2
+
     # hegel_generate_float's smallest_nonzero_magnitude must be positive
     # and finite. The header names 5e-324 as the width-64 value that
     # places no restriction on which nonzero magnitudes get drawn.
@@ -225,6 +233,15 @@ module Hegel
     # a generator is built, so it is made once, when the engine is loaded.
     def follow_host_unicode_version(impl, ctx)
       impl.set_unicode_version(ctx, RbConfig::CONFIG.fetch("UNICODE_VERSION"))
+    end
+
+    # The max_size to pass to the engine for a caller's own +max_size+. A
+    # maximum at or above HEGEL_MAX_SIZE_DEFAULT goes over as UINT64_MAX, no
+    # upper bound: otherwise the engine reads UINT64_MAX - 1 as its default of
+    # 100, and a larger value does not fit the u64 argument. No allocation can
+    # reach either size, so "no upper bound" keeps the caller's meaning.
+    def max_size_arg(max_size)
+      (max_size >= HEGEL_MAX_SIZE_DEFAULT) ? HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED : max_size
     end
 
     # A span label is an opaque u64 that names the generator which opened

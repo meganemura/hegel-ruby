@@ -782,7 +782,9 @@ module Hegel
       end
 
       # Closes the most recently opened span. +discard+ true marks it
-      # rejected, so libhegel retries from before the span opened.
+      # rejected, so the shrinker can delete its draws. The engine does not
+      # draw again by itself: the caller does, as Hegel::Generator#filter
+      # does.
       def stop_span(ctx, tc, discard)
         code = @hegel_stop_span_fn.call(ctx, tc, discard)
         LibHegel.check!(self, ctx, code)

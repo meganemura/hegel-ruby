@@ -497,6 +497,21 @@ class TestGenerators < Minitest::Test
     assert_equal [[0, 500]], draw_string_arguments(text(max_size: 500)).text_sizes
   end
 
+  # Since libhegel 0.49.0 the engine reads a max_size of UINT64_MAX - 1 as
+  # "no maximum given" and applies its default of 100. A caller who writes
+  # that maximum, or a larger one, gets no upper bound instead.
+  def test_text_max_size_at_the_engine_default_sentinel_goes_over_unbounded
+    unbounded = Hegel::LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+    [Hegel::LibHegel::HEGEL_MAX_SIZE_DEFAULT, unbounded, 2**70].each do |max_size|
+      assert_equal [[0, unbounded]], draw_string_arguments(text(max_size: max_size)).text_sizes
+    end
+  end
+
+  def test_text_max_size_below_the_engine_default_sentinel_goes_over_unchanged
+    max_size = Hegel::LibHegel::HEGEL_MAX_SIZE_DEFAULT - 1
+    assert_equal [[0, max_size]], draw_string_arguments(text(max_size: max_size)).text_sizes
+  end
+
   def test_text_default_max_size_bounds_the_draw_against_the_real_engine
     assert_all_examples(text) { |v| v.length <= 100 }
     assert_all_examples(text(min_size: 150)) { |v| v.length.between?(150, 250) }
@@ -1473,6 +1488,26 @@ class TestGenerators < Minitest::Test
     assert_equal [[0, 500]], draw_string_arguments(binary(max_size: 500)).byte_sizes
   end
 
+  # The engine reads UINT64_MAX - 1 as its default (see the text test of
+  # the same name above).
+  def test_binary_max_size_at_the_engine_default_sentinel_goes_over_unbounded
+    unbounded = Hegel::LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED
+    [Hegel::LibHegel::HEGEL_MAX_SIZE_DEFAULT, unbounded, 2**70].each do |max_size|
+      assert_equal [[0, unbounded]], draw_string_arguments(binary(max_size: max_size)).byte_sizes
+    end
+  end
+
+  def test_binary_max_size_below_the_engine_default_sentinel_goes_over_unchanged
+    max_size = Hegel::LibHegel::HEGEL_MAX_SIZE_DEFAULT - 1
+    assert_equal [[0, max_size]], draw_string_arguments(binary(max_size: max_size)).byte_sizes
+  end
+
+  # A maximum above UINT64_MAX does not fit the engine's u64 argument, so
+  # this run fails unless the maximum goes over as UINT64_MAX.
+  def test_binary_max_size_above_u64_draws_against_the_real_engine
+    assert_all_examples(binary(max_size: 2**70)) { |v| v.is_a?(String) }
+  end
+
   def test_binary_default_max_size_bounds_the_draw_against_the_real_engine
     assert_all_examples(binary) { |v| v.bytesize <= 100 }
     assert_all_examples(binary(min_size: 150)) { |v| v.bytesize.between?(150, 250) }
@@ -2405,6 +2440,14 @@ class TestGenerators < Minitest::Test
   def test_subsequences_cap_max_size_at_the_element_count
     assert_equal [[1, 3]], draw_sequence(subsequences([1, 2, 3], min_size: 1, max_size: 10)).last.collection_sizes
     assert_equal [[1, 2]], draw_sequence(subsequences([1, 2, 3], min_size: 1, max_size: 2)).last.collection_sizes
+  end
+
+  # The engine reads UINT64_MAX - 1 as the default of text and bytes, for
+  # any collection (see the text test of the same name).
+  def test_arrays_max_size_at_the_engine_default_sentinel_goes_over_unbounded
+    _, fake = draw_sequence(arrays(integers, max_size: Hegel::LibHegel::HEGEL_MAX_SIZE_DEFAULT))
+
+    assert_equal [[0, Hegel::LibHegel::HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED]], fake.collection_sizes
   end
 
   def test_samples_with_replacement_draw_each_element_from_the_whole_sequence
