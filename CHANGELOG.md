@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
 ### Engine: libhegel 0.49.0 (was 0.48.0)
 
 The [libhegel 0.49.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.49.0)
@@ -16,10 +18,9 @@ results for a caller:
   `HEGEL_VERBOSITY`, `HEGEL_BACKEND`, `HEGEL_PHASES`, and
   `HEGEL_SUPPRESS_HEALTH_CHECK`. Each one applies to a run that does not set
   the matching `Hegel.test` keyword. `HEGEL_UNBOUNDED_CHOICES` sets a setting
-  that has no `Hegel.test` keyword. A
-  malformed value makes `Hegel.test` raise `Hegel::Error` with
-  `HEGEL_E_INVALID_ARG` and a message that names the variable. In 0.48.0, the
-  engine ignored these variables. `HEGEL_REPORT_MULTIPLE_FAILURES` has no
+  that has no `Hegel.test` keyword. A malformed value makes `Hegel.test`
+  raise `Hegel::Error` with `HEGEL_E_INVALID_ARG` and a message that names
+  the variable. In 0.48.0, the engine ignored these variables. `HEGEL_REPORT_MULTIPLE_FAILURES` has no
   effect, because `Hegel.test` always sets `report_multiple_failures`.
 - The engine reads a `max_size` of `2**64 - 2` as "no maximum given". The gem
   now sends a `max_size` at or above `2**64 - 2` as `2**64 - 1`, no upper
@@ -491,6 +492,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.4.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.4.1
 [0.4.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.4.0
 [0.3.4]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.4
 [0.3.3]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.3
