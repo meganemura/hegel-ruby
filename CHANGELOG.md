@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.49.0 (was 0.48.0)
+
+The [libhegel 0.49.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.49.0)
+describe 0.49.0.
+
+Each platform gem carries `libhegel` 0.49.0. The engine adds functions and
+constants to its C interface, and changes no function that these bindings
+call. A caller has nothing to change in code. The engine move changes these
+results for a caller:
+
+- The engine reads new environment variables over the settings profile:
+  `HEGEL_VERBOSITY`, `HEGEL_BACKEND`, `HEGEL_PHASES`, and
+  `HEGEL_SUPPRESS_HEALTH_CHECK`. Each one applies to a run that does not set
+  the matching `Hegel.test` keyword. `HEGEL_UNBOUNDED_CHOICES` sets a setting
+  that has no `Hegel.test` keyword. A
+  malformed value makes `Hegel.test` raise `Hegel::Error` with
+  `HEGEL_E_INVALID_ARG` and a message that names the variable. In 0.48.0, the
+  engine ignored these variables. `HEGEL_REPORT_MULTIPLE_FAILURES` has no
+  effect, because `Hegel.test` always sets `report_multiple_failures`.
+- The engine reads a `max_size` of `2**64 - 2` as "no maximum given". The gem
+  now sends a `max_size` at or above `2**64 - 2` as `2**64 - 1`, no upper
+  bound, so `text`, `binary`, `arrays`, `sets`, `hashes`, and the other sized
+  generators keep the meaning the caller wrote. A `max_size` above
+  `2**64 - 1` also means no upper bound now. Before, it raised `RangeError`.
+  See [ADR 0037](docs/adr/0037-send-a-maximum-at-the-engine-default-sentinel-as-no-bound.md).
+
 ### Changed
 
 - The string generators follow the Unicode version Ruby was built with,
