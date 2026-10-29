@@ -42,6 +42,7 @@ An index of the design records for `hegel-ruby`.
 - [0033: Cache compiled grammars for the length of a run](adr/0033-cache-compiled-grammars-for-the-length-of-a-run.md)
 - [0034: Repeat a test body with a Ruby-side indent](adr/0034-repeat-a-test-body-with-a-ruby-side-indent.md)
 - [0035: Defer concurrent state machines and the engine printer](adr/0035-defer-concurrent-state-machines-and-the-engine-printer.md)
+- [0036: Follow Ruby's Unicode version](adr/0036-follow-rubys-unicode-version.md)
 
 A new decision gets a new record. A changed decision supersedes the old
 record instead of editing it, so the history stays readable.
