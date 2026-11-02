@@ -701,6 +701,7 @@ module Hegel
     HEGEL_HC_LARGE_INITIAL_TEST_CASE: Integer
     HEGEL_STATE_MACHINE_DONE: Integer
     HEGEL_COLLECTION_MAX_SIZE_UNBOUNDED: Integer
+    HEGEL_MAX_SIZE_DEFAULT: Integer
     HEGEL_FLOAT64_SMALLEST_NONZERO_MAGNITUDE_UNRESTRICTED: Float
     METHODS: Array[Symbol]
 
@@ -709,6 +710,7 @@ module Hegel
     def self.warn_on_version_mismatch: (untyped impl, untyped ctx, ?io: untyped) -> void
     def self.prepare: (untyped impl, untyped ctx, ?io: untyped) -> nil
     def self.follow_host_unicode_version: (untyped impl, untyped ctx) -> nil
+    def self.max_size_arg: (Integer max_size) -> Integer
     def self.label_from_name: (String name) -> Integer
     def self.label_combine: (Array[Integer] labels) -> Integer
     def self.encode_integer_le: (Integer n) -> String

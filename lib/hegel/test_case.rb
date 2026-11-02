@@ -310,7 +310,7 @@ module Hegel
     # hegel_new_collection: Hegel::Generators::ArrayGenerator's own sizing
     # primitive, paired with #collection_more and #collection_free.
     def new_collection(min_size, max_size)
-      @impl.new_collection(@ctx, live_handle, min_size, max_size)
+      @impl.new_collection(@ctx, live_handle, min_size, LibHegel.max_size_arg(max_size))
     end
 
     # hegel_collection_more: whether to draw another element into
@@ -340,8 +340,9 @@ module Hegel
     # read the same way as #with_regex_generator/#with_email_generator/
     # #with_url_generator/#with_domain_generator below, each named for its
     # own hegel_string_generator_* call.
-    def with_text_generator(**kwargs, &block)
-      with_generator_handle(@impl.string_generator_text(@ctx, **kwargs), &block)
+    def with_text_generator(max_size:, **kwargs, &block)
+      handle = @impl.string_generator_text(@ctx, max_size: LibHegel.max_size_arg(max_size), **kwargs)
+      with_generator_handle(handle, &block)
     end
 
     # Runs the block with a regex-matching string generator handle built
@@ -381,7 +382,7 @@ module Hegel
     # hegel_generate_bytes. A future Hegel::Generators::BinaryGenerator's
     # own primitive, the bytes counterpart to #generate_string.
     def generate_bytes(min_size, max_size)
-      @impl.generate_bytes(@ctx, live_handle, min_size, max_size)
+      @impl.generate_bytes(@ctx, live_handle, min_size, LibHegel.max_size_arg(max_size))
     end
 
     # hegel_generate_ipv4, returning the address's 4 raw bytes. Converting
