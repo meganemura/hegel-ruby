@@ -122,6 +122,24 @@ class TestStateful < Minitest::Test
     assert_equal [[1.0, 2.5, 3]], fake.state_machine_rule_weights
   end
 
+  # Hegel::Stateful.run declares the rules after it opens the machine, so a
+  # declaration that fails must still free the handle.
+  def test_a_failed_declaration_still_frees_the_machine
+    freed = []
+    fake = Class.new(Hegel::LibHegel::Fake) do
+      define_method(:state_machine_free) do |_ctx, state_machine|
+        freed << state_machine
+        nil
+      end
+    end.new
+    fake.test_case_count = 1
+    fake.state_machine_add_rule_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+
+    Hegel.test(impl: fake) { |tc| Hegel::Stateful.run(WeightedMachine.new, tc) }
+
+    assert_equal 1, freed.size
+  end
+
   def test_a_machine_with_fractional_and_integral_weights_runs
     Hegel.test(test_cases: 5, verbosity: :quiet) { |tc| Hegel::Stateful.run(WeightedMachine.new, tc) }
   end
@@ -421,11 +439,10 @@ class TestStateful < Minitest::Test
     rule(:go) { |_tc| raise "boom" }
   end
 
-  # ImmediateFailureMachine declares no invariants, so #new_state_machine's
-  # own invariant_names is empty -- exercising the header's other documented
-  # case (test/hegel/test_lib_hegel.rb's own
-  # test_real_new_state_machine_accepts_an_empty_invariant_names_array pins
-  # it at the binding layer; this is the same case one level up). The one
+  # ImmediateFailureMachine declares no invariants, so the engine starts a
+  # machine with no #state_machine_add_invariant call (test/hegel/test_lib_hegel.rb's
+  # test_real_state_machine_start_needs_a_rule_and_seals_the_declarations
+  # pins it at the binding layer; this is the same case one level up). The one
   # rule fails on its very first application, so the report needs no
   # shrinking to reach its minimal form, and "Step 1: go" is the whole
   # step list.

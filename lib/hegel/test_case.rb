@@ -509,8 +509,26 @@ module Hegel
     # here rather than on that module, the same reason every other native
     # call is a method on this class: Hegel::Stateful never touches @impl or
     # @ctx directly, only this handle-scoped surface.
-    def new_state_machine(rule_names, rule_weights, invariant_names, always_check, step_count)
-      @impl.new_state_machine(@ctx, live_handle, rule_names, rule_weights, invariant_names, always_check, step_count)
+    def new_state_machine(step_count)
+      @impl.new_state_machine(@ctx, live_handle, step_count)
+    end
+
+    # hegel_state_machine_add_rule: declares the next rule, numbered in
+    # declaration order from 0.
+    def state_machine_add_rule(state_machine, name, weight)
+      @impl.state_machine_add_rule(@ctx, live_handle, state_machine, name, weight)
+    end
+
+    # hegel_state_machine_add_invariant: declares the next invariant,
+    # numbered in declaration order from 0.
+    def state_machine_add_invariant(state_machine, name, always_check)
+      @impl.state_machine_add_invariant(@ctx, live_handle, state_machine, name, always_check)
+    end
+
+    # hegel_state_machine_start: seals the declarations and returns the
+    # drawn concurrency level. No round may start before this call.
+    def state_machine_start(state_machine)
+      @impl.state_machine_start(@ctx, live_handle, state_machine)
     end
 
     # hegel_state_machine_next_group: starts the next round, or returns
@@ -519,8 +537,8 @@ module Hegel
       @impl.state_machine_next_group(@ctx, live_handle, state_machine)
     end
 
-    # hegel_state_machine_next_rule: the index (into the +rule_names+
-    # #new_state_machine was given) of the next rule to run this round, or
+    # hegel_state_machine_next_rule: the index (in the order of the
+    # #state_machine_add_rule calls) of the next rule to run this round, or
     # LibHegel::HEGEL_STATE_MACHINE_DONE once the round is over.
     def state_machine_next_rule(state_machine)
       @impl.state_machine_next_rule(@ctx, live_handle, state_machine)
