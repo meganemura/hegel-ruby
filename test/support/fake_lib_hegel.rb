@@ -55,7 +55,8 @@ module Hegel
         :settings_set_report_multiple_failures_code, :settings_set_database_key_code, :settings_set_test_location_code,
         :target_code,
         :new_pool_code, :pool_add_code, :pool_generate_code, :pool_restore_code,
-        :new_state_machine_code, :state_machine_next_group_code, :state_machine_next_rule_code,
+        :new_state_machine_code, :state_machine_add_rule_code, :state_machine_add_invariant_code,
+        :state_machine_start_code, :state_machine_next_group_code, :state_machine_next_rule_code,
         :state_machine_rule_rejected_code, :state_machine_should_check_invariant_code,
         :grammar_builder_new_code, :grammar_builder_file_code, :grammar_builder_provide_code, :grammar_new_code,
         :grammar_placeholder_code, :generate_grammar_code
@@ -301,6 +302,9 @@ module Hegel
         @pool_generate_value = 0
         @pool_restore_code = HEGEL_OK
         @new_state_machine_code = HEGEL_OK
+        @state_machine_add_rule_code = HEGEL_OK
+        @state_machine_add_invariant_code = HEGEL_OK
+        @state_machine_start_code = HEGEL_OK
         # The machine ends before its first round unless a test says
         # otherwise, so a test that opens one never loops by accident.
         @state_machine_next_group_code = HEGEL_OK
@@ -797,10 +801,29 @@ module Hegel
         nil
       end
 
-      def new_state_machine(ctx, _tc, _rule_names, rule_weights, _invariant_names, _always_check, _step_count)
-        @state_machine_rule_weights << rule_weights
+      # Each machine adds one Array to #state_machine_rule_weights, and
+      # each #state_machine_add_rule call appends its weight to the newest.
+      def new_state_machine(ctx, _tc, _step_count)
         LibHegel.check!(self, ctx, @new_state_machine_code)
+        @state_machine_rule_weights << []
         Object.new
+      end
+
+      def state_machine_add_rule(ctx, _tc, _state_machine, _name, weight)
+        LibHegel.check!(self, ctx, @state_machine_add_rule_code)
+        @state_machine_rule_weights.last << weight
+        nil
+      end
+
+      def state_machine_add_invariant(ctx, _tc, _state_machine, _name, _always_check)
+        LibHegel.check!(self, ctx, @state_machine_add_invariant_code)
+        nil
+      end
+
+      # A sequential machine, the only kind these bindings open.
+      def state_machine_start(ctx, _tc, _state_machine)
+        LibHegel.check!(self, ctx, @state_machine_start_code)
+        1
       end
 
       def state_machine_next_group(ctx, _tc, _state_machine)

@@ -684,7 +684,10 @@ class TestLibHegel < Minitest::Test
       assert_nil real.event(ctx, tc, "e")
       assert_nil real.event_value(ctx, tc, "v", 1.0)
 
-      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [1.0], [], [], 50)
+      state_machine = real.new_state_machine(ctx, tc, 50)
+      assert_nil real.state_machine_add_rule(ctx, tc, state_machine, "only_rule", 1.0)
+      assert_nil real.state_machine_add_invariant(ctx, tc, state_machine, "only_invariant", false)
+      real.state_machine_start(ctx, tc, state_machine)
       real.state_machine_next_group(ctx, tc, state_machine)
       real.state_machine_next_rule(ctx, tc, state_machine)
       assert_nil real.state_machine_rule_rejected(ctx, tc, state_machine)
@@ -1899,7 +1902,8 @@ class TestLibHegel < Minitest::Test
     end
   end
 
-  # hegel_new_state_machine and the four calls that drive it: rounds run
+  # hegel_new_state_machine, the calls that declare and start it, and the
+  # four calls that drive it: rounds run
   # until next_group answers HEGEL_STATE_MACHINE_DONE, each round pulls
   # rules until next_rule answers it, and the first rule is rejected once
   # along the way (a rejected round does not count toward the step budget,
@@ -1922,7 +1926,11 @@ class TestLibHegel < Minitest::Test
       tc = real.next_test_case(ctx, run)
       refute_nil tc
 
-      state_machine = real.new_state_machine(ctx, tc, ["increment", "decrement"], [1.0, 1.0], ["invariant"], [true], 3)
+      state_machine = real.new_state_machine(ctx, tc, 3)
+      real.state_machine_add_rule(ctx, tc, state_machine, "increment", 1.0)
+      real.state_machine_add_rule(ctx, tc, state_machine, "decrement", 1.0)
+      real.state_machine_add_invariant(ctx, tc, state_machine, "invariant", true)
+      real.state_machine_start(ctx, tc, state_machine)
 
       rejected_once = false
       completed_rounds = 0
@@ -1961,15 +1969,10 @@ class TestLibHegel < Minitest::Test
     end
   end
 
-  # #pack_name_array writes each name into its own hegel_string_t slot. The
-  # engine refuses a name that is not valid UTF-8, so a bad name first and a
-  # good name last is refused only when both reach their own slots. A packing
-  # that wrote every name over slot 0 would leave the good name there and an
-  # empty slot after it, which the engine accepts. The database is disabled
-  # ("") so the run leaves nothing on disk.
-  def test_real_new_state_machine_reads_each_rule_name_from_its_own_slot
-    real = Hegel::LibHegel::Real.new
-
+  # Opens a run of one test case with the database disabled (""), so the
+  # run leaves nothing on disk, yields that case's handle, and then marks
+  # every case valid and frees the run.
+  def with_one_real_test_case(real)
     Hegel::LibHegel.with_context(real) do |ctx|
       settings = real.settings_new(ctx)
       real.settings_set_test_cases(ctx, settings, 1)
@@ -1981,11 +1984,7 @@ class TestLibHegel < Minitest::Test
 
       tc = real.next_test_case(ctx, run)
       refute_nil tc
-
-      error = assert_raises(Hegel::Error) do
-        real.new_state_machine(ctx, tc, ["\xFF".b, "good_rule"], [1.0, 1.0], [], [], 50)
-      end
-      assert_includes error.message, "HEGEL_E_INVALID_ARG"
+      yield ctx, tc
 
       real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
       real.test_case_free(ctx, tc)
@@ -2002,43 +2001,78 @@ class TestLibHegel < Minitest::Test
     end
   end
 
-  # hegel_new_state_machine's invariant_names accepts an empty array (the
-  # header's documented "no invariants" case), which #pack_name_array maps
-  # to NULL/0 -- this exercises that branch, distinct from
-  # test_real_state_machine_next_rule_loop_stays_within_rule_count_and_reaches_done's
-  # non-empty rule_names/invariant_names above. The database is disabled
-  # ("") so the run leaves nothing on disk.
-  def test_real_new_state_machine_accepts_an_empty_invariant_names_array
+  # The engine refuses a rule or invariant name that is not valid UTF-8, so
+  # each refusal shows that the name reaches the engine as the
+  # hegel_string_t the declaration call takes.
+  def test_real_state_machine_declarations_pass_the_name_to_the_engine
     real = Hegel::LibHegel::Real.new
 
-    Hegel::LibHegel.with_context(real) do |ctx|
-      settings = real.settings_new(ctx)
-      real.settings_set_test_cases(ctx, settings, 1)
-      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
-      real.settings_set_database(ctx, settings, "")
+    with_one_real_test_case(real) do |ctx, tc|
+      state_machine = real.new_state_machine(ctx, tc, 50)
+      begin
+        rule_error = assert_raises(Hegel::Error) do
+          real.state_machine_add_rule(ctx, tc, state_machine, "\xFF".b, 1.0)
+        end
+        assert_includes rule_error.message, "HEGEL_E_INVALID_ARG"
 
-      run = real.run_start(ctx, settings)
-      real.settings_free(ctx, settings)
+        invariant_error = assert_raises(Hegel::Error) do
+          real.state_machine_add_invariant(ctx, tc, state_machine, "\xFF".b, false)
+        end
+        assert_includes invariant_error.message, "HEGEL_E_INVALID_ARG"
+      ensure
+        real.state_machine_free(ctx, state_machine)
+      end
+    end
+  end
 
-      tc = real.next_test_case(ctx, run)
-      refute_nil tc
+  # The engine refuses a weight that is not finite and positive, so the
+  # refusal of 0 and the acceptance of 2.5 show that the weight reaches the
+  # engine as the double the declaration call takes.
+  def test_real_state_machine_add_rule_passes_the_weight_to_the_engine
+    real = Hegel::LibHegel::Real.new
 
-      state_machine = real.new_state_machine(ctx, tc, ["only_rule"], [1.0], [], [], 50)
-      refute_nil state_machine
-      real.state_machine_free(ctx, state_machine)
+    with_one_real_test_case(real) do |ctx, tc|
+      state_machine = real.new_state_machine(ctx, tc, 50)
+      begin
+        error = assert_raises(Hegel::Error) do
+          real.state_machine_add_rule(ctx, tc, state_machine, "zero", 0)
+        end
+        assert_includes error.message, "HEGEL_E_INVALID_ARG"
+        assert_nil real.state_machine_add_rule(ctx, tc, state_machine, "positive", 2.5)
+      ensure
+        real.state_machine_free(ctx, state_machine)
+      end
+    end
+  end
 
-      real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
-      real.test_case_free(ctx, tc)
+  # A machine with one rule and no invariant starts, and the machine
+  # #new_state_machine opens is sequential: the drawn level is 1. The header
+  # refuses #state_machine_start on a machine with no rule, and refuses a
+  # declaration after the start.
+  def test_real_state_machine_start_needs_a_rule_and_seals_the_declarations
+    real = Hegel::LibHegel::Real.new
 
-      loop do
-        next_tc = real.next_test_case(ctx, run)
-        break if next_tc.nil?
-
-        real.mark_complete(ctx, next_tc, Hegel::LibHegel::HEGEL_STATUS_VALID, nil)
-        real.test_case_free(ctx, next_tc)
+    with_one_real_test_case(real) do |ctx, tc|
+      empty = real.new_state_machine(ctx, tc, 50)
+      begin
+        error = assert_raises(Hegel::Error) { real.state_machine_start(ctx, tc, empty) }
+        assert_includes error.message, "HEGEL_E_INVALID_ARG"
+      ensure
+        real.state_machine_free(ctx, empty)
       end
 
-      real.run_free(ctx, run)
+      state_machine = real.new_state_machine(ctx, tc, 50)
+      begin
+        real.state_machine_add_rule(ctx, tc, state_machine, "only_rule", 1.0)
+        assert_equal 1, real.state_machine_start(ctx, tc, state_machine)
+
+        error = assert_raises(Hegel::Error) do
+          real.state_machine_add_rule(ctx, tc, state_machine, "late_rule", 1.0)
+        end
+        assert_includes error.message, "HEGEL_E_INVALID_ARG"
+      ensure
+        real.state_machine_free(ctx, state_machine)
+      end
     end
   end
 
@@ -2230,8 +2264,12 @@ class TestLibHegel < Minitest::Test
   def test_fake_state_machine_calls_return_configured_values_and_state_machine_free_is_a_no_op
     fake = Hegel::LibHegel::Fake.new
     ctx = fake.context_new
-    state_machine = fake.new_state_machine(ctx, Object.new, ["a"], [1.0], [], [], 50)
+    state_machine = fake.new_state_machine(ctx, Object.new, 50)
     refute_nil state_machine
+    assert_nil fake.state_machine_add_rule(ctx, Object.new, state_machine, "a", 2.5)
+    assert_nil fake.state_machine_add_invariant(ctx, Object.new, state_machine, "i", true)
+    assert_equal 1, fake.state_machine_start(ctx, Object.new, state_machine)
+    assert_equal [[2.5]], fake.state_machine_rule_weights
 
     assert_equal Hegel::LibHegel::HEGEL_STATE_MACHINE_DONE, fake.state_machine_next_group(ctx, Object.new, state_machine)
     assert_equal 0, fake.state_machine_next_rule(ctx, Object.new, state_machine)
@@ -2282,7 +2320,16 @@ class TestLibHegel < Minitest::Test
     ctx = fake.context_new
 
     fake.new_state_machine_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
-    assert_raises(Hegel::StopTest) { fake.new_state_machine(ctx, Object.new, ["a"], [1.0], [], [], 50) }
+    assert_raises(Hegel::StopTest) { fake.new_state_machine(ctx, Object.new, 50) }
+
+    fake.state_machine_add_rule_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.state_machine_add_rule(ctx, Object.new, Object.new, "a", 1.0) }
+
+    fake.state_machine_add_invariant_code = Hegel::LibHegel::HEGEL_E_INVALID_ARG
+    assert_raises(Hegel::Error) { fake.state_machine_add_invariant(ctx, Object.new, Object.new, "i", false) }
+
+    fake.state_machine_start_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
+    assert_raises(Hegel::StopTest) { fake.state_machine_start(ctx, Object.new, Object.new) }
 
     fake.state_machine_next_group_code = Hegel::LibHegel::HEGEL_E_STOP_TEST
     assert_raises(Hegel::StopTest) { fake.state_machine_next_group(ctx, Object.new, Object.new) }

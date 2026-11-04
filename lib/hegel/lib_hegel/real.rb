@@ -215,11 +215,17 @@ module Hegel
         @hegel_recursion_free_fn = bind("hegel_recursion_free", [:pointer, :pointer], :int32)
 
         @hegel_new_state_machine_fn = bind(
-          "hegel_new_state_machine",
-          [
-            :pointer, :pointer, :pointer, :pointer, :pointer, :size_t, :pointer, :pointer, :size_t,
-            :int64, :int64, :int64, :pointer, :pointer
-          ], :int32
+          "hegel_new_state_machine", [:pointer, :pointer, :int64, :int64, :int64, :pointer], :int32
+        )
+        @hegel_state_machine_add_rule_fn = bind(
+          "hegel_state_machine_add_rule",
+          [:pointer, :pointer, :pointer, StringStruct.by_value, :double, :pointer, :size_t], :int32
+        )
+        @hegel_state_machine_add_invariant_fn = bind(
+          "hegel_state_machine_add_invariant", [:pointer, :pointer, :pointer, StringStruct.by_value, :bool], :int32
+        )
+        @hegel_state_machine_start_fn = bind(
+          "hegel_state_machine_start", [:pointer, :pointer, :pointer, :pointer], :int32
         )
         @hegel_state_machine_next_group_fn = bind(
           "hegel_state_machine_next_group", [:pointer, :pointer, :pointer, :pointer], :int32
@@ -944,49 +950,58 @@ module Hegel
       end
 
       # Returns a caller-owned state-machine handle, released separately
-      # with #state_machine_free. +rule_names+ and +invariant_names+ are
-      # each an Array of Ruby Strings, packed into the hegel_string_t arrays
-      # hegel_new_state_machine expects by #pack_name_array; see that
-      # method's own comment for how and why. +always_check+ holds one
-      # flag per invariant name. Validating +rule_names+ as non-empty (the
-      # header's own requirement) is left to the caller, the same division
-      # of labor #new_collection leaves to the caller for its own
-      # min_size/max_size ordering.
+      # with #state_machine_free. The machine is empty: declare each rule
+      # with #state_machine_add_rule and each invariant with
+      # #state_machine_add_invariant, then seal it with
+      # #state_machine_start. Since libhegel 0.50.0 these are separate
+      # calls. Before 0.50.0, hegel_new_state_machine took every rule and
+      # invariant in one call.
       #
-      # +rule_weights+ holds one number per rule name; the engine rejects one
-      # that is not finite and positive.
-      #
-      # The machine is always sequential: one concurrency group and a
-      # concurrency of exactly 1, so the engine draws no concurrency level
-      # and the drawn level needs no reading. These
-      # bindings drive the engine from one thread, and a concurrent machine
-      # needs one worker thread per drawn level. For the same reason the
-      # rule calls below pass worker index 0, the only worker there is.
-      def new_state_machine(ctx, tc, rule_names, rule_weights, invariant_names, always_check, step_count)
+      # The machine is always sequential: a concurrency of exactly 1, so
+      # the engine draws no concurrency level. These bindings drive the
+      # engine from one thread, and a concurrent machine needs one worker
+      # thread per drawn level. For the same reason the rule calls below
+      # pass worker index 0, the only worker there is.
+      def new_state_machine(ctx, tc, step_count)
         out = FFI::MemoryPointer.new(:pointer)
-        out_concurrency = FFI::MemoryPointer.new(:int64)
-        # _rule_pointers / _invariant_pointers are unread past the call
-        # below, the same shape #generate_integer_big's own
-        # min_value_ptr/max_value_ptr already have; keeping them as local
-        # variables here, not discarded inside #pack_name_array, is what
-        # keeps the native buffers each one owns live through the call.
-        # The leading underscore tells the linter that on purpose, the
-        # same way it would for a block argument the block never reads.
-        rule_names_ptr, _rule_pointers = pack_name_array(rule_names)
-        invariant_names_ptr, _invariant_pointers = pack_name_array(invariant_names)
-        # A fresh MemoryPointer is zero-filled, which puts every rule in
-        # group 0.
-        rule_groups = FFI::MemoryPointer.new(:int64, rule_names.size)
-        weights = FFI::MemoryPointer.new(:double, rule_weights.size)
-        weights.write_array_of_double(rule_weights.map(&:to_f))
-
-        code = @hegel_new_state_machine_fn.call(
-          ctx, tc, rule_names_ptr, rule_groups, weights, rule_names.size,
-          invariant_names_ptr, pack_flags(always_check), invariant_names.size,
-          1, 1, step_count, out, out_concurrency
-        )
+        code = @hegel_new_state_machine_fn.call(ctx, tc, 1, 1, step_count, out)
         LibHegel.check!(self, ctx, code)
         out.read_pointer
+      end
+
+      # Declares the next rule. The engine numbers rules in declaration
+      # order from 0, and #state_machine_next_rule hands out that number.
+      # The engine rejects a +weight+ that is not finite and positive, and a
+      # +name+ that is not UTF-8.
+      #
+      # Every rule is in group 0, the one group a sequential machine needs.
+      def state_machine_add_rule(ctx, tc, state_machine, name, weight)
+        # A fresh MemoryPointer is zero-filled, so this holds group id 0.
+        groups = FFI::MemoryPointer.new(:int64, 1)
+        code = @hegel_state_machine_add_rule_fn.call(
+          ctx, tc, state_machine, string_view(name), weight.to_f, groups, 1
+        )
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Declares the next invariant, numbered in declaration order from 0
+      # as #state_machine_should_check_invariant reads it. With
+      # +always_check+, the engine answers true for it at every join point.
+      def state_machine_add_invariant(ctx, tc, state_machine, name, always_check)
+        code = @hegel_state_machine_add_invariant_fn.call(ctx, tc, state_machine, string_view(name), always_check)
+        LibHegel.check!(self, ctx, code)
+        nil
+      end
+
+      # Seals the declared rules and invariants, and returns the
+      # concurrency level the engine drew. For the machine
+      # #new_state_machine opens, that level is always 1.
+      def state_machine_start(ctx, tc, state_machine)
+        out = FFI::MemoryPointer.new(:int64)
+        code = @hegel_state_machine_start_fn.call(ctx, tc, state_machine, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_int64
       end
 
       # Starts the machine's next round. Returns the round's group id, or
@@ -1449,9 +1464,8 @@ module Hegel
       end
 
       # Packs +names+ (an Array of Ruby Strings) into a contiguous array of
-      # hegel_string_t for #new_state_machine's rule_names/invariant_names
-      # arguments: one StringStruct per name, each written in place over
-      # its own slot of a single buffer.
+      # hegel_string_t: one StringStruct per name, each written in place
+      # over its own slot of a single buffer.
       #
       # Returns [pointer, kept_alive]. #write_string copies each name into
       # a fresh native buffer -- nothing here depends on the original
@@ -1461,17 +1475,11 @@ module Hegel
       # structs) as a live local for the length of the call is what keeps
       # the buffers each one owns from being garbage-collected first.
       #
-      # Empty +names+ maps to [nil, []] -- NULL and (by the caller passing
-      # names.size, 0) the header's own contract for invariant_names' "no
-      # invariants" case. #new_state_machine reuses this same packing for
-      # rule_names too, whose own documented non-empty requirement this
-      # method does not enforce; that validation belongs one layer up, in
-      # a caller that can raise Hegel::Error with a message naming the
-      # factory method, not in a method whose only job is packing an
-      # Array into a buffer.
+      # Empty +names+ maps to [nil, []]. #optional_name_array then gives
+      # the caller a non-NULL pointer for it.
       def pack_name_array(names)
-        # An empty array acts the same as NULL with length 0:
-        # hegel_new_state_machine reads zero names either way.
+        # Removing this guard only allocates a zero-length buffer, which
+        # #optional_name_array passes on in place of its own.
         return [nil, []] if names.empty? # mutineer:disable-line statement_removal
 
         array = FFI::MemoryPointer.new(StringStruct, names.size)
@@ -1489,15 +1497,6 @@ module Hegel
 
         array, slots = pack_name_array(names)
         [array || FFI::MemoryPointer.new(StringStruct), slots]
-      end
-
-      # Packs +flags+ (an Array of true/false) into a const bool * buffer,
-      # one byte each. An empty Array packs to a zero-length buffer, which the
-      # engine reads zero flags from.
-      def pack_flags(flags)
-        buffer = FFI::MemoryPointer.new(:uint8, flags.size)
-        buffer.write_array_of_uint8(flags.map { |flag| flag ? 1 : 0 })
-        buffer
       end
 
       # Writes +value+ (a [year, month, day] Array) into +struct+'s own

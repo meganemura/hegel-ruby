@@ -6,7 +6,7 @@ require_relative "stateful/pool"
 
 module Hegel
   # Runs one stateful (model-based) test: drives libhegel's own state-machine
-  # loop (hegel_new_state_machine and the three calls that go with it) against
+  # loop (hegel_new_state_machine and the calls that go with it) against
   # a Hegel::StateMachine instance's declared rules and invariants. Call it
   # from inside an ordinary Hegel.test block, the same way any other draw
   # happens:
@@ -34,18 +34,17 @@ module Hegel
     # rejects it.
     #
     # Raises Hegel::Error before making any libhegel call when +machine+
-    # declares no rules: hegel.h documents hegel_new_state_machine's
-    # rule_names as required to be non-empty, and there is nothing useful to
-    # run without one.
+    # declares no rules: hegel.h documents that hegel_state_machine_start
+    # refuses a machine with no rule, and there is nothing useful to run
+    # without one.
     def run(machine, tc, step_count: DEFAULT_STEP_COUNT)
       rules = machine.class.rule_definitions
       raise Hegel::Error, "hegel: #{machine.class} has no rules; declare at least one with `rule`" if rules.empty?
 
       invariants = machine.class.invariant_definitions
-      state_machine = tc.new_state_machine(
-        rules.keys, rules.values.map(&:weight), invariants.keys, invariants.values.map(&:always_run), step_count
-      )
+      state_machine = tc.new_state_machine(step_count)
       begin
+        declare(rules, invariants, state_machine, tc)
         tc.note { "Initial invariant check." }
         run_invariants(machine, invariants.values, tc)
         drive(machine, rules, invariants.values, state_machine, tc)
@@ -54,6 +53,18 @@ module Hegel
       ensure
         tc.state_machine_free(state_machine)
       end
+    end
+
+    # Declares every rule and invariant in declaration order, so the
+    # engine's rule and invariant indices are positions in +rules+ and
+    # +invariants+, then starts the machine. #run calls this inside its
+    # begin block, so the handle is freed when a declaration fails.
+    def declare(rules, invariants, state_machine, tc)
+      rules.each { |name, rule| tc.state_machine_add_rule(state_machine, name, rule.weight) }
+      invariants.each do |name, invariant|
+        tc.state_machine_add_invariant(state_machine, name, invariant.always_run)
+      end
+      tc.state_machine_start(state_machine)
     end
 
     # Runs rounds until libhegel ends the machine. Each round asks for a

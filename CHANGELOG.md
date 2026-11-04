@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-04
+
+### Engine: libhegel 0.50.0 (was 0.49.0)
+
+The [libhegel 0.50.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.50.0)
+describe 0.50.0.
+
+Each platform gem carries `libhegel` 0.50.0. The engine changes how a caller
+declares a state machine: `hegel_new_state_machine` now opens an empty
+machine, and new calls declare each rule and each invariant and then start
+the machine. These bindings make the new calls. A caller of
+`Hegel::Stateful.run` and `Hegel::StateMachine` has nothing to change, and
+gets the same rules, weights, and invariants as before.
+
+### Changed
+
+- `Hegel::TestCase#new_state_machine` takes only the step count. The new
+  methods `#state_machine_add_rule`, `#state_machine_add_invariant`, and
+  `#state_machine_start` declare the rules and invariants and start the
+  machine, in the same order as the engine calls. `Hegel::Stateful.run`
+  uses them. A caller who called `#new_state_machine` directly must change
+  to the new methods.
+
 ## [0.4.1] - 2026-10-29
 
 ### Engine: libhegel 0.49.0 (was 0.48.0)
@@ -492,6 +515,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.5.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.5.0
 [0.4.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.4.1
 [0.4.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.4.0
 [0.3.4]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.3.4
