@@ -202,9 +202,9 @@ module Hegel
     # Pulls test cases from +run+ until hegel_next_test_case reports none
     # left (a nil out-parameter, not an error). Never counts iterations
     # itself: test_cases bounds generation, not how many times shrinking
-    # and rejected cases call the body. Measured against libhegel 0.50.0, a
+    # and rejected cases call the body. Measured against libhegel 0.51.0, a
     # run configured for 20 test cases whose body rejected nearly every case
-    # took 791 to 1779 iterations over 30 runs. +stats+ does its own, different counting
+    # took 772 to 1775 iterations over 30 runs. +stats+ does its own, different counting
     # -- see GenerationStats above.
     def drive(impl, ctx, run, grammars, stats, captures, &block)
       loop do
