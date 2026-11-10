@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.51.0 (was 0.50.0)
+
+The [libhegel 0.51.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.51.0)
+describe 0.51.0.
+
+Each platform gem carries `libhegel` 0.51.0. The engine lets a state
+machine redraw its configuration between rounds, and to do this it changes
+one function that these bindings call: `hegel_state_machine_next_group`
+takes a new out-parameter for the concurrency level of the round. These
+bindings pass it. A caller has nothing to change. `Hegel::Stateful.run`
+and `Hegel::StateMachine` keep a sequential machine, so the level is
+always 1, and the public methods keep their signatures and return values.
+At the start of each round, the engine now redraws, with probability 1/50,
+which rules the machine enables and how it distributes drawn values, as the
+engine release notes say. A long run can so explore more than one
+configuration.
+
 ## [0.5.0] - 2026-11-04
 
 ### Engine: libhegel 0.50.0 (was 0.49.0)

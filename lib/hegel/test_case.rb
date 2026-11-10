@@ -526,7 +526,7 @@ module Hegel
     end
 
     # hegel_state_machine_start: seals the declarations and returns the
-    # drawn concurrency level. No round may start before this call.
+    # number of workers to run. No round may start before this call.
     def state_machine_start(state_machine)
       @impl.state_machine_start(@ctx, live_handle, state_machine)
     end
