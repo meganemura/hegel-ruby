@@ -24,6 +24,10 @@ class TestAntithesis < Minitest::Test
   RUBY
 
   def test_a_single_test_case_in_antithesis_runs_once_and_reports_its_failure
+    # Measured in CI against libhegel 0.51.1: on windows-latest and windows-11-arm the
+    # body still ran more than once. hegel-rust's own test_antithesis.rs is cfg(not(windows)).
+    skip "the engine's Antithesis mode is not active on Windows" if Gem.win_platform?
+
     Dir.mktmpdir do |output_dir|
       output, status = run_script("ANTITHESIS_OUTPUT_DIR" => output_dir)
 
