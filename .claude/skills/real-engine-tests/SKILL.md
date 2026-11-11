@@ -32,16 +32,16 @@ end
 
 ## `test_cases` is a generation budget, not an iteration count
 
-Measured against 0.51.0 over 30 runs, a run configured for 20 test cases
+Measured against 0.51.1 over 30 runs, a run configured for 20 test cases
 whose body failed when a drawn integer in 0..1_000_000 passed 500_000 took
-101 to 126 iterations over the 20 runs that failed; each of the 10 runs that
+99 to 127 iterations over the 19 runs that failed; each of the 11 runs that
 found no failure took exactly 20. Never write a loop, or an assertion, that
 counts iterations.
 
 The budget counts differently again under filtering. With
 `suppress_health_check: [:filter_too_much]`, a property that rejects
-almost every case called the body **772 to 1775** times against a budget
-of 20, and 2402 to 4316 against 50, over 30 runs of each against 0.51.0:
+almost every case called the body **858 to 1842** times against a budget
+of 20, and 2309 to 4702 against 50, over 30 runs of each against 0.51.1:
 an INVALID case does not spend the budget the way a VALID one does. Keep
 `test_cases:` small in any test that filters, or the suite slows down for
 no added coverage.
