@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-11
+
+### Engine: libhegel 0.51.1 (was 0.50.0)
+
+The [libhegel 0.51.1 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.51.1)
+describe 0.51.1. The move also includes 0.51.0, and the
+[libhegel changelog at 0.51.1](https://github.com/hegeldev/hegel/blob/libhegel/0.51.1/libhegel/CHANGELOG.md)
+describes both releases.
+
+Each platform gem carries `libhegel` 0.51.1. A caller has nothing to
+change. The public methods keep their signatures and return values.
+
+In 0.51.0, the engine lets a state machine redraw its configuration
+between rounds, and to do this it changes one function that these
+bindings call: `hegel_state_machine_next_group` takes a new out-parameter
+for the concurrency level of the round. These bindings pass it.
+`Hegel::Stateful.run` and `Hegel::StateMachine` keep a sequential
+machine, so the level is always 1. At the start of each round, the engine
+now redraws, with probability 1/50, which rules the machine enables and
+how it distributes drawn values, as the engine release notes say. A long
+run can so explore more than one configuration.
+
+In 0.51.1, a run of one test case (`test_cases: 1`) inside Antithesis
+(`ANTITHESIS_OUTPUT_DIR` is set) with no `database_key` does not record
+the choices of its test case. Its failure is reported from its one
+execution: `Hegel.test` raises the exception of the body, but the engine
+does not shrink or replay the failure, the report shows no drawn values,
+and it has no reproduce blob. A run outside Antithesis, or with a
+`database_key`, does not change.
+
 ## [0.5.0] - 2026-11-04
 
 ### Engine: libhegel 0.50.0 (was 0.49.0)
@@ -515,6 +545,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.5.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.5.1
 [0.5.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.5.0
 [0.4.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.4.1
 [0.4.0]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.4.0

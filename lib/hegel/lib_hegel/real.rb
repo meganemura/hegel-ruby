@@ -228,7 +228,7 @@ module Hegel
           "hegel_state_machine_start", [:pointer, :pointer, :pointer, :pointer], :int32
         )
         @hegel_state_machine_next_group_fn = bind(
-          "hegel_state_machine_next_group", [:pointer, :pointer, :pointer, :pointer], :int32
+          "hegel_state_machine_next_group", [:pointer, :pointer, :pointer, :pointer, :pointer], :int32
         )
         @hegel_state_machine_next_rule_fn = bind(
           "hegel_state_machine_next_rule", [:pointer, :pointer, :pointer, :int64, :pointer], :int32
@@ -958,10 +958,11 @@ module Hegel
       # invariant in one call.
       #
       # The machine is always sequential: a concurrency of exactly 1, so
-      # the engine draws no concurrency level. These bindings drive the
-      # engine from one thread, and a concurrent machine needs one worker
-      # thread per drawn level. For the same reason the rule calls below
-      # pass worker index 0, the only worker there is.
+      # every concurrency level the engine draws is 1. These bindings drive
+      # the engine from one thread, and a concurrent machine needs one
+      # worker thread for each of max_concurrency workers. For the same
+      # reason the rule calls below pass worker index 0, the only worker
+      # there is, and that worker is active in every round.
       def new_state_machine(ctx, tc, step_count)
         out = FFI::MemoryPointer.new(:pointer)
         code = @hegel_new_state_machine_fn.call(ctx, tc, 1, 1, step_count, out)
@@ -994,9 +995,10 @@ module Hegel
         nil
       end
 
-      # Seals the declared rules and invariants, and returns the
-      # concurrency level the engine drew. For the machine
-      # #new_state_machine opens, that level is always 1.
+      # Seals the declared rules and invariants, and returns the number of
+      # workers the caller must run: max_concurrency, since libhegel
+      # 0.51.0. Before 0.51.0, it was the concurrency level the engine drew.
+      # For the machine #new_state_machine opens, both are always 1.
       def state_machine_start(ctx, tc, state_machine)
         out = FFI::MemoryPointer.new(:int64)
         code = @hegel_state_machine_start_fn.call(ctx, tc, state_machine, out)
@@ -1009,9 +1011,18 @@ module Hegel
       # value: the caller compares against the sentinel, the same way
       # #run_result_status hands back its raw HEGEL_RUN_STATUS_* value
       # unexamined.
+      #
+      # Since libhegel 0.51.0, the call also writes the round's concurrency
+      # level, which the engine can redraw between rounds. This method
+      # discards it: for the machine #new_state_machine opens, the level is
+      # always 1, so worker 0 gets rules in every round. The sequential
+      # path of the Rust frontend (frontends/rust/src/stateful.rs) also
+      # ignores the level. The engine writes through both pointers, so the
+      # binding must pass a valid one for each.
       def state_machine_next_group(ctx, tc, state_machine)
         out = FFI::MemoryPointer.new(:int64)
-        code = @hegel_state_machine_next_group_fn.call(ctx, tc, state_machine, out)
+        concurrency = FFI::MemoryPointer.new(:int64)
+        code = @hegel_state_machine_next_group_fn.call(ctx, tc, state_machine, out, concurrency)
         LibHegel.check!(self, ctx, code)
         out.read_int64
       end
