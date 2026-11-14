@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.51.5 (was 0.51.1)
+
+The [libhegel 0.51.5 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.51.5)
+describe 0.51.5. The move also includes 0.51.2, 0.51.3, and 0.51.4, and the
+[libhegel changelog at 0.51.5](https://github.com/hegeldev/hegel/blob/libhegel/0.51.5/libhegel/CHANGELOG.md)
+describes all four releases.
+
+Each platform gem carries `libhegel` 0.51.5. A caller has nothing to
+change. The public methods keep their signatures and return values.
+
+In 0.51.4, the engine shrinks two kinds of recursive values better. A
+recursive value whose branches can hold one child can now shrink to a
+branch of one child. A value that the engine found after it abandoned
+earlier attempts to draw it now shrinks fully. A failure report can so
+show a smaller counterexample than before.
+
+In 0.51.5, the engine adds two functions, `hegel_pause_faults` and
+`hegel_unpause_faults`. These bindings do not call them, and this release
+does not add a way to pause faults. 0.51.2 and 0.51.3 change only the
+internals of the engine.
+
 ## [0.5.1] - 2026-11-11
 
 ### Engine: libhegel 0.51.1 (was 0.50.0)
