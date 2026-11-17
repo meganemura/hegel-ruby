@@ -136,18 +136,15 @@ inside the framework that raised. See
 [ADR 0012](docs/adr/0012-build-a-failure-origin-from-the-callers-own-frame.md).
 
 **The test-case setting bounds generation, not the number of times the loop
-runs.** Shrinking and rejected cases draw more cases on top of it. Measured
-against libhegel 0.51.6 over 30 runs each, a run configured for 20 test
-cases whose body failed when a drawn integer passed half its range yielded
-99 to 127 cases over the runs that failed, and one whose body rejected
-nearly every case, with the FilterTooMuch check suppressed, yielded 557 to
-1969. Two things
-follow. Drive the loop until `hegel_next_test_case` hands back nothing, never
-by counting. And keep per-case work cheap. Anything expensive enough to notice, such as reading
-source to name a drawn value or formatting a backtrace, belongs in the cases
-the engine stamps for capture (`hegel_test_case_should_capture`) rather than
-in every shrink probe. hegel-rust reaches the same conclusion from the other
-side, calling backtrace capture "the dominant cost of failing-heavy property
+runs.** Shrinking and rejected cases draw more cases on top of it, often
+many times the setting. The `real-engine-tests` skill records the measured
+counts. Two things follow. Drive the loop until `hegel_next_test_case`
+hands back nothing, never by counting. And keep per-case work cheap.
+Anything expensive enough to notice, such as reading source to name a
+drawn value or formatting a backtrace, belongs in the cases the engine
+stamps for capture (`hegel_test_case_should_capture`) rather than in every
+shrink probe. hegel-rust reaches the same conclusion from the other side,
+calling backtrace capture "the dominant cost of failing-heavy property
 runs". See
 [ADR 0019](docs/adr/0019-report-failures-from-the-cases-the-engine-stamps.md).
 
