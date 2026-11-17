@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.51.6 (was 0.51.5)
+
+The [libhegel 0.51.6 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.51.6)
+describe 0.51.6.
+
+Each platform gem carries `libhegel` 0.51.6. A caller has nothing to
+change. The public methods keep their signatures and return values.
+
+In 0.51.6, the engine frees the output region of a
+`hegel_test_case_clone` or `hegel_test_case_block` handle when that region
+holds no output and the last handle that writes into it is freed. Before,
+the engine kept each region until the test case ended. These bindings do
+not call these two functions, so this fix does not change what a run does
+here.
+
 ## [0.5.2] - 2026-11-14
 
 ### Engine: libhegel 0.51.5 (was 0.51.1)
