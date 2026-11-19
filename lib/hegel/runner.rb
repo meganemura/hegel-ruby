@@ -226,12 +226,16 @@ module Hegel
     # leak -- it fails the context's release too, at the end of a run that
     # had already gone wrong enough to raise in here.
     #
-    # The case records its draws only when the engine stamped it for
-    # capture. The stamp is read in here, inside the `ensure`, so the handle
-    # is freed even when reading it raises.
+    # The case records its draws only when the engine wants its output
+    # (hegel_test_case_wants_output): a case the engine stamps for capture,
+    # quiet runs included, and every case of a verbose run. Both flags are
+    # read in here, inside the `ensure`, so the handle is freed even when
+    # reading one raises. Yields the test case and the two flags.
     def with_test_case(impl, ctx, tc, grammars)
-      test_case = TestCase.new(impl, ctx, tc, record: impl.test_case_should_capture(ctx, tc), grammars: grammars)
-      yield test_case
+      wants_output = impl.test_case_wants_output(ctx, tc)
+      wants_detail = impl.test_case_wants_detail(ctx, tc)
+      test_case = TestCase.new(impl, ctx, tc, record: wants_output, grammars: grammars)
+      yield test_case, wants_output, wants_detail
     ensure
       begin
         test_case&.free_pools
@@ -242,21 +246,64 @@ module Hegel
 
     # Runs +block+ against one test-case handle, classifies the outcome,
     # counts it into +stats+, keeps a failure in +captures+, and reports the
-    # outcome with hegel_mark_complete. Only a stamped case records its
-    # draws (see #with_test_case): a stamped case's failure is what a report
-    # shows, and naming a drawn value costs a read of the caller's source,
-    # which every shrink probe would otherwise pay for. A fatal
+    # outcome with hegel_mark_complete. Only a case whose output the engine
+    # wants records its draws (see #with_test_case): such a case's failure
+    # is what a report shows, and naming a drawn value costs a read of the
+    # caller's source, which every shrink probe would otherwise pay for. A fatal
     # exception (#classify re-raises those before returning) skips the rest
     # and still reaches #with_test_case's own `ensure`, so the handle is
     # freed either way; its owner is this loop, not hegel_run_free (see
     # #run_and_finish's comment above).
+    #
+    # Since libhegel 0.52, a failing case also hands the engine a one-line
+    # summary when the engine wants the case's output, and a full detail
+    # when it wants the detail. The engine rejects a failure that leaves out
+    # either one, and completes nothing. Each is built only when it is
+    # wanted, because a backtrace costs more than a shrink probe should pay.
     def run_case(impl, ctx, tc, grammars, stats, captures, &block)
-      with_test_case(impl, ctx, tc, grammars) do |test_case|
+      with_test_case(impl, ctx, tc, grammars) do |test_case, wants_output, wants_detail|
         status, origin, exception, entries = classify(test_case, &block)
         stats.record(status, origin)
-        keep_capture(captures, origin, exception, entries) if status == LibHegel::HEGEL_STATUS_INTERESTING
-        impl.mark_complete(ctx, tc, status, origin)
+        if status == LibHegel::HEGEL_STATUS_INTERESTING
+          keep_capture(captures, origin, exception, entries)
+          impl.mark_complete(ctx, tc, status, origin, summary: (summary_for(exception) if wants_output),
+            detail: (detail_for(exception) if wants_detail))
+        else
+          impl.mark_complete(ctx, tc, status, origin)
+        end
       end
+    end
+
+    # The failure in one line, for hegel_mark_complete: the caller's own
+    # location (as #origin_for finds it), the first line of the message, and
+    # the exception class in parentheses, the order Ruby itself prints an
+    # uncaught exception in. A message of several lines is cut at its first
+    # line and followed by a space and an ellipsis, as the header asks and
+    # as hegel-rust's render_summary does. The ellipsis is an escape, so
+    # this file stays ASCII: mutineer reads source in the locale's encoding.
+    # The header rejects a summary with a newline, and a string that is not
+    # valid UTF-8, so #utf8 cleans the message first.
+    def summary_for(exception)
+      message = utf8(exception.message)
+      first, rest = message.split("\n", 2)
+      line = "#{first}#{" \u2026" unless rest.to_s.strip.empty?} (#{exception.class})".lstrip
+      location = caller_location(exception)
+      location ? "#{utf8(location.path)}:#{location.lineno}: #{line}" : line
+    end
+
+    # The complete diagnostic, for hegel_mark_complete: what Ruby prints for
+    # an uncaught exception, with its message, its class, and its backtrace.
+    def detail_for(exception)
+      utf8(exception.full_message(highlight: false, order: :top))
+    end
+
+    # +text+ as valid UTF-8, since hegel_mark_complete rejects any other
+    # string and then completes nothing. A binary string is read as UTF-8,
+    # because Ruby gives raw bytes that encoding; every other encoding is
+    # converted. Bytes that are still invalid become U+FFFD.
+    def utf8(text)
+      text = text.dup.force_encoding(Encoding::UTF_8) if text.encoding == Encoding::BINARY
+      text.encode(Encoding::UTF_8, invalid: :replace, undef: :replace).scrub
     end
 
     # Keeps the newest capture for each origin, except that an unstamped
@@ -403,9 +450,15 @@ module Hegel
     # still groups failures consistently, where no origin at all would lose
     # the failure's identity entirely.
     def origin_for(exception)
-      locations = exception.backtrace_locations
-      location = locations&.find { |candidate| !infrastructure?(candidate.path) } || locations&.first
+      location = caller_location(exception)
       location ? "Raised at #{location.path}:#{location.lineno}" : UNKNOWN_ORIGIN
+    end
+
+    # The backtrace frame #origin_for names: the first one that is the
+    # caller's own, else the first one, else nil.
+    def caller_location(exception)
+      locations = exception.backtrace_locations
+      locations&.find { |candidate| !infrastructure?(candidate.path) } || locations&.first
     end
 
     # True when +path+ belongs to this library, an installed gem, or Ruby's

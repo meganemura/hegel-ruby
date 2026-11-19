@@ -44,7 +44,7 @@ module Hegel
         :run_result_code, :run_result_status_code, :run_result_error_code,
         :run_result_failure_count_code, :run_result_failure_code,
         :failure_origin_code, :failure_reproduction_blob_code, :failure_caveat_code,
-        :run_start_blob_code, :test_case_should_capture_code,
+        :run_start_blob_code, :test_case_wants_output_code, :test_case_wants_detail_code,
         :start_span_code, :stop_span_code,
         :new_collection_code, :collection_more_code, :collection_reject_code,
         :generate_float_code, :string_generator_text_code, :generate_string_code,
@@ -123,11 +123,12 @@ module Hegel
       # none for that failure; a caveat of nil, a deterministic failure.
       attr_writer :failure_count, :failure_origins, :failure_blobs, :failure_caveats
 
-      # What #test_case_should_capture answers: one boolean for every case, or
-      # an Array answered one element per case in order. True by default,
-      # so every failing case records its draws, as the engine's stamped
-      # final replay would.
-      attr_writer :should_capture
+      # What #test_case_wants_output and #test_case_wants_detail answer: one
+      # boolean for every case, or an Array answered one element per case in
+      # order. Both are true by default, so every failing case records its
+      # draws and renders its diagnostic, as the engine's stamped final
+      # replay would.
+      attr_writer :wants_output, :wants_detail
 
       # Every blob #run_start_blob was given, in call order.
       attr_reader :run_start_blobs
@@ -136,7 +137,8 @@ module Hegel
       # HEGEL_OK result, distinct from an error via #run_start_code=.
       attr_writer :run_start_returns_nil
 
-      attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins, :freed_string_generators,
+      attr_reader :freed_contexts, :freed_settings, :freed_test_cases, :marked_statuses, :marked_origins,
+        :marked_summaries, :marked_details, :freed_string_generators,
         :freed_pools, :state_machine_rule_weights, :restored_pool_ids, :opened_collections, :freed_collections
 
       # The arguments of each #string_generator_text call (a Hash of its
@@ -224,6 +226,8 @@ module Hegel
         @mark_complete_code = HEGEL_OK
         @marked_statuses = []
         @marked_origins = []
+        @marked_summaries = []
+        @marked_details = []
 
         @generate_boolean_code = HEGEL_OK
         @generate_boolean_value = false
@@ -248,8 +252,10 @@ module Hegel
         @failure_caveat_code = HEGEL_OK
         @run_start_blob_code = HEGEL_OK
         @run_start_blobs = []
-        @test_case_should_capture_code = HEGEL_OK
-        @should_capture = true
+        @test_case_wants_output_code = HEGEL_OK
+        @test_case_wants_detail_code = HEGEL_OK
+        @wants_output = true
+        @wants_detail = true
 
         @start_span_code = HEGEL_OK
         @stop_span_code = HEGEL_OK
@@ -446,9 +452,14 @@ module Hegel
         Object.new
       end
 
-      def test_case_should_capture(ctx, _tc)
-        LibHegel.check!(self, ctx, @test_case_should_capture_code)
-        @should_capture.is_a?(Array) ? @should_capture.shift : @should_capture
+      def test_case_wants_output(ctx, _tc)
+        LibHegel.check!(self, ctx, @test_case_wants_output_code)
+        @wants_output.is_a?(Array) ? @wants_output.shift : @wants_output
+      end
+
+      def test_case_wants_detail(ctx, _tc)
+        LibHegel.check!(self, ctx, @test_case_wants_detail_code)
+        @wants_detail.is_a?(Array) ? @wants_detail.shift : @wants_detail
       end
 
       # Yields @test_case_count distinct handles, then nil (the run
@@ -477,9 +488,11 @@ module Hegel
       # Records +status+ and +origin+ (readable via #marked_statuses /
       # #marked_origins) before translating @mark_complete_code, so a test
       # can see what was passed even when driving an error path.
-      def mark_complete(ctx, _tc, status, origin)
+      def mark_complete(ctx, _tc, status, origin, summary: nil, detail: nil)
         @marked_statuses << status
         @marked_origins << origin
+        @marked_summaries << summary
+        @marked_details << detail
         LibHegel.check!(self, ctx, @mark_complete_code)
         nil
       end

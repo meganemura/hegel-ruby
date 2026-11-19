@@ -615,7 +615,7 @@ class TestRunner < Minitest::Test
   def test_note_block_form_evaluates_once_when_one_case_is_stamped
     fake = failing_fake
     fake.test_case_count = 3
-    fake.should_capture = [false, false, true]
+    fake.wants_output = [false, false, true]
     calls = 0
 
     assert_raises(RuntimeError) do
@@ -703,7 +703,7 @@ class TestRunner < Minitest::Test
   def test_a_later_stamped_failure_replaces_an_earlier_one_for_its_origin
     fake = failing_fake
     fake.test_case_count = 2
-    fake.should_capture = [true, true]
+    fake.wants_output = [true, true]
     messages = %w[first second]
 
     error = assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise messages.shift } }
@@ -716,7 +716,7 @@ class TestRunner < Minitest::Test
   def test_an_unstamped_failure_does_not_replace_a_stamped_one
     fake = failing_fake
     fake.test_case_count = 2
-    fake.should_capture = [true, false]
+    fake.wants_output = [true, false]
     messages = %w[first second]
 
     error = assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise messages.shift } }
@@ -729,7 +729,7 @@ class TestRunner < Minitest::Test
   def test_a_later_unstamped_failure_replaces_an_earlier_unstamped_one
     fake = failing_fake
     fake.test_case_count = 2
-    fake.should_capture = [false, false]
+    fake.wants_output = [false, false]
     messages = %w[first second]
 
     error = assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise messages.shift } }
@@ -742,7 +742,7 @@ class TestRunner < Minitest::Test
   def test_a_failed_capture_stamp_read_still_frees_the_test_case
     fake = Hegel::LibHegel::Fake.new
     fake.test_case_count = 1
-    fake.test_case_should_capture_code = Hegel::LibHegel::HEGEL_E_INVALID_HANDLE
+    fake.test_case_wants_output_code = Hegel::LibHegel::HEGEL_E_INVALID_HANDLE
 
     assert_raises(Hegel::Error) { Hegel.test(impl: fake) { |_tc| } }
 
@@ -753,7 +753,7 @@ class TestRunner < Minitest::Test
   # the run an exception to re-raise, and a report with no drawn values.
   def test_an_unstamped_failure_is_reported_when_nothing_was_stamped
     fake = failing_fake
-    fake.should_capture = [false]
+    fake.wants_output = [false]
     output = StringIO.new
 
     error = assert_raises(RuntimeError) do
@@ -1495,6 +1495,95 @@ class TestRunner < Minitest::Test
 
     refute ran
     assert_equal 1, fake.freed_contexts.size
+  end
+
+  # A failure the engine wants the output and the detail of hands it both,
+  # with its origin (libhegel 0.52). The summary leads with the caller's
+  # own location, as the header asks; the detail is what Ruby prints for
+  # the exception on its own, backtrace included.
+  def test_a_wanted_failure_hands_the_engine_a_summary_and_a_detail
+    fake = failing_fake
+    line = __LINE__ + 1
+    error = assert_raises(RuntimeError) { Hegel.test(impl: fake, output: StringIO.new) { |_tc| raise "too big: 7" } }
+
+    assert_equal ["#{__FILE__}:#{line}: too big: 7 (RuntimeError)"], fake.marked_summaries
+    assert_equal [error.full_message(highlight: false, order: :top)], fake.marked_details
+    assert_includes fake.marked_details.first, "#{__FILE__}:#{line}"
+  end
+
+  # Neither is built when the engine does not want it: rendering one is
+  # wasted work on a shrink probe. A case that does not fail never sends
+  # either.
+  def test_an_unwanted_summary_or_detail_is_not_sent
+    fake = failing_fake
+    fake.test_case_count = 3
+    fake.wants_output = [false, true, true]
+    fake.wants_detail = [false, false, true]
+    calls = 0
+
+    assert_raises(RuntimeError) do
+      Hegel.test(impl: fake, output: StringIO.new) do |_tc|
+        calls += 1
+        raise "boom" unless calls == 3
+      end
+    end
+
+    assert_equal [nil, String, nil], fake.marked_summaries.map { |summary| summary&.class }
+    assert_equal [nil, nil, nil], fake.marked_details
+  end
+
+  # The header rejects a summary with a newline: a message of several
+  # lines is cut at its first line and followed by " …". Trailing blank
+  # lines do not count as more lines.
+  def test_a_summary_keeps_the_first_line_of_a_multiline_message
+    summaries = ["first\nsecond", "only\n\n"].map do |message|
+      Hegel::Runner.summary_for(RuntimeError.new(message))
+    end
+
+    assert_equal ["first … (RuntimeError)", "only (RuntimeError)"], summaries
+  end
+
+  # An exception never raised has no location, so its summary names none,
+  # and an empty message leaves the class alone.
+  def test_a_summary_without_a_location_or_a_message
+    assert_equal "(ArgumentError)", Hegel::Runner.summary_for(ArgumentError.new(""))
+  end
+
+  # The header rejects a string that is not valid UTF-8, and the engine
+  # then completes nothing. Raw bytes are read as UTF-8, with an invalid
+  # byte replaced, and a message in another encoding is converted.
+  def test_a_summary_and_a_detail_are_valid_utf8
+    binary = RuntimeError.new("bytes: \xFF\xE3\x81\x82".b)
+    euc = RuntimeError.new("あ".encode(Encoding::EUC_JP))
+
+    assert_equal "bytes: �あ (RuntimeError)", Hegel::Runner.summary_for(binary)
+    assert_equal "あ (RuntimeError)", Hegel::Runner.summary_for(euc)
+    assert_predicate Hegel::Runner.detail_for(binary), :valid_encoding?
+    assert_equal Encoding::UTF_8, Hegel::Runner.detail_for(euc).encoding
+  end
+
+  # The real engine accepts what the runner sends: a failing run, quiet or
+  # verbose, ends in the body's own exception, not in a rejected
+  # hegel_mark_complete. A verbose run wants every case's output, so every
+  # failing case there sends a summary, and the engine prints it after the
+  # case through hegel_output_stderr, on the process's own stderr.
+  def test_the_real_engine_accepts_the_failures_the_runner_completes
+    printed = %i[quiet normal verbose].to_h do |verbosity|
+      error = nil
+      _, stderr = capture_subprocess_io do
+        error = assert_raises(RuntimeError) do
+          Hegel.test(test_cases: 5, verbosity: verbosity, output: StringIO.new) do |tc|
+            raise "too big" if tc.draw_integer(0, 10) >= 0
+          end
+        end
+      end
+
+      assert_equal "too big", error.message
+      [verbosity, stderr]
+    end
+
+    assert_equal "", printed[:quiet]
+    assert_includes printed[:verbose], ": too big (RuntimeError)"
   end
 
   def test_an_unknown_profile_raises_the_engines_error_from_the_real_engine

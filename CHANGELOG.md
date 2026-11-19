@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.52.0 (was 0.51.6)
+
+The [libhegel 0.52.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.52.0)
+describe 0.52.0.
+
+Each platform gem carries `libhegel` 0.52.0. A caller has nothing to
+change. The public methods keep their signatures and return values, and a
+run at `:quiet` or `:normal` verbosity prints the same as before.
+
+In 0.52.0, the engine prints the output of a test case itself, and its C
+ABI changes. A failing test case now gives the engine a one-line summary
+and, when the engine asks for it, the full diagnostic that Ruby prints for
+the exception. The engine rejects a failure without them. These bindings
+send both. See
+[ADR 0038](docs/adr/0038-hand-the-engine-a-failure-summary-and-detail.md).
+
+A run at `:verbose` verbosity prints more on stderr: a line for each
+failing test case, such as `test/foo_test.rb:12: too big: 7
+(RuntimeError)`, and a "Test case stopped" line for a test case that ran
+out of data. A run at `:debug` verbosity also prints the backtrace of each
+failure. A verbose run also records the drawn values of every test case,
+so a verbose run can take longer than before.
+
+Before 0.52.0, the engine printed to stderr when it got no output
+callback. Now it prints nothing. These bindings now give the engine its
+own stderr writer, so statistics and verbose output still go to stderr.
+
 ## [0.5.3] - 2026-11-17
 
 ### Engine: libhegel 0.51.6 (was 0.51.5)

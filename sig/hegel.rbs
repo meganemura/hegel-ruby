@@ -750,11 +750,12 @@ module Hegel
       def settings_set_backend: (untyped ctx, untyped s, Integer backend) -> nil
       def run_start: (untyped ctx, untyped settings) -> untyped
       def run_start_blob: (untyped ctx, untyped settings, String blob) -> untyped
-      def test_case_should_capture: (untyped ctx, untyped tc) -> bool
+      def test_case_wants_output: (untyped ctx, untyped tc) -> bool
+      def test_case_wants_detail: (untyped ctx, untyped tc) -> bool
       def next_test_case: (untyped ctx, untyped run) -> untyped?
       def run_free: (untyped ctx, untyped run) -> nil
       def test_case_free: (untyped ctx, untyped tc) -> nil
-      def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin) -> nil
+      def mark_complete: (untyped ctx, untyped tc, Integer status, String? origin, ?summary: String?, ?detail: String?) -> nil
       def target: (untyped ctx, untyped tc, Float value, String label) -> nil
       def event: (untyped ctx, untyped tc, String label) -> nil
       def event_value: (untyped ctx, untyped tc, String label, Numeric value) -> nil
