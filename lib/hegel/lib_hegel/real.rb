@@ -291,14 +291,16 @@ module Hegel
         )
 
         @hegel_generate_date_fn = bind(
-          "hegel_generate_date", [:pointer, :pointer, DateStruct.by_value, DateStruct.by_value, :pointer], :int32
+          "hegel_generate_date",
+          [:pointer, :pointer, DateStruct.by_value, DateStruct.by_value, :pointer, :pointer], :int32
         )
         @hegel_generate_time_fn = bind(
-          "hegel_generate_time", [:pointer, :pointer, TimeStruct.by_value, TimeStruct.by_value, :pointer], :int32
+          "hegel_generate_time",
+          [:pointer, :pointer, TimeStruct.by_value, TimeStruct.by_value, :uint32, :pointer], :int32
         )
         @hegel_generate_datetime_fn = bind(
           "hegel_generate_datetime",
-          [:pointer, :pointer, DatetimeStruct.by_value, DatetimeStruct.by_value, :pointer], :int32
+          [:pointer, :pointer, DatetimeStruct.by_value, DatetimeStruct.by_value, :uint32, :pointer], :int32
         )
 
         @hegel_grammar_builder_new_fn = bind(
@@ -1327,9 +1329,14 @@ module Hegel
       # though the header's Returns line for this call names only
       # HEGEL_OK/HEGEL_E_STOP_TEST. #run_result_failure's own comment
       # records the same measured behaviour for a different call.
+      #
+      # Since libhegel 0.53.0 the call also takes a hegel_date_options_t
+      # that limits the draw to some weekdays or months. This wrapper
+      # passes NULL, which the header defines as no limit, because no
+      # generator of this gem offers that limit yet.
       def generate_date(ctx, tc, min_value, max_value)
         out = DateStruct.new
-        code = @hegel_generate_date_fn.call(ctx, tc, date_struct(min_value), date_struct(max_value), out)
+        code = @hegel_generate_date_fn.call(ctx, tc, date_struct(min_value), date_struct(max_value), nil, out)
         LibHegel.check!(self, ctx, code)
         read_date(out)
       end
@@ -1337,10 +1344,13 @@ module Hegel
       # hegel_generate_time. +min_value+/+max_value+ are each an
       # [hour, minute, second, nanosecond] Array; same struct-passing,
       # return shape, and validation division of labor as #generate_date
-      # above, for Hegel::Generators::TimesGenerator.
+      # above, for Hegel::Generators::TimesGenerator. The precision is
+      # nanoseconds; see HEGEL_PRECISION_NANOSECONDS for the reason.
       def generate_time(ctx, tc, min_value, max_value)
         out = TimeStruct.new
-        code = @hegel_generate_time_fn.call(ctx, tc, time_struct(min_value), time_struct(max_value), out)
+        code = @hegel_generate_time_fn.call(
+          ctx, tc, time_struct(min_value), time_struct(max_value), HEGEL_PRECISION_NANOSECONDS, out
+        )
         LibHegel.check!(self, ctx, code)
         read_time(out)
       end
@@ -1355,7 +1365,8 @@ module Hegel
       def generate_datetime(ctx, tc, min_date, min_time, max_date, max_time)
         out = DatetimeStruct.new
         code = @hegel_generate_datetime_fn.call(
-          ctx, tc, datetime_struct(min_date, min_time), datetime_struct(max_date, max_time), out
+          ctx, tc, datetime_struct(min_date, min_time), datetime_struct(max_date, max_time),
+          HEGEL_PRECISION_NANOSECONDS, out
         )
         LibHegel.check!(self, ctx, code)
         [read_date(out[:date]), read_time(out[:time])]

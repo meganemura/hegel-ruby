@@ -2,14 +2,29 @@
 
 ## [Unreleased]
 
-### Engine: libhegel 0.52.0 (was 0.51.6)
+### Engine: libhegel 0.53.0 (was 0.51.6)
 
-The [libhegel 0.52.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.52.0)
-describe 0.52.0.
+The [libhegel 0.53.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.53.0)
+describe 0.53.0. The move also includes 0.52.0, and the
+[libhegel changelog at 0.53.0](https://github.com/hegeldev/hegel/blob/libhegel/0.53.0/libhegel/CHANGELOG.md)
+describes both releases.
 
-Each platform gem carries `libhegel` 0.52.0. A caller has nothing to
+Each platform gem carries `libhegel` 0.53.0. A caller has nothing to
 change. The public methods keep their signatures and return values, and a
 run at `:quiet` or `:normal` verbosity prints the same as before.
+
+In 0.53.0, `hegel_generate_date`, `hegel_generate_time`, and
+`hegel_generate_datetime` take one more argument: date options for the
+date draw, and a precision for the two time draws. These bindings pass no
+date options and a precision of nanoseconds. Thus `dates`, `times`,
+`datetimes`, `date_strings`, `time_strings`, and `datetime_strings` draw
+from the same set of values as before. The engine now aims about one draw
+in twenty at a calendar value that often finds bugs, such as a leap day
+near a bound, a year boundary, or the last nanosecond of a day. Thus a
+short run can find such a value more frequently than before.
+
+The other functions that 0.53.0 adds, such as the time zone, offset,
+duration, and span draws, are not available from this gem yet.
 
 In 0.52.0, the engine prints the output of a test case itself, and its C
 ABI changes. A failing test case now gives the engine a one-line summary
