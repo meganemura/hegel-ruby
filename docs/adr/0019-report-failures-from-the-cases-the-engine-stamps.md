@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted.
+Accepted. Superseded in part by
+[ADR 0038](0038-hand-the-engine-a-failure-summary-and-detail.md): since
+libhegel 0.52, the stamp is read through `hegel_test_case_wants_output`,
+which also answers true for every case of a verbose run.
 
 ## Context
 

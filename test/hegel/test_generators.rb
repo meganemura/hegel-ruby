@@ -1817,6 +1817,27 @@ class TestGenerators < Minitest::Test
     end
   end
 
+  # The engine draws proleptic Gregorian dates, and since libhegel 0.53.0 it
+  # aims some draws at the Julian-to-Gregorian cutover. Date.new with its
+  # default Italian reform refuses 1582-10-05 through 1582-10-14, so this
+  # test failed with Date::Error before the generator used Date::GREGORIAN.
+  def test_dates_reach_the_days_the_italian_reform_skips
+    gap = Date.new(1582, 10, 5, Date::GREGORIAN)..Date.new(1582, 10, 14, Date::GREGORIAN)
+    value = find_any(dates) { |v| gap.cover?(v) }
+    assert_predicate value, :gregorian?
+  end
+
+  # A bound built with Ruby's default calendar is a Julian date before
+  # 1582-10-15. The generator reads the bound as the same day, not as the
+  # same year, month, and day fields.
+  def test_dates_read_a_julian_bound_as_the_same_day
+    bound = Date.new(1500, 1, 1)
+    value = nil
+    Hegel.test(test_cases: 1, verbosity: :quiet) { |tc| value = tc.draw(dates(min_value: bound, max_value: bound)) }
+    assert_equal bound, value
+    assert_equal [1500, 1, 10], [value.year, value.month, value.day]
+  end
+
   # ---- times ----
 
   def test_times_draws_against_the_real_engine
@@ -1947,8 +1968,10 @@ class TestGenerators < Minitest::Test
     parse_date_string(date) + parse_time_string(time)
   end
 
+  # Date::GREGORIAN: the engine draws proleptic Gregorian dates, and the
+  # default Italian reform refuses 1582-10-05 through 1582-10-14.
   def test_date_strings_draws_against_the_real_engine
-    assert_all_examples(date_strings) { |v| v.match?(DATE_STRING) && Date.valid_date?(*parse_date_string(v)) }
+    assert_all_examples(date_strings) { |v| v.match?(DATE_STRING) && Date.valid_date?(*parse_date_string(v), Date::GREGORIAN) }
   end
 
   def test_time_strings_draws_against_the_real_engine

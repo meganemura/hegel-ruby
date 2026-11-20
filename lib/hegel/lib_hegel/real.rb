@@ -143,12 +143,21 @@ module Hegel
           "hegel_run_start_blob", [:pointer, :pointer, StringStruct.by_value, :pointer, :pointer, :pointer], :int32
         )
         @hegel_next_test_case_fn = bind("hegel_next_test_case", [:pointer, :pointer, :pointer], :int32)
-        @hegel_test_case_should_capture_fn = bind(
-          "hegel_test_case_should_capture", [:pointer, :pointer, :pointer], :int32
-        )
+        @hegel_test_case_wants_output_fn = bind("hegel_test_case_wants_output", [:pointer, :pointer, :pointer], :int32)
+        @hegel_test_case_wants_detail_fn = bind("hegel_test_case_wants_detail", [:pointer, :pointer, :pointer], :int32)
         @hegel_run_free_fn = bind("hegel_run_free", [:pointer, :pointer], :int32)
         @hegel_test_case_free_fn = bind("hegel_test_case_free", [:pointer, :pointer], :int32)
-        @hegel_mark_complete_fn = bind("hegel_mark_complete", [:pointer, :pointer, :uint32, :pointer], :int32)
+        @hegel_mark_complete_fn = bind(
+          "hegel_mark_complete", [:pointer, :pointer, :uint32, :pointer, :pointer, :pointer], :int32
+        )
+        # Since libhegel 0.52, a NULL output callback means "print nothing",
+        # where it used to mean stderr. The run passes the engine's own
+        # stderr writer, so that engine output (statistics, a verbose run's
+        # lines) still reaches stderr, as it did before and as hegel-rust's
+        # src/ffi.rs does when no sink is given. The symbol is a C function,
+        # so its resolved address is the callback value itself.
+        @hegel_output_stderr = @handle.find_function("hegel_output_stderr") or
+          raise Hegel::Error, "libhegel has no hegel_output_stderr; these bindings need libhegel #{Hegel::LIBHEGEL_VERSION}"
         @hegel_target_fn = bind("hegel_target", [:pointer, :pointer, :double, StringStruct.by_value], :int32)
         @hegel_event_fn = bind("hegel_event", [:pointer, :pointer, StringStruct.by_value], :int32)
         @hegel_event_value_fn = bind(
@@ -282,14 +291,16 @@ module Hegel
         )
 
         @hegel_generate_date_fn = bind(
-          "hegel_generate_date", [:pointer, :pointer, DateStruct.by_value, DateStruct.by_value, :pointer], :int32
+          "hegel_generate_date",
+          [:pointer, :pointer, DateStruct.by_value, DateStruct.by_value, :pointer, :pointer], :int32
         )
         @hegel_generate_time_fn = bind(
-          "hegel_generate_time", [:pointer, :pointer, TimeStruct.by_value, TimeStruct.by_value, :pointer], :int32
+          "hegel_generate_time",
+          [:pointer, :pointer, TimeStruct.by_value, TimeStruct.by_value, :uint32, :pointer], :int32
         )
         @hegel_generate_datetime_fn = bind(
           "hegel_generate_datetime",
-          [:pointer, :pointer, DatetimeStruct.by_value, DatetimeStruct.by_value, :pointer], :int32
+          [:pointer, :pointer, DatetimeStruct.by_value, DatetimeStruct.by_value, :uint32, :pointer], :int32
         )
 
         @hegel_grammar_builder_new_fn = bind(
@@ -520,12 +531,13 @@ module Hegel
 
       # +settings+ can be freed by the caller as soon as this call returns:
       # the header documents that hegel_run_start copies the settings it is
-      # given rather than borrowing them. callback and user_data are always
-      # NULL here, which the header documents as leaving libhegel's output
-      # on stderr; wiring a Ruby-backed callback is left to a later task.
+      # given rather than borrowing them. The output callback is always
+      # hegel_output_stderr, with NULL user_data (see #initialize). A
+      # C function lives as long as the library, so it outlives the run,
+      # which the header requires of the callback.
       def run_start(ctx, settings)
         out = FFI::MemoryPointer.new(:pointer)
-        code = @hegel_run_start_fn.call(ctx, settings, nil, nil, out)
+        code = @hegel_run_start_fn.call(ctx, settings, @hegel_output_stderr, nil, out)
         LibHegel.check!(self, ctx, code)
         out.read_pointer
       end
@@ -538,17 +550,29 @@ module Hegel
       # version.
       def run_start_blob(ctx, settings, blob)
         out = FFI::MemoryPointer.new(:pointer)
-        code = @hegel_run_start_blob_fn.call(ctx, settings, string_view(blob), nil, nil, out)
+        code = @hegel_run_start_blob_fn.call(ctx, settings, string_view(blob), @hegel_output_stderr, nil, out)
         LibHegel.check!(self, ctx, code)
         out.read_pointer
       end
 
-      # Whether the engine stamped +tc+ for capture: a failure on a stamped
-      # case is material for that failure's report. Read once, when the
-      # case starts.
-      def test_case_should_capture(ctx, tc)
+      # Whether the engine will use what +tc+ prints: every case of a
+      # verbose run, and each case the engine stamps for capture, quiet
+      # runs included. A failure on such a case is material for that
+      # failure's report, and a failing one must give #mark_complete a
+      # summary. Read once, when the case starts.
+      def test_case_wants_output(ctx, tc)
         out = FFI::MemoryPointer.new(:bool)
-        code = @hegel_test_case_should_capture_fn.call(ctx, tc, out)
+        code = @hegel_test_case_wants_output_fn.call(ctx, tc, out)
+        LibHegel.check!(self, ctx, code)
+        out.read_uint8 != 0
+      end
+
+      # Whether the engine will use a failure's full diagnostic for +tc+: a
+      # failing case must then give #mark_complete a detail. True implies
+      # #test_case_wants_output. Read once, when the case starts.
+      def test_case_wants_detail(ctx, tc)
+        out = FFI::MemoryPointer.new(:bool)
+        code = @hegel_test_case_wants_detail_fn.call(ctx, tc, out)
         LibHegel.check!(self, ctx, code)
         out.read_uint8 != 0
       end
@@ -584,12 +608,19 @@ module Hegel
         nil
       end
 
-      # +origin+ must be non-nil only when +status+ is
-      # HEGEL_STATUS_INTERESTING, per the header; this layer neither builds
-      # nor validates that string, only passes through what the caller
-      # supplies. nil goes over as NULL through #optional_string.
-      def mark_complete(ctx, tc, status, origin)
-        code = @hegel_mark_complete_fn.call(ctx, tc, status, optional_string(origin))
+      # +origin+, +summary+, and +detail+ must be non-nil only when +status+
+      # is HEGEL_STATUS_INTERESTING, per the header. An INTERESTING status
+      # needs an origin always, a one-line summary when
+      # #test_case_wants_output was true, and a detail when
+      # #test_case_wants_detail was true. The engine rejects any other
+      # combination with HEGEL_E_INVALID_ARG and completes nothing. This
+      # layer neither builds nor validates those strings, only passes
+      # through what the caller supplies. nil goes over as NULL through
+      # #optional_string.
+      def mark_complete(ctx, tc, status, origin, summary: nil, detail: nil)
+        code = @hegel_mark_complete_fn.call(
+          ctx, tc, status, optional_string(origin), optional_string(summary), optional_string(detail)
+        )
         LibHegel.check!(self, ctx, code)
         nil
       end
@@ -1292,15 +1323,21 @@ module Hegel
       # the same division of labor #generate_ipv4/#generate_uuid already
       # follow, returning raw values for a generator one layer up to turn
       # into the caller-facing type. This layer does not validate
-      # year/month/day itself: measured against libhegel 0.45.0, an
-      # invalid date (month 13, say) already comes back
-      # HEGEL_E_INVALID_ARG, translated by LibHegel.check! below, even
-      # though the header's Returns line for this call names only
-      # HEGEL_OK/HEGEL_E_STOP_TEST. #run_result_failure's own comment
-      # records the same measured behaviour for a different call.
+      # year/month/day itself: measured against libhegel 0.45.0, and again
+      # against 0.53.0, an invalid date (month 13, say) already comes back
+      # HEGEL_E_INVALID_ARG, translated by LibHegel.check! below. The
+      # header's Returns line for this call names HEGEL_E_INVALID_ARG only
+      # for bounds that hold no allowed weekday and month.
+      # #run_result_failure's own comment records the same measured
+      # behaviour for a different call.
+      #
+      # Since libhegel 0.53.0 the call also takes a hegel_date_options_t
+      # that limits the draw to some weekdays or months. This wrapper
+      # passes NULL, which the header defines as no limit, because no
+      # generator of this gem offers that limit yet.
       def generate_date(ctx, tc, min_value, max_value)
         out = DateStruct.new
-        code = @hegel_generate_date_fn.call(ctx, tc, date_struct(min_value), date_struct(max_value), out)
+        code = @hegel_generate_date_fn.call(ctx, tc, date_struct(min_value), date_struct(max_value), nil, out)
         LibHegel.check!(self, ctx, code)
         read_date(out)
       end
@@ -1308,10 +1345,13 @@ module Hegel
       # hegel_generate_time. +min_value+/+max_value+ are each an
       # [hour, minute, second, nanosecond] Array; same struct-passing,
       # return shape, and validation division of labor as #generate_date
-      # above, for Hegel::Generators::TimesGenerator.
+      # above, for Hegel::Generators::TimesGenerator. The precision is
+      # nanoseconds; see HEGEL_PRECISION_NANOSECONDS for the reason.
       def generate_time(ctx, tc, min_value, max_value)
         out = TimeStruct.new
-        code = @hegel_generate_time_fn.call(ctx, tc, time_struct(min_value), time_struct(max_value), out)
+        code = @hegel_generate_time_fn.call(
+          ctx, tc, time_struct(min_value), time_struct(max_value), HEGEL_PRECISION_NANOSECONDS, out
+        )
         LibHegel.check!(self, ctx, code)
         read_time(out)
       end
@@ -1326,7 +1366,8 @@ module Hegel
       def generate_datetime(ctx, tc, min_date, min_time, max_date, max_time)
         out = DatetimeStruct.new
         code = @hegel_generate_datetime_fn.call(
-          ctx, tc, datetime_struct(min_date, min_time), datetime_struct(max_date, max_time), out
+          ctx, tc, datetime_struct(min_date, min_time), datetime_struct(max_date, max_time),
+          HEGEL_PRECISION_NANOSECONDS, out
         )
         LibHegel.check!(self, ctx, code)
         [read_date(out[:date]), read_time(out[:time])]

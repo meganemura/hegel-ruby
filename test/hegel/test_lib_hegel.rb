@@ -526,7 +526,8 @@ class TestLibHegel < Minitest::Test
   # Every case is marked INTERESTING under the same origin, so libhegel
   # groups every shrink probe as one bug and the run always fails. The
   # engine replays the failure once more at the end of the run, stamped for
-  # capture, so some case of the run is stamped. Reads hegel_run_result's
+  # capture, so some case of the run wants its output, quiet as the run is.
+  # A quiet run wants no case's detail. Reads hegel_run_result's
   # status, failure count, and each failure's origin, caveat, and
   # reproduction blob, then replays that blob as a run through
   # hegel_run_start_blob: every case of that replay is stamped, the replay
@@ -548,7 +549,8 @@ class TestLibHegel < Minitest::Test
       result = real.run_result(ctx, run)
       real.run_free(ctx, run)
 
-      assert_includes stamps, true
+      assert_includes stamps.map(&:first), true
+      assert_equal [false], stamps.map(&:last).uniq
       assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED, real.run_result_status(ctx, result)
       assert_equal 1, real.run_result_failure_count(ctx, result)
 
@@ -567,7 +569,7 @@ class TestLibHegel < Minitest::Test
       real.settings_free(ctx, settings)
 
       refute_empty replay_stamps
-      assert_equal [true], replay_stamps.uniq
+      assert_equal [[true, false]], replay_stamps.uniq
       assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED, real.run_result_status(ctx, replay_result)
       replayed_failure = real.run_result_failure(ctx, replay_result, 0)
       assert_nil real.failure_reproduction_blob(ctx, replayed_failure)
@@ -577,7 +579,9 @@ class TestLibHegel < Minitest::Test
   end
 
   # Drives +run+ to its end, marking every case INTERESTING under +origin+
-  # after one draw, and returns each case's capture stamp in order. A shrink
+  # after one draw, and returns each case's [wants_output, wants_detail]
+  # in order. Each failure carries the summary and the detail the engine
+  # asked for, since the engine rejects a failure without them. A shrink
   # probe can hand back a case with fewer choices than the draw needs, and
   # the protocol reports such a case as OVERRUN.
   def drive_failing(real, ctx, run, origin)
@@ -586,16 +590,65 @@ class TestLibHegel < Minitest::Test
       tc = real.next_test_case(ctx, run)
       break if tc.nil?
 
-      stamps << real.test_case_should_capture(ctx, tc)
+      wants_output = real.test_case_wants_output(ctx, tc)
+      wants_detail = real.test_case_wants_detail(ctx, tc)
+      stamps << [wants_output, wants_detail]
       begin
         real.generate_integer(ctx, tc, 0, 100)
-        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin)
+        real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin,
+          summary: ("boom" if wants_output), detail: ("boom\n  at here" if wants_detail))
       rescue Hegel::StopTest
         real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_OVERRUN, nil)
       end
       real.test_case_free(ctx, tc)
     end
     stamps
+  end
+
+  # Since libhegel 0.52, hegel_mark_complete rejects a failure that leaves
+  # out what the engine asked for, and a rejected call completes nothing.
+  # The final replay of a failure wants its output, so a failure there
+  # with no summary raises HEGEL_E_INVALID_ARG. The same case then
+  # completes with a summary. This pins that #mark_complete sends the
+  # summary in its own argument slot.
+  def test_real_mark_complete_rejects_a_wanted_failure_without_a_summary
+    real = Hegel::LibHegel::Real.new
+    origin = "hegel-ruby-test-origin"
+    errors = []
+
+    Hegel::LibHegel.with_context(real) do |ctx|
+      settings = real.settings_new(ctx)
+      real.settings_set_test_cases(ctx, settings, 3)
+      real.settings_set_verbosity(ctx, settings, Hegel::LibHegel::HEGEL_VERBOSITY_QUIET)
+      real.settings_set_database(ctx, settings, "")
+      run = real.run_start(ctx, settings)
+      real.settings_free(ctx, settings)
+      loop do
+        tc = real.next_test_case(ctx, run)
+        break if tc.nil?
+
+        begin
+          real.generate_integer(ctx, tc, 0, 100)
+          if real.test_case_wants_output(ctx, tc)
+            errors << assert_raises(Hegel::Error) do
+              real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin)
+            end
+          end
+          real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_INTERESTING, origin, summary: "boom")
+        rescue Hegel::StopTest
+          real.mark_complete(ctx, tc, Hegel::LibHegel::HEGEL_STATUS_OVERRUN, nil)
+        end
+        real.test_case_free(ctx, tc)
+      end
+      result = real.run_result(ctx, run)
+      real.run_free(ctx, run)
+
+      assert_equal Hegel::LibHegel::HEGEL_RUN_STATUS_FAILED, real.run_result_status(ctx, result)
+      real.run_result_free(ctx, result)
+    end
+
+    refute_empty errors
+    assert_includes errors.first.message, "summary"
   end
 
   # The header documents HEGEL_E_INVALID_ARG for a blob that is corrupt,

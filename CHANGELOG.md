@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-11-20
+
+### Engine: libhegel 0.53.0 (was 0.51.6)
+
+The [libhegel 0.53.0 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.53.0)
+describe 0.53.0. The move also includes 0.52.0, and the
+[libhegel changelog at 0.53.0](https://github.com/hegeldev/hegel/blob/libhegel/0.53.0/libhegel/CHANGELOG.md)
+describes both releases.
+
+Each platform gem carries `libhegel` 0.53.0. A caller has nothing to
+change. The public methods keep their signatures and return values, and a
+run at `:quiet` or `:normal` verbosity prints the same as before.
+
+In 0.53.0, `hegel_generate_date`, `hegel_generate_time`, and
+`hegel_generate_datetime` take one more argument: date options for the
+date draw, and a precision for the two time draws. These bindings pass no
+date options and a precision of nanoseconds. Thus `dates`, `times`,
+`datetimes`, `date_strings`, `time_strings`, and `datetime_strings` draw
+from the same set of values as before. The engine now aims about one draw
+in twenty at a calendar value that often finds bugs, such as a leap day
+near a bound, a year boundary, or the last nanosecond of a day. Thus a
+short run can find such a value more frequently than before.
+
+The other functions that 0.53.0 adds, such as the time zone, offset,
+duration, and span draws, are not available from this gem yet.
+
+In 0.52.0, the engine prints the output of a test case itself, and its C
+ABI changes. A failing test case now gives the engine a one-line summary
+and, when the engine asks for it, the full diagnostic that Ruby prints for
+the exception. The engine rejects a failure without them. These bindings
+send both. See
+[ADR 0038](docs/adr/0038-hand-the-engine-a-failure-summary-and-detail.md).
+
+A run at `:verbose` verbosity prints more on stderr: a line for each
+failing test case, such as `test/foo_test.rb:12: too big: 7
+(RuntimeError)`, and a "Test case stopped" line for a test case that ran
+out of data. A run at `:debug` verbosity also prints the backtrace of each
+failure. A verbose run also records the drawn values of every test case,
+so a verbose run can take longer than before.
+
+Before 0.52.0, the engine printed to stderr when it got no output
+callback. Now it prints nothing. These bindings now give the engine its
+own stderr writer, so statistics and verbose output still go to stderr.
+
+### Fixed
+
+- `dates` now returns a proleptic Gregorian `Date`, as its documentation
+  says. Before, it built the drawn date with Ruby's default calendar, which
+  reads a date before 1582-10-15 as Julian. Thus a drawn date from
+  1582-10-05 through 1582-10-14 raised `Date::Error`, and an earlier date
+  was a different day than the engine drew. libhegel 0.53.0 aims some
+  draws at 1582-10-05 and 1582-10-14, so a short run can now draw them.
+  A bound before 1582-10-15 that a caller builds with `Date.new` keeps its
+  meaning: the generator reads it as the same day.
+
 ## [0.5.3] - 2026-11-17
 
 ### Engine: libhegel 0.51.6 (was 0.51.5)
@@ -585,6 +640,7 @@ The engine is called through the `ffi` gem. Each platform gem carries the
 matching `libhegel` 0.32.5 build. The platform-independent gem carries none,
 so a run on it needs `HEGEL_LIBHEGEL_PATH` pointing at a local build.
 
+[0.5.4]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.5.4
 [0.5.3]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.5.3
 [0.5.2]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.5.2
 [0.5.1]: https://github.com/meganemura/hegel-ruby/releases/tag/v0.5.1

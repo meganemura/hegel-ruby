@@ -134,6 +134,11 @@ caller's own. Skip this library, installed gems, and the standard library, so
 that an assertion counts as failing where the caller wrote it rather than
 inside the framework that raised. See
 [ADR 0012](docs/adr/0012-build-a-failure-origin-from-the-callers-own-frame.md).
+Since libhegel 0.52, INTERESTING also takes a one-line summary when the
+engine wants the case's output, and a full detail when it wants the
+detail. The engine rejects a failure without them and completes nothing.
+See
+[ADR 0038](docs/adr/0038-hand-the-engine-a-failure-summary-and-detail.md).
 
 **The test-case setting bounds generation, not the number of times the loop
 runs.** Shrinking and rejected cases draw more cases on top of it, often
@@ -141,12 +146,13 @@ many times the setting. The `real-engine-tests` skill records the measured
 counts. Two things follow. Drive the loop until `hegel_next_test_case`
 hands back nothing, never by counting. And keep per-case work cheap.
 Anything expensive enough to notice, such as reading source to name a
-drawn value or formatting a backtrace, belongs in the cases the engine
-stamps for capture (`hegel_test_case_should_capture`) rather than in every
-shrink probe. hegel-rust reaches the same conclusion from the other side,
-calling backtrace capture "the dominant cost of failing-heavy property
-runs". See
-[ADR 0019](docs/adr/0019-report-failures-from-the-cases-the-engine-stamps.md).
+drawn value or formatting a backtrace, belongs in the cases whose output
+the engine wants (`hegel_test_case_wants_output`, and
+`hegel_test_case_wants_detail` for a backtrace) rather than in every shrink
+probe. hegel-rust reaches the same conclusion from the other side, calling
+backtrace capture "the dominant cost of failing-heavy property runs". See
+[ADR 0019](docs/adr/0019-report-failures-from-the-cases-the-engine-stamps.md)
+and [ADR 0038](docs/adr/0038-hand-the-engine-a-failure-summary-and-detail.md).
 
 **Free native handles deterministically.** Every `hegel_*_free` function takes
 the context, so the context must outlive every handle allocated from it.
