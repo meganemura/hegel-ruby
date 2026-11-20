@@ -1323,12 +1323,13 @@ module Hegel
       # the same division of labor #generate_ipv4/#generate_uuid already
       # follow, returning raw values for a generator one layer up to turn
       # into the caller-facing type. This layer does not validate
-      # year/month/day itself: measured against libhegel 0.45.0, an
-      # invalid date (month 13, say) already comes back
-      # HEGEL_E_INVALID_ARG, translated by LibHegel.check! below, even
-      # though the header's Returns line for this call names only
-      # HEGEL_OK/HEGEL_E_STOP_TEST. #run_result_failure's own comment
-      # records the same measured behaviour for a different call.
+      # year/month/day itself: measured against libhegel 0.45.0, and again
+      # against 0.53.0, an invalid date (month 13, say) already comes back
+      # HEGEL_E_INVALID_ARG, translated by LibHegel.check! below. The
+      # header's Returns line for this call names HEGEL_E_INVALID_ARG only
+      # for bounds that hold no allowed weekday and month.
+      # #run_result_failure's own comment records the same measured
+      # behaviour for a different call.
       #
       # Since libhegel 0.53.0 the call also takes a hegel_date_options_t
       # that limits the draw to some weekdays or months. This wrapper

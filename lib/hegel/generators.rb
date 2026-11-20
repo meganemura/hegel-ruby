@@ -1196,7 +1196,7 @@ module Hegel
       # +value+'s hour/minute/second/microsecond as an Array of Integers,
       # or raises if it is not a String matching FORMAT. This layer does
       # not range-check the parsed fields (an hour of 99, say): measured
-      # against libhegel 0.45.0, hegel_generate_time already returns
+      # against libhegel 0.45.0 and 0.53.0, hegel_generate_time already returns
       # HEGEL_E_INVALID_ARG for an invalid time, translated by
       # LibHegel.check! once #do_draw calls tc.generate_time, the same
       # division of labor DomainsGenerator follows for its own
