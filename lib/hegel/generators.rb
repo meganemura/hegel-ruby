@@ -1103,10 +1103,19 @@ module Hegel
     # own src/test_case.rs names this full_ranges::MIN_DATE/MAX_DATE, "what
     # Hypothesis's dates() spans".
     #
+    # hegel.h defines hegel_date_t as a proleptic Gregorian date, and
+    # hegel-rust reads it into chrono's NaiveDate, which is proleptic
+    # Gregorian too. Ruby's Date.new uses the Italian reform by default: it
+    # reads a date before 1582-10-15 as Julian, and it refuses 1582-10-05
+    # through 1582-10-14. Thus this generator reads the bounds with
+    # Date#gregorian and builds the drawn Date with Date::GREGORIAN. Since
+    # libhegel 0.53.0 the engine aims some draws at 1582-10-05 and
+    # 1582-10-14, so a short run can draw a date that Date.new refuses.
+    #
     # Opens no span, for the reason UuidsGenerator gives: one native call.
     class DatesGenerator < Generator
-      MIN_DATE = Date.new(1, 1, 1)
-      MAX_DATE = Date.new(9999, 12, 31)
+      MIN_DATE = Date.new(1, 1, 1, Date::GREGORIAN)
+      MAX_DATE = Date.new(9999, 12, 31, Date::GREGORIAN)
 
       def initialize(min_value:, max_value:)
         @min_value = min_value
@@ -1114,14 +1123,14 @@ module Hegel
       end
 
       def do_draw(tc)
-        min_value = @min_value || MIN_DATE
-        max_value = @max_value || MAX_DATE
+        min_value = (@min_value || MIN_DATE).gregorian
+        max_value = (@max_value || MAX_DATE).gregorian
         raise Hegel::Error, "dates: max_value < min_value" if max_value < min_value
 
         year, month, day = tc.generate_date(
           [min_value.year, min_value.month, min_value.day], [max_value.year, max_value.month, max_value.day]
         )
-        Date.new(year, month, day)
+        Date.new(year, month, day, Date::GREGORIAN)
       end
     end
 

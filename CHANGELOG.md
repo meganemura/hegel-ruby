@@ -44,6 +44,17 @@ Before 0.52.0, the engine printed to stderr when it got no output
 callback. Now it prints nothing. These bindings now give the engine its
 own stderr writer, so statistics and verbose output still go to stderr.
 
+### Fixed
+
+- `dates` now returns a proleptic Gregorian `Date`, as its documentation
+  says. Before, it built the drawn date with Ruby's default calendar, which
+  reads a date before 1582-10-15 as Julian. Thus a drawn date from
+  1582-10-05 through 1582-10-14 raised `Date::Error`, and an earlier date
+  was a different day than the engine drew. libhegel 0.53.0 aims some
+  draws at 1582-10-05 and 1582-10-14, so a short run can now draw them.
+  A bound before 1582-10-15 that a caller builds with `Date.new` keeps its
+  meaning: the generator reads it as the same day.
+
 ## [0.5.3] - 2026-11-17
 
 ### Engine: libhegel 0.51.6 (was 0.51.5)
