@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Engine: libhegel 0.53.1 (was 0.53.0)
+
+The [libhegel 0.53.1 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.53.1)
+describe 0.53.1.
+
+Each platform gem carries `libhegel` 0.53.1. A caller has nothing to
+change. The C ABI keeps the same functions, arguments, and constants.
+
+In 0.53.1, the engine checks a sampled invariant of a state machine with
+a probability of at least 1% at each join point. Before, the probability
+was always 1 / `step_count`. Thus `Hegel::Stateful.run` with a
+`step_count` of 100 or less checks invariants as before. With a larger
+`step_count`, it checks each invariant that is not `always_run` more
+frequently than before.
+
 ## [0.5.4] - 2026-11-20
 
 ### Engine: libhegel 0.53.0 (was 0.51.6)
