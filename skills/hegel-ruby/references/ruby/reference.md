@@ -1422,8 +1422,9 @@ surrounding class can once it includes `Hegel::Syntax::Methods`;
 `Hegel::StateMachine` already includes that module itself.
 
 An invariant runs before the first rule and after the last. Between rules,
-the engine samples it with probability 1 / `step_count`, so it runs about
-once in a test case that runs every step. `invariant(name, always_run:
+the engine samples it with probability `max(0.01, 1 / step_count)`, so it
+runs about once in a test case that runs every step when `step_count` is 100
+or less, and at about 1% of the joins above that. `invariant(name, always_run:
 true, &block)` checks it after every rule instead:
 
 ```ruby

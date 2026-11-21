@@ -51,8 +51,11 @@ module Hegel
 
       # Declares an invariant named +name+, checked before the first rule
       # runs, after the last, and in between at the join points where the
-      # engine samples it: each one with probability 1 / step_count, so
-      # about once per full-length test case. +always_run+ checks it at
+      # engine samples it: each one with probability
+      # max(0.01, 1 / step_count), so about once per full-length test case
+      # up to a step_count of 100. Since libhegel 0.53.1 the floor of 1%
+      # keeps a very large step_count from almost never checking it.
+      # +always_run+ checks it at
       # every join point instead, the name hegel-rust and hegel-java give
       # the same option. Same block/argument contract as #rule.
       def invariant(name, always_run: false, &block)
