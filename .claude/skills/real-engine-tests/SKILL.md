@@ -32,9 +32,9 @@ end
 
 ## `test_cases` is a generation budget, not an iteration count
 
-Measured against 0.52.0 over 30 runs, a run configured for 20 test cases
+Measured against 0.53.2 over 30 runs, a run configured for 20 test cases
 whose body failed when a drawn integer in 0..1_000_000 passed 500_000 took
-101 to 124 iterations over the 21 runs that failed; each of the 9 runs that
+102 to 123 iterations over the 23 runs that failed; each of the 7 runs that
 found no failure took exactly 20. Never write a loop, or an assertion, that
 counts iterations.
 
