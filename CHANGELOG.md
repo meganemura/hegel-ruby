@@ -2,12 +2,14 @@
 
 ## [Unreleased]
 
-### Engine: libhegel 0.53.1 (was 0.53.0)
+### Engine: libhegel 0.53.2 (was 0.53.0)
 
-The [libhegel 0.53.1 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.53.1)
-describe 0.53.1.
+The [libhegel 0.53.2 release notes](https://github.com/hegeldev/hegel/releases/tag/libhegel/0.53.2)
+describe 0.53.2. The move also includes 0.53.1, and the
+[libhegel changelog at 0.53.2](https://github.com/hegeldev/hegel/blob/libhegel/0.53.2/libhegel/CHANGELOG.md)
+describes both releases.
 
-Each platform gem carries `libhegel` 0.53.1. A caller has nothing to
+Each platform gem carries `libhegel` 0.53.2. A caller has nothing to
 change. The C ABI keeps the same functions, arguments, and constants.
 
 In 0.53.1, the engine checks a sampled invariant of a state machine with
@@ -16,6 +18,11 @@ was always 1 / `step_count`. Thus `Hegel::Stateful.run` with a
 `step_count` of 100 or less checks invariants as before. With a larger
 `step_count`, it checks each invariant that is not `always_run` more
 frequently than before.
+
+In 0.53.2, the engine runs the test body less frequently while it
+shrinks a failure. A shrink pass now stops a candidate after five of its
+random continuations in a row run out of data. The counterexample that a
+run reports can be different from the counterexample of 0.53.0.
 
 ## [0.5.4] - 2026-11-20
 
